@@ -1,16 +1,16 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "pycatdap"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Python implementation of CATDAP (CATegorical Data Analysis Program)"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "nbx-liz" },
+    { name = "nbx" },
 ]
 keywords = ["statistics", "categorical-data", "AIC", "CATDAP"]
 classifiers = [
@@ -33,15 +33,18 @@ dependencies = [
 plot = [
     "matplotlib>=3.7",
 ]
+
+[dependency-groups]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "mypy>=1.10",
     "ruff>=0.4",
     "twine>=5.0",
-]
-all = [
-    "pycatdap[plot,dev]",
+    "build",
+    "pandas-stubs",
+    "vulture",
+    "pre-commit>=4.0",
 ]
 
 [project.urls]
@@ -49,12 +52,22 @@ Homepage = "https://github.com/nbx-liz/pycatdap"
 Repository = "https://github.com/nbx-liz/pycatdap"
 Issues = "https://github.com/nbx-liz/pycatdap/issues"
 
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/pycatdap/_version.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/pycatdap"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short --cov=src/pycatdap --cov-report=term-missing"
+addopts = "-v --tb=short --cov=pycatdap --cov-report=term-missing"
 
 [tool.ruff]
 target-version = "py310"

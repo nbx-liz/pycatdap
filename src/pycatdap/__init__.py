@@ -5,11 +5,17 @@ Originally developed by Sakamoto & Katsura (1980) at the Institute of Statistica
 Mathematics, Japan.
 
 Main functions:
-    catdap1 -- Pairwise AIC evaluation of categorical variable associations
+    catdap1 -- Pairwise AIC evaluation of categorical variable
+               associations
     catdap2 -- Optimal explanatory variable subset search
-              with continuous variable binning
+               with continuous variable binning
 """
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+from pycatdap._version import (
+    __version__,
+    __version_tuple__,
+)
+
+__all__ = ["__version__", "__version_tuple__"]
