@@ -44,7 +44,9 @@ all = [
 ]
 
 [project.urls]
+Homepage = "https://github.com/nbx-liz/pycatdap"
 Repository = "https://github.com/nbx-liz/pycatdap"
+Issues = "https://github.com/nbx-liz/pycatdap/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pycatdap"]
