@@ -38,6 +38,7 @@ dev = [
     "pytest-cov>=5.0",
     "mypy>=1.10",
     "ruff>=0.4",
+    "twine>=5.0",
 ]
 all = [
     "pycatdap[plot,dev]",
