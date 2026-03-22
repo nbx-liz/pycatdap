@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
-from pycatdap._aic import compute_base_aic
+from pycatdap._aic import compute_base_aic, compute_delta_aic
 from pycatdap._contingency import build_crosstab
 from pycatdap._pooling import PoolingResult, optimal_binning
 from pycatdap._subset_search import SubsetResult, search_best_subset
@@ -194,8 +194,6 @@ def catdap2(
 
     for col in expl_cols:
         cross, me, mf, n = build_crosstab(prepared, response_name, col)
-        from pycatdap._aic import compute_delta_aic
-
         delta = compute_delta_aic(cross, me, mf, n)
         aic_records.append({"variable": col, "aic": delta})
 
