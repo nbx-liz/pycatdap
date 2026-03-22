@@ -166,6 +166,9 @@ def equal_pooling(
     PoolingResult
     """
     values = np.asarray(values, dtype=np.float64)
+    if len(values) == 0:
+        return PoolingResult(codes=np.array([], dtype=np.intp), boundaries=[])
+
     resp_codes, _ = _encode_response(np.asarray(response))
 
     bin_codes, edges = _initial_bins(values, accuracy)
@@ -247,6 +250,9 @@ def unequal_pooling(
     PoolingResult
     """
     values = np.asarray(values, dtype=np.float64)
+    if len(values) == 0:
+        return PoolingResult(codes=np.array([], dtype=np.intp), boundaries=[])
+
     resp_codes, _ = _encode_response(np.asarray(response))
 
     bin_codes, edges = _initial_bins(values, accuracy)

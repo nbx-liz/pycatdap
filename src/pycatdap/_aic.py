@@ -51,6 +51,10 @@ except ImportError:  # pragma: no cover – scipy optional
         """
         x = np.asarray(x, dtype=np.float64)
         y = np.asarray(y, dtype=np.float64)
+        # Guard: negative y with non-zero x indicates a bug upstream
+        if np.any((y < 0) & (x != 0)):
+            msg = "negative y with non-zero x: frequencies must be non-negative"
+            raise ValueError(msg)
         return np.where(x == 0, 0.0, x * np.log(np.where(y > 0, y, 1.0)))
 
 
@@ -88,6 +92,13 @@ def compute_aic_twoway(
 
     c_e: int = cross_freq.shape[0]
     c_f: int = cross_freq.shape[1]
+
+    if marginal_f.shape[0] != c_f:
+        msg = (
+            f"marginal_f length ({marginal_f.shape[0]}) must equal "
+            f"cross_freq columns ({c_f})"
+        )
+        raise ValueError(msg)
 
     # n_EF(i,j) / n_F(j) — broadcast marginal_f across rows
     ratio = np.where(marginal_f > 0, cross_freq / marginal_f, 0.0)

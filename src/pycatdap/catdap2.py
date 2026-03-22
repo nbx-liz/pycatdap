@@ -83,6 +83,12 @@ def _validate_catdap2_input(
         )
         raise ValueError(msg)
 
+    valid_pool_values = {0, 1, 2}
+    invalid = [v for v in pool if v not in valid_pool_values]
+    if invalid:
+        msg = f"pool values must be 0, 1, or 2; got {invalid}"
+        raise ValueError(msg)
+
 
 def _prepare_data(
     data: pd.DataFrame,
@@ -113,9 +119,10 @@ def _prepare_data(
             # Already categorical — no pooling
             continue
 
-        # Continuous variable — apply pooling
-        values = data[col].to_numpy(dtype=np.float64)
-        response_vals = data[response_name].to_numpy()
+        # Continuous variable — apply pooling (drop NaN rows for consistency)
+        valid_mask = ~(pd.isna(data[col]) | pd.isna(data[response_name]))
+        values = data.loc[valid_mask, col].to_numpy(dtype=np.float64)
+        response_vals = data.loc[valid_mask, response_name].to_numpy()
 
         acc = accuracy[i] if accuracy is not None else None
         method = "top_down" if pool_val == 0 else "bottom_up"
@@ -124,7 +131,10 @@ def _prepare_data(
             values, response_vals, method=method, accuracy=acc
         )
         intervals[col] = result.boundaries
-        prepared[col] = result.codes
+        # Write codes back for valid rows; NaN rows stay NaN for dropna
+        codes_series = pd.array([pd.NA] * len(data), dtype=pd.Int64Dtype())
+        codes_series[valid_mask.to_numpy()] = result.codes
+        prepared[col] = codes_series
 
     return prepared, intervals
 
