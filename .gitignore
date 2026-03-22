@@ -32,6 +32,7 @@ Thumbs.db
 src/pycatdap/_version.py
 
 # AI
+.ai_settings/
 .agent/
 .agents/
 .claude/
