@@ -17,5 +17,14 @@ from pycatdap._version import (
     __version__,
     __version_tuple__,
 )
+from pycatdap.catdap1 import Catdap1Result, catdap1
+from pycatdap.catdap2 import Catdap2Result, catdap2
 
-__all__ = ["__version__", "__version_tuple__"]
+__all__ = [
+    "__version__",
+    "__version_tuple__",
+    "Catdap1Result",
+    "Catdap2Result",
+    "catdap1",
+    "catdap2",
+]

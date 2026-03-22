@@ -1649,6 +1649,7 @@ plot = [
 [package.dev-dependencies]
 dev = [
     { name = "build" },
+    { name = "matplotlib" },
     { name = "mypy" },
     { name = "pandas-stubs", version = "2.3.3.260113", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "pandas-stubs", version = "3.0.0.260204", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
@@ -1671,6 +1672,7 @@ provides-extras = ["plot"]
 [package.metadata.requires-dev]
 dev = [
     { name = "build" },
+    { name = "matplotlib", specifier = ">=3.7" },
     { name = "mypy", specifier = ">=1.10" },
     { name = "pandas-stubs" },
     { name = "pre-commit", specifier = ">=4.0" },
