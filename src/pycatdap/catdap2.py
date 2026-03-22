@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from pycatdap._aic import compute_base_aic, compute_delta_aic
@@ -191,7 +192,7 @@ def catdap2(
 
     # Compute base AIC
     resp_col = prepared[response_name]
-    marg_e = resp_col.value_counts().to_numpy(dtype=np.float64)
+    marg_e: npt.NDArray[np.float64] = resp_col.value_counts().to_numpy(dtype=np.float64)
     n_total = len(resp_col)
     base_aic = compute_base_aic(marg_e, n_total)
 

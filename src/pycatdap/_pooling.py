@@ -78,7 +78,9 @@ def _initial_bins(
         return np.zeros(len(values), dtype=np.intp), np.array([vmin, vmax + accuracy])
 
     n_bins = max(1, int(np.ceil((vmax - vmin) / accuracy)))
-    edges = np.linspace(vmin, vmax + accuracy * 0.01, n_bins + 1)
+    edges: npt.NDArray[np.float64] = np.linspace(
+        vmin, vmax + accuracy * 0.01, n_bins + 1
+    ).astype(np.float64)
     # np.digitize returns 1-based indices; subtract 1, clip to valid range
     codes = np.clip(np.digitize(values, edges[1:-1]), 0, n_bins - 1).astype(np.intp)
     return codes, edges

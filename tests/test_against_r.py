@@ -12,6 +12,7 @@ excluded from develop-branch CI by default.
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from pycatdap.catdap1 import catdap1
@@ -59,14 +60,19 @@ class TestHealthDataCatdap1:
         assert "cholesterol" in order[:3]
 
     def test_symmetry_not_equal(self) -> None:
-        """ΔAIC(symptoms→ecg) != ΔAIC(ecg→symptoms) in general."""
-        df = load_health_data()
+        """ΔAIC is asymmetric when C_E != C_F."""
+        # 2x2 tables are symmetric by construction; use different category counts
+        df = pd.DataFrame(
+            {
+                "A": ["x", "x", "y", "y", "y"] * 20,
+                "B": ["p", "q", "r", "p", "q"] * 20,
+            }
+        )
         result = catdap1(df)
-
-        aic_s_e = result.aic.loc["symptoms", "ecg"]
-        aic_e_s = result.aic.loc["ecg", "symptoms"]
-        # They should be different (asymmetric measure)
-        assert aic_s_e != aic_e_s
+        aic_ab = result.aic.loc["A", "B"]
+        aic_ba = result.aic.loc["B", "A"]
+        # C_A=2, C_B=3 → asymmetric penalty → different ΔAIC
+        assert aic_ab != aic_ba
 
 
 # ---------------------------------------------------------------------------
