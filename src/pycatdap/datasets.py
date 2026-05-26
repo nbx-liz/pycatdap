@@ -61,6 +61,91 @@ def load_health_data() -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def load_titanic() -> pd.DataFrame:
+    """Load the Titanic dataset (2201 observations, 4 categorical variables).
+
+    Long-form expansion of R ``datasets::Titanic`` (4-way contingency table
+    of Class × Sex × Age × Survived). Each cell of the original table is
+    expanded to its frequency in row-level form.
+
+    Variables
+    ---------
+    Class : str ('1st', '2nd', '3rd', 'Crew')
+        Passenger or crew class.
+    Sex : str ('Male', 'Female')
+        Passenger sex.
+    Age : str ('Adult', 'Child')
+        Passenger age category.
+    Survived : str ('Yes', 'No')
+        Whether the passenger survived.
+
+    Returns
+    -------
+    DataFrame
+        2201 rows, 4 columns. All columns are categorical strings.
+
+    References
+    ----------
+    R Core Team (R `datasets::Titanic`): contingency table of survival on
+    the Titanic. Public domain.
+
+    Examples
+    --------
+    >>> from pycatdap.datasets import load_titanic
+    >>> df = load_titanic()
+    >>> df.shape
+    (2201, 4)
+    >>> int(df["Survived"].value_counts()["Yes"])
+    711
+    """
+    path = _data_path("titanic.csv")
+    return pd.read_csv(path)
+
+
+def load_iris() -> pd.DataFrame:
+    """Load Fisher's iris dataset (150 observations, 5 variables).
+
+    Classic dataset with three iris species and four continuous
+    morphological measurements. Useful for demonstrating CATDAP-02 with
+    continuous variable pooling.
+
+    Variables
+    ---------
+    Sepal.Length : float
+        Sepal length in cm.
+    Sepal.Width : float
+        Sepal width in cm.
+    Petal.Length : float
+        Petal length in cm.
+    Petal.Width : float
+        Petal width in cm.
+    Species : str ('setosa', 'versicolor', 'virginica')
+        Iris species (response variable).
+
+    Returns
+    -------
+    DataFrame
+        150 rows, 5 columns. Continuous variables for the 4 features
+        and a categorical Species column.
+
+    References
+    ----------
+    Fisher, R. A. (1936). The use of multiple measurements in taxonomic
+    problems. Public domain.
+
+    Examples
+    --------
+    >>> from pycatdap.datasets import load_iris
+    >>> df = load_iris()
+    >>> df.shape
+    (150, 5)
+    >>> sorted(df["Species"].unique().tolist())
+    ['setosa', 'versicolor', 'virginica']
+    """
+    path = _data_path("iris.csv")
+    return pd.read_csv(path)
+
+
 def load_hello_goodbye() -> pd.DataFrame:
     """Load the HelloGoodbye dataset (13954 observations, 56 binary variables).
 
