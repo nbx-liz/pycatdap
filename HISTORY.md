@@ -727,3 +727,186 @@ docs/r_reference/
 - Folktables (Adult replacement): <https://github.com/socialfoundations/folktables>
 
 ---
+
+## 2026-05-27: 目的変数 × 説明変数 ペア分析 API(`target_summary` / `plot_target`)
+
+- ID: `H-0004`
+- Status: `proposed`
+- Scope: `API | scope`
+- Related: `H-0001 Phase B`, `BLUEPRINT.md §3, §5.7`, Issue #13
+
+### Context
+
+v0.3.0 で出荷した EDA API は **単変量**(`describe`, `plot_variable`, `plot_missing`)に閉じている。一方、チュートリアル(02/05)を実装した過程で次の欠落が判明した:
+
+- **目的変数と各説明変数の関係を「1コール」で要約・可視化する手段がない**
+- 既存の `plot.mosaic_plot(table)` / `plot.barplot_twoway(table)` は2変数を扱えるが、**呼び出し側で `pd.crosstab` 等を組み立てる必要があり、利用障壁が高い**
+- `Catdap1Result.tway_tables` / `Catdap2Result.tway_tables` に2-way テーブル自体は格納されているが、**目的変数を軸にした「縦割り」の解釈ビューが提供されていない**
+
+`H-0001 Phase B`(Issue #13)に `plot_pair(df, x, y)` 等の双方向 API が提案されているが、これは **対称**(x と y が交換可能)な設計であり、ユーザーが期待する「**目的変数を中心に各説明変数を見る**」エルゴノミクスとは噛み合わない。本 Proposal は Phase B を **目的変数指向に絞った最小 API** として段階的に細分化する。
+
+### 競合分析(対象パッケージ)
+
+| Package | 該当機能 | 提供されている形 | pycatdap での参考点 |
+|---|---|---|---|
+| **R `gmodels::CrossTable()`** | 集計表 | counts + row% + col% + total% + Chi² 寄与 セル毎 | 「**1関数で多視点の集計表**」 |
+| **R `vcd::mosaic(formula, shade=TRUE)` / `vcd::assoc()`** | 図 | モザイク + Pearson 標準化残差で色付け | 「**残差ベースの色付けで関連の方向を可視化**」 |
+| **R `descr::CrossTable()`** | 集計表 | gmodels 互換だが出力整形が異なる | 同上 |
+| **sweetviz `sv.analyze(df, target_feat='Survived')`** | ターゲット指向の EDA | 列ごとに「数値列: 分布 + 相関」「カテゴリ列: ターゲット率 per level」のパネル | 「**target_feat という明示的キーワードでターゲット中心の API を構築**」 |
+| **ydata-profiling** | 双方向 | Interactions(散布図)+ Correlations(phi_k 行列) | target awareness は弱い・参考度低 |
+| **seaborn** | プリミティブ | `catplot(kind='bar'\|'violin'\|'box')`, `histplot(hue=target)` | 「**hue=target という1引数で target 軸を導入**」 |
+| **plotly express** | プリミティブ | `px.histogram(df, x=feature, color=target)`, `px.box(df, x=target, y=feature)` | 同上 |
+
+**学び**:
+- 「**目的変数を明示するキーワード**」(`target_feat` / `hue` / `color` / `response`)で API を分岐させるのが業界標準
+- 集計表は「counts + 行/列/全体 比率 + 統計量」を **同一オブジェクト** で持たせる(gmodels)
+- 図はカテゴリ×カテゴリで **mosaic + Pearson 残差**(vcd)、カテゴリ×連続で **箱ひげ/バイオリン**(seaborn)が定石
+
+### Proposal
+
+#### 公開 API(新規 2 関数)
+
+```python
+# 1. 集計表(target × explanatory のクロス表 + 比率 + ΔAIC)
+pycatdap.target_summary(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    bins: int | list[float] | None = None,   # 連続 explanatory の binning 制御
+) -> TargetSummary
+```
+
+返り値 `TargetSummary` は frozen dataclass:
+
+| 属性 | 型 | 内容 |
+|---|---|---|
+| `target` | `str` | 目的変数列名 |
+| `explanatory` | `str` | 説明変数列名 |
+| `counts` | `pd.DataFrame` | クロス頻度(rows=target, cols=explanatory) |
+| `row_prop` | `pd.DataFrame` | 行方向比率(target カテゴリ内の説明変数分布) |
+| `col_prop` | `pd.DataFrame` | 列方向比率(説明変数カテゴリ内の target 率) |
+| `expected` | `pd.DataFrame` | 独立を仮定した期待頻度 |
+| `pearson_residuals` | `pd.DataFrame` | `(observed - expected) / sqrt(expected)` |
+| `delta_aic` | `float` | ΔAIC(`catdap1` と同一の計算) |
+| `intervals` | `list[float] \| None` | 連続変数の binning 境界(該当時のみ) |
+
+メソッド(既存 `DescribeResult` / `Catdap1Result` に揃える):
+- `.show()` — Jupyter inline 表示
+- `.to_html(path=None) -> str` — スタンドアロン HTML(複数視点の表を縦に積む)
+- `.to_dict() -> dict` — JSON シリアライズ可能
+- `.to_plotly_json() -> dict` — Plotly Table Figure spec
+
+```python
+# 2. 可視化(target × explanatory)
+pycatdap.plot_target(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    kind: Literal["auto", "stacked", "mosaic", "grouped_bar", "box", "violin", "hist"] = "auto",
+    bins: int | list[float] | None = None,
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    ax: Any = None,
+    **kwargs: Any,
+) -> Any
+```
+
+**`kind="auto"` の自動判定ルール**(`pycatdap.eda._detect_kind` を流用):
+
+| target | explanatory | 自動選択 | 根拠 |
+|---|---|---|---|
+| categorical(任意) | categorical(≤ 8 levels) | `stacked`(target カテゴリ内の説明変数分布、Pearson 残差で色) | vcd `assoc()` 風、解釈容易 |
+| categorical | categorical(> 8 levels) | `mosaic` | スペース効率 |
+| categorical | continuous | `violin`(matplotlib)/ `box`(plotly fallback) | target 群間の分布比較、seaborn 定石 |
+| boolean | continuous | `hist`(target 値で hue 分け) | 二値分類の標準ビュー |
+| continuous | * | `auto` で `ValueError`、明示的 `kind` を要求 | v0.4.0 のスコープ外 |
+
+`kind="stacked"` / `"mosaic"` は**Pearson 標準化残差で色付け**(vcd 風)— 残差 > +2 を強い正の関連、< -2 を強い負の関連として配色。これは `target_summary().pearson_residuals` を内部で使用。
+
+#### 既存 API との関係
+
+- 既存 `pycatdap.plot.mosaic_plot(table)` / `barplot_twoway(table)` は **低レベル API**(pd.DataFrame テーブルを直接受け取る)として残す。新規 `plot_target` は内部でこれらに委譲する。
+- Issue #13 の `plot_pair(df, x, y)` はこの Proposal を受けて **`plot_target` の別名 / 対称ラッパー**として再定義する案を別 Proposal(将来)に回す。
+
+#### 連続変数の binning
+
+- `bins=None`(default): 連続 explanatory には `pycatdap._pooling.optimal_binning` を呼び、AIC 最適 binning を採用(`pool=0` 相当)
+- `bins=int`: 等幅 K-bin(`pd.cut`)
+- `bins=list[float]`: 明示的境界
+
+`TargetSummary.intervals` で実際に使われた境界を返す。
+
+### Impact
+
+- **公開 API の追加のみ**(2 関数 + 1 dataclass)
+- 既存 API への破壊的変更なし
+- 新規モジュール: `src/pycatdap/_target_pair.py`(実装)+ `src/pycatdap/__init__.py` への再 export
+- `BLUEPRINT.md §3`(モジュール構成)と `§5.7`(plotting テーブル)を改訂
+- 任意依存の追加なし(matplotlib / plotly は既存 extras で十分)
+
+### Compatibility
+
+- **後方互換**: 完全
+- 既存の `Catdap1Result.tway_tables` / `Catdap2Result.tway_tables` は **アクセサがそのまま動く**。`TargetSummary` は新規型なのでアクセサが衝突しない。
+
+### Alternatives Considered
+
+#### A1: 既存 `plot_pair(df, x, y)`(Issue #13)を対称 API として実装し、target 軸はユーザーが慣習で先頭に置く
+- **不採用理由**: 「どちらが target か」が型シグネチャから読み取れない。Pearson 残差の正負解釈や `kind="auto"` の dtype 判定で曖昧性が残る。sweetviz / `vcd::mosaic(formula)` も target を明示する設計。
+
+#### A2: target を Catdap1Result / Catdap2Result に紐づけ、`result.plot(var)` 形式とする
+- **不採用理由**: catdap を実行せずに 2 変数の関係だけ見たいユースケース(EDA 初手)で使えない。`DescribeResult` のように分析実行に紐付かない独立 API である方が用途が広い。
+
+#### A3: keyword 名を `response` に統一(`response` は既存 `catdap1` / `catdap2` の vocabulary)
+- **採用検討**: 一貫性は高い。**ただし** sweetviz / sklearn / seaborn / plotly は全て `target`(または `hue` / `color`)を使っており、新規ユーザーの参照点としては `target` の方が広く認知される。**本 Proposal では `target` を採用するが、別途 v1.0 で `response` ↔ `target` の整理を行う**(別 Proposal)。
+
+#### A4: 集計表と図を1つの関数 `pycatdap.target_pair(df, target, explanatory)` に統合し、戻り値で両方持つ
+- **不採用理由**: pandas 1.x スタイル(計算と描画を分離する `DescribeResult.show()` 風)に揃える方が `.to_html()` / `.to_plotly_json()` のテストが書きやすい。
+
+#### A5: 多目的変数を同時にサポート(`target=[c1, c2]`)
+- **不採用理由**: スコープ拡大。`target_summary` を for ループで呼べば代替可能。将来 `target_summary_grid` を別 Proposal で検討。
+
+### Acceptance Criteria
+
+#### API
+- [ ] `pycatdap.target_summary(df, target, explanatory)` が `TargetSummary` を返す
+- [ ] `TargetSummary` に `.show / .to_html / .to_dict / .to_plotly_json` の4メソッド
+- [ ] `pycatdap.plot_target(df, target, explanatory, kind="auto", backend=...)` が matplotlib / plotly 両 backend で動作
+- [ ] `kind="auto"` が上記表の dtype 組合せで正しい kind を選択
+
+#### 数値整合
+- [ ] `TargetSummary.delta_aic` が `catdap1(df[[target, explanatory]], response_names=[target]).aic.loc[target, explanatory]` と一致
+- [ ] `pearson_residuals` の絶対値が 2 を超える場合の符号と大きさが `scipy.stats.chi2_contingency` の結果と一致(参考実装比較)
+- [ ] 連続 explanatory の `bins=None` 時、`intervals` が `catdap2(pool=[0])` の `intervals[explanatory]` と一致
+
+#### コード品質
+- [ ] `tests/test_target_pair.py` に unit テスト 12 個以上(各 kind / 各 dtype 組合せ + エラーパス)
+- [ ] coverage 80%+ 維持
+- [ ] `mypy --strict` pass(現存する `eda.py` の `display` 未型付き呼び出しは別 Issue で対応)
+- [ ] docstring(NumPy style)に `Examples` セクション付き
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3` のモジュール構成図に `_target_pair.py` を追記
+- [ ] `BLUEPRINT.md §5.7` の plotting 関数一覧に `plot_target` / `target_summary` を追記
+- [ ] `docs/reference/plotting.md` に新規関数を追加
+- [ ] 既存の 02 / 05 チュートリアルに `target_summary` / `plot_target` を使う節を追加(別 PR)
+
+### Decision
+
+- Date: `pending`
+- Result: `pending`
+- Notes: プロジェクトオーナーレビュー待ち
+
+### Migration
+
+破壊的変更なし。新規 API のため移行不要。CHANGELOG `[Unreleased]` の `Added` に2関数 + 1 dataclass を記載する。
+
+### Related References
+
+- R `vcd` package(Friendly, M.): <https://cran.r-project.org/package=vcd>
+- R `gmodels::CrossTable`: <https://cran.r-project.org/package=gmodels>
+- sweetviz: <https://github.com/fbdesignpro/sweetviz>
+- seaborn `catplot` / `histplot(hue=...)`: <https://seaborn.pydata.org/>
+- plotly express: <https://plotly.com/python/plotly-express/>
+- Pearson standardized residuals(Agresti, 2002, *Categorical Data Analysis*)
