@@ -731,7 +731,7 @@ docs/r_reference/
 ## 2026-05-27: 目的変数 × 説明変数 ペア分析 API(`target_summary` / `plot_target`)
 
 - ID: `H-0004`
-- Status: `proposed`
+- Status: `accepted`
 - Scope: `API | scope`
 - Related: `H-0001 Phase B`, `BLUEPRINT.md §3, §5.7`, Issue #13
 
@@ -894,9 +894,9 @@ pycatdap.plot_target(
 
 ### Decision
 
-- Date: `pending`
-- Result: `pending`
-- Notes: プロジェクトオーナーレビュー待ち
+- Date: `2026-05-27`
+- Result: `accepted`
+- Notes: プロジェクトオーナー承認(PR #53)。実装は PR kappa で `src/pycatdap/_target_pair.py` + `plot/{matplotlib,plotly}.py` に追加、tests/test_target_pair.py(31 テスト全 pass、coverage 87%)で検証済み。
 
 ### Migration
 

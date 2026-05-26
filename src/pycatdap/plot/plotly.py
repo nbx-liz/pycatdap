@@ -324,6 +324,113 @@ def plot_variable(
     return fig
 
 
+def plot_target(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    kind: str = "auto",
+    bins: int | list[float] | None = None,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Plot a target × explanatory relationship (Plotly backend).
+
+    Auto-dispatch mirrors the matplotlib backend; see
+    :func:`pycatdap.plot.plot_target` for the dispatch table.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    target : str
+        Target (response) column. Must be categorical.
+    explanatory : str
+        Explanatory column. May be categorical or continuous.
+    kind : {'auto', 'stacked', 'mosaic', 'violin', 'box', 'hist'}
+        Plot kind. ``'auto'`` dispatches by dtype.
+    bins : int, sequence of float, or None
+        Binning for continuous explanatory.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    go = _import_plotly()
+
+    from pycatdap._target_pair import target_summary
+    from pycatdap.eda import _detect_kind
+
+    if target not in df.columns:
+        msg = f"plot_target: target column not found: {target!r}"
+        raise KeyError(msg)
+    if explanatory not in df.columns:
+        msg = f"plot_target: explanatory column not found: {explanatory!r}"
+        raise KeyError(msg)
+
+    target_kind = _detect_kind(df[target])
+    if target_kind == "continuous":
+        msg = (
+            f"plot_target: target {target!r} is continuous; "
+            f"a categorical or boolean target is required."
+        )
+        raise ValueError(msg)
+
+    expl_kind = _detect_kind(df[explanatory])
+    valid = {"auto", "stacked", "mosaic", "violin", "box", "hist", "grouped_bar"}
+    if kind not in valid:
+        msg = f"plot_target: kind must be one of {sorted(valid)}; got {kind!r}"
+        raise ValueError(msg)
+
+    if kind == "auto":
+        if expl_kind in {"categorical", "boolean"}:
+            resolved = "stacked"
+        elif expl_kind == "continuous":
+            resolved = "box"  # Plotly default: box plot for cat × continuous
+        else:
+            msg = (
+                f"plot_target: cannot auto-dispatch for "
+                f"target_kind={target_kind!r}, explanatory_kind={expl_kind!r}; "
+                f"pass an explicit kind."
+            )
+            raise ValueError(msg)
+    else:
+        resolved = kind
+
+    if resolved in {"stacked", "mosaic"}:
+        summary = target_summary(df, target=target, explanatory=explanatory, bins=bins)
+        if resolved == "stacked":
+            fig = barplot_twoway(summary.counts)
+        else:
+            fig = mosaic_plot(summary.counts)
+        fig.update_layout(title=f"{target} × {explanatory}")
+        return fig
+
+    work = df[[target, explanatory]].dropna()
+    groups = sorted(work[target].astype(str).unique().tolist())
+
+    fig = go.Figure()
+    for g in groups:
+        arr = work.loc[work[target].astype(str) == g, explanatory].to_numpy(dtype=float)
+        if resolved == "violin":
+            fig.add_trace(go.Violin(y=arr, name=str(g), box_visible=True))
+        elif resolved == "box":
+            fig.add_trace(go.Box(y=arr, name=str(g)))
+        elif resolved == "hist":
+            fig.add_trace(go.Histogram(x=arr, name=str(g), opacity=0.5))
+        else:
+            msg = f"plot_target: unsupported kind {resolved!r}"
+            raise ValueError(msg)
+
+    if resolved == "hist":
+        fig.update_layout(barmode="overlay", xaxis={"title": str(explanatory)})
+    else:
+        fig.update_layout(
+            xaxis={"title": str(target)}, yaxis={"title": str(explanatory)}
+        )
+    fig.update_layout(title=f"{explanatory} by {target}")
+    return fig
+
+
 def plot_missing(
     df: pd.DataFrame,
     **kwargs: Any,  # noqa: ARG001

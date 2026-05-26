@@ -274,6 +274,137 @@ def plot_variable(
     return ax
 
 
+def plot_target(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    kind: str = "auto",
+    bins: int | list[float] | None = None,
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Plot a target × explanatory relationship.
+
+    Auto-dispatch by dtype combination (when ``kind='auto'``):
+
+    - categorical target × categorical explanatory (≤ 8 levels) -> stacked bar
+    - categorical target × categorical explanatory (> 8 levels) -> mosaic
+    - categorical target × continuous explanatory -> grouped violin
+    - boolean target × continuous explanatory -> overlaid histograms
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    target : str
+        Target (response) column. Must be categorical.
+    explanatory : str
+        Explanatory column. May be categorical or continuous.
+    kind : {'auto', 'stacked', 'mosaic', 'violin', 'box', 'hist'}
+        Plot kind. ``'auto'`` dispatches by dtype.
+    bins : int, sequence of float, or None
+        Binning for continuous explanatory (passed to
+        :func:`pycatdap.target_summary` when relevant).
+    ax : Axes or None
+        Matplotlib axes; created if ``None``.
+    **kwargs
+        Forwarded to the underlying matplotlib call.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+
+    from pycatdap._target_pair import target_summary
+    from pycatdap.eda import _detect_kind
+
+    if target not in df.columns:
+        msg = f"plot_target: target column not found: {target!r}"
+        raise KeyError(msg)
+    if explanatory not in df.columns:
+        msg = f"plot_target: explanatory column not found: {explanatory!r}"
+        raise KeyError(msg)
+
+    target_kind = _detect_kind(df[target])
+    if target_kind == "continuous":
+        msg = (
+            f"plot_target: target {target!r} is continuous; "
+            f"a categorical or boolean target is required."
+        )
+        raise ValueError(msg)
+
+    expl_kind = _detect_kind(df[explanatory])
+    resolved = _resolve_target_kind(kind, target_kind, expl_kind)
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    if resolved in {"stacked", "mosaic"}:
+        summary = target_summary(df, target=target, explanatory=explanatory, bins=bins)
+        if resolved == "stacked":
+            barplot_twoway(summary.counts, ax=ax, **kwargs)
+            ax.set_title(f"{target} × {explanatory}")
+        else:
+            mosaic_plot(summary.counts, ax=ax, **kwargs)
+            ax.set_title(f"Mosaic: {target} × {explanatory}")
+        return ax
+
+    # Categorical/boolean target × continuous explanatory
+    work = df[[target, explanatory]].dropna()
+    groups: list[Any] = sorted(work[target].astype(str).unique().tolist())
+    data = [
+        work.loc[work[target].astype(str) == g, explanatory].to_numpy(dtype=float)
+        for g in groups
+    ]
+
+    if resolved == "violin":
+        ax.violinplot(data, showmeans=True, showmedians=False)
+        ax.set_xticks(range(1, len(groups) + 1))
+        ax.set_xticklabels(groups)
+        ax.set_xlabel(str(target))
+        ax.set_ylabel(str(explanatory))
+        ax.set_title(f"{explanatory} by {target}")
+    elif resolved == "box":
+        ax.boxplot(data, tick_labels=groups)
+        ax.set_xlabel(str(target))
+        ax.set_ylabel(str(explanatory))
+        ax.set_title(f"{explanatory} by {target}")
+    elif resolved == "hist":
+        for label, arr in zip(groups, data, strict=True):
+            ax.hist(arr, bins=20, alpha=0.5, label=str(label))
+        ax.set_xlabel(str(explanatory))
+        ax.set_ylabel("Frequency")
+        ax.legend(title=str(target))
+        ax.set_title(f"{explanatory} by {target}")
+    else:
+        msg = f"plot_target: unsupported kind {resolved!r}"
+        raise ValueError(msg)
+
+    return ax
+
+
+def _resolve_target_kind(kind: str, target_kind: str, expl_kind: str) -> str:
+    """Map kind='auto' to a concrete kind based on the dtype combination."""
+    valid = {"auto", "stacked", "mosaic", "violin", "box", "hist", "grouped_bar"}
+    if kind not in valid:
+        msg = f"plot_target: kind must be one of {sorted(valid)}; got {kind!r}"
+        raise ValueError(msg)
+    if kind != "auto":
+        return kind
+    if expl_kind in {"categorical", "boolean"}:
+        return "stacked"
+    if expl_kind == "continuous":
+        return "violin"
+    msg = (
+        f"plot_target: cannot auto-dispatch for target_kind={target_kind!r}, "
+        f"explanatory_kind={expl_kind!r}; pass an explicit kind."
+    )
+    raise ValueError(msg)
+
+
 def plot_missing(
     df: pd.DataFrame,
     ax: Axes | None = None,

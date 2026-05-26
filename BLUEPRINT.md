@@ -561,7 +561,11 @@ def aic_comparison_plot(result, response=None, ax=None, **kwargs): ...
 pycatdap.plot_variable(df, col, backend="matplotlib"|"plotly")
 pycatdap.plot_missing(df, backend="matplotlib"|"plotly")
 
-# 二変量
+# 目的変数 × 説明変数ペア（H-0004、v0.3+）
+pycatdap.target_summary(df, target, explanatory, bins=None) -> TargetSummary
+pycatdap.plot_target(df, target, explanatory, kind="auto", bins=None, backend=...)
+
+# 二変量（H-0001 Phase B、v0.4.0 計画）
 pycatdap.plot_pair(df, x, y, backend=...)            # 自動的にモザイク/箱ひげ/散布
 pycatdap.aic_heatmap(catdap1_result, backend=...)    # m×m ΔAIC ヒートマップ
 pycatdap.association_matrix(df, measure="aic", backend=...)

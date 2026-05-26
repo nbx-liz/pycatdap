@@ -168,6 +168,55 @@ def plot_variable(
     return _get_backend_module(backend).plot_variable(df, col, kind=kind, **kwargs)
 
 
+def plot_target(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    kind: str = "auto",
+    bins: int | list[float] | None = None,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Plot a target × explanatory relationship (H-0004).
+
+    Auto-dispatch (``kind='auto'``):
+
+    - categorical target × categorical explanatory -> stacked bar / mosaic
+    - categorical/boolean target × continuous explanatory -> violin (mpl) / box (plotly)
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    target : str
+        Target (response) column. Must be categorical.
+    explanatory : str
+        Explanatory column. May be categorical or continuous.
+    kind : {'auto', 'stacked', 'mosaic', 'violin', 'box', 'hist'}
+        Plot kind. ``'auto'`` dispatches by dtype.
+    bins : int, sequence of float, or None
+        Binning for continuous explanatory.
+    backend : {'matplotlib', 'plotly'}
+        Plotting backend.
+    **kwargs
+        Forwarded to the chosen backend.
+
+    Returns
+    -------
+    object
+        Backend-specific figure/axes object.
+
+    See Also
+    --------
+    pycatdap.target_summary : underlying cross-tabulation with proportions
+        and Pearson residuals.
+    """
+    return _get_backend_module(backend).plot_target(
+        df, target=target, explanatory=explanatory, kind=kind, bins=bins, **kwargs
+    )
+
+
 def plot_missing(
     df: pd.DataFrame,
     *,
@@ -199,5 +248,6 @@ __all__ = [
     "barplot_twoway",
     "mosaic_plot",
     "plot_missing",
+    "plot_target",
     "plot_variable",
 ]

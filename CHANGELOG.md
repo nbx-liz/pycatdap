@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- 目的変数 × 説明変数ペア分析 API（H-0004）:
+  - `pycatdap.target_summary(df, target, explanatory, *, bins=None) -> TargetSummary`
+    — counts / row_prop / col_prop / expected / pearson_residuals / delta_aic を保持し、
+    `.show / .to_html / .to_dict / .to_plotly_json` を提供
+  - `pycatdap.plot_target(df, target, explanatory, *, kind="auto", bins=None, backend=...)`
+    — dtype 組合せで stacked / mosaic / violin / box / hist を自動選択（matplotlib/plotly 両対応）
+  - 連続説明変数は `bins=None` で AIC 最適 binning、`bins=int` で等幅、`bins=list` で明示境界
 - チュートリアルノートブック 3 本を追加（Issue #27）:
   - `docs/tutorials/03-iris-pooling.ipynb` — iris での AIC 最適 binning
   - `docs/tutorials/04-hellogoodbye-multivariate.ipynb` — 56 binary 変数での `nvar` 利用例
