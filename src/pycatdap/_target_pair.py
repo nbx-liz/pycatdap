@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from pycatdap._aic import compute_delta_aic
@@ -93,11 +94,11 @@ class TargetSummary:
                 print(f"\n--- {name} ---")
                 print(df)
             return
-        display(f"TargetSummary: {self.target} × {self.explanatory}")  # type: ignore[no-untyped-call]
-        display(f"ΔAIC = {self.delta_aic:.4f}")  # type: ignore[no-untyped-call]
+        display(f"TargetSummary: {self.target} × {self.explanatory}")  # type: ignore[no-untyped-call,unused-ignore]
+        display(f"ΔAIC = {self.delta_aic:.4f}")  # type: ignore[no-untyped-call,unused-ignore]
         for name, df in tables:
-            display(name)  # type: ignore[no-untyped-call]
-            display(df)  # type: ignore[no-untyped-call]
+            display(name)  # type: ignore[no-untyped-call,unused-ignore]
+            display(df)  # type: ignore[no-untyped-call,unused-ignore]
 
     def to_html(self, path: str | Path | None = None) -> str:
         """Render the summary as a standalone HTML string.
@@ -364,7 +365,7 @@ def target_summary(
         where=expected_arr > 0,
     )
 
-    def _wrap(arr: np.ndarray) -> pd.DataFrame:
+    def _wrap(arr: npt.NDArray[np.float64]) -> pd.DataFrame:
         return pd.DataFrame(arr, index=counts.index, columns=counts.columns)
 
     # ΔAIC via the same helper used by catdap1 / catdap2
