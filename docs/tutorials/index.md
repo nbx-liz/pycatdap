@@ -7,6 +7,7 @@ Learning-oriented walkthroughs that guide you from zero to confident usage.
 - **[Basic CATDAP](01-basic-catdap.ipynb)** — The original v0.2 tutorial walkthrough using HealthData
 - **[EDA on Titanic](02-eda-titanic.ipynb)** — v0.3+ univariate EDA APIs (`describe`, `plot_variable`, `plot_missing`) demonstrated on the Titanic dataset
 - **[AIC-optimal binning on iris](03-iris-pooling.ipynb)** — Why CATDAP-02's pooling search beats equal-width binning, with cut points visualized against species histograms
+- **[Multivariate HelloGoodbye](04-hellogoodbye-multivariate.ipynb)** — Scale to 56 binary variables, use `catdap1` to rank candidates and `catdap2(nvar=k)` to keep the subset search tractable
 - **[Real-world EDA on seaborn Titanic](05-real-world-eda.ipynb)** — End-to-end workflow on messy data: missingness inspection, cleanup, mixed-pooling CATDAP-02, and HTML/Plotly export. Requires `pycatdap[tutorial]`.
 
 ## Planned
