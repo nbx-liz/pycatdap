@@ -46,6 +46,47 @@ class Catdap1Result:
         n_vars = len({*self.aic.index.tolist(), *self.aic.columns.tolist()})
         return f"Catdap1Result(responses={n_resp}, variables={n_vars})"
 
+    def to_plotly_json(self) -> dict[str, object]:
+        """Return a Plotly-Figure-compatible JSON spec for this result.
+
+        Produces a horizontal bar chart of ΔAIC values per explanatory
+        variable for the first response in :attr:`aic`. Suitable for
+        direct consumption by ``react-plotly.js`` or any Plotly renderer.
+
+        Returns
+        -------
+        dict
+            Plotly figure spec with ``data`` and ``layout`` keys.
+
+        Notes
+        -----
+        Implements the contract from BLUEPRINT.md §5.7 / DP-4 (LizyStudio
+        integration). Multi-response handling and richer payloads will be
+        added in v0.3+ (Issue #12).
+        """
+        response = str(self.aic.index[0])
+        row = self.aic.loc[response].dropna()
+        variables = [str(v) for v in row.index]
+        values = [float(v) for v in row.to_numpy()]
+        colors = ["#2ca02c" if v < 0 else "#d62728" for v in values]
+        return {
+            "data": [
+                {
+                    "type": "bar",
+                    "orientation": "h",
+                    "x": values,
+                    "y": variables,
+                    "marker": {"color": colors},
+                    "name": "ΔAIC",
+                }
+            ],
+            "layout": {
+                "title": f"AIC Comparison (response: {response})",
+                "xaxis": {"title": "ΔAIC", "zeroline": True},
+                "yaxis": {"title": "Variable", "automargin": True},
+            },
+        }
+
 
 def _validate_input(
     data: pd.DataFrame,

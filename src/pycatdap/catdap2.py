@@ -56,6 +56,45 @@ class Catdap2Result:
             f"variables={n_vars}, subsets={n_subsets})"
         )
 
+    def to_plotly_json(self) -> dict[str, object]:
+        """Return a Plotly-Figure-compatible JSON spec for this result.
+
+        Produces a horizontal bar chart of single-variable ΔAIC values,
+        suitable for direct consumption by ``react-plotly.js`` or any
+        Plotly renderer.
+
+        Returns
+        -------
+        dict
+            Plotly figure spec with ``data`` and ``layout`` keys.
+
+        Notes
+        -----
+        Implements the contract from BLUEPRINT.md §5.7 / DP-4 (LizyStudio
+        integration). The subset-trajectory visualization will be added
+        in v0.3+ (Issue #12 / #20).
+        """
+        variables = [str(v) for v in self.aic["variable"].tolist()]
+        values = [float(v) for v in self.aic["aic"].to_numpy()]
+        colors = ["#2ca02c" if v < 0 else "#d62728" for v in values]
+        return {
+            "data": [
+                {
+                    "type": "bar",
+                    "orientation": "h",
+                    "x": values,
+                    "y": variables,
+                    "marker": {"color": colors},
+                    "name": "ΔAIC",
+                }
+            ],
+            "layout": {
+                "title": f"CATDAP-02 Single-Variable AIC (base={self.base_aic:.2f})",
+                "xaxis": {"title": "ΔAIC", "zeroline": True},
+                "yaxis": {"title": "Variable", "automargin": True},
+            },
+        }
+
 
 def _validate_catdap2_input(
     data: pd.DataFrame,
