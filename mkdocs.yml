@@ -53,6 +53,7 @@ nav:
   - Tutorials:
       - tutorials/index.md
       - Basic CATDAP: tutorials/01-basic-catdap.ipynb
+      - EDA on Titanic: tutorials/02-eda-titanic.ipynb
   - How-to Guides:
       - how-to/index.md
   - API Reference:

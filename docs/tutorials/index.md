@@ -5,6 +5,7 @@ Learning-oriented walkthroughs that guide you from zero to confident usage.
 ## Available
 
 - **[Basic CATDAP](01-basic-catdap.ipynb)** — The original v0.2 tutorial walkthrough using HealthData
+- **[EDA on Titanic](02-eda-titanic.ipynb)** — v0.3+ univariate EDA APIs (`describe`, `plot_variable`, `plot_missing`) demonstrated on the Titanic dataset
 
 ## Planned
 
