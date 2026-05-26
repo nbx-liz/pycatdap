@@ -180,7 +180,9 @@ class DescribeResult:
         )
         html = head + body
         if path is not None:
-            Path(path).write_text(html, encoding="utf-8")
+            from pycatdap._io import atomic_write_text
+
+            atomic_write_text(path, html, encoding="utf-8")
         return html
 
     def to_dict(self) -> dict[str, Any]:

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `DescribeResult.to_html(path)` / `TargetSummary.to_html(path)` を atomic write
+  化（`pycatdap._io.atomic_write_text` 経由）。同時に読み取るプロセス（mkdocs
+  serve の watcher 等）が空ファイルや書き込み途中の状態を観測するリスクを排除
+
 ### Added
 
 - 目的変数 × 説明変数ペア分析 API（H-0004）:
