@@ -32,6 +32,17 @@ dependencies = [
 [project.optional-dependencies]
 plot = [
     "matplotlib>=3.7",
+    "statsmodels>=0.14",
+]
+plotly = [
+    "plotly>=5.20",
+    "jinja2>=3.1",
+]
+all = [
+    "matplotlib>=3.7",
+    "statsmodels>=0.14",
+    "plotly>=5.20",
+    "jinja2>=3.1",
 ]
 
 [dependency-groups]
@@ -93,3 +104,12 @@ python_version = "3.10"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
+
+# Optional dependencies — type stubs not always installed
+[[tool.mypy.overrides]]
+module = [
+    "plotly.*",
+    "statsmodels.*",
+    "IPython.*",
+]
+ignore_missing_imports = true
