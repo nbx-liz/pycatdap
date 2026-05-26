@@ -51,12 +51,14 @@ class TestBackendDispatch:
         with pytest.raises(ValueError, match="Unknown plot backend"):
             plot.mosaic_plot(tway_table, backend="seaborn")  # type: ignore[arg-type]
 
-    def test_plotly_backend_not_implemented(self, tway_table: pd.DataFrame) -> None:
-        # plotly may or may not be installed; check the right error message
-        with pytest.raises((ImportError, NotImplementedError)) as excinfo:
+    def test_plotly_backend_raises_clear_error_without_install(
+        self, tway_table: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When plotly is not installed, ImportError points to the extras."""
+        monkeypatch.setitem(__import__("sys").modules, "plotly", None)
+        monkeypatch.setitem(__import__("sys").modules, "plotly.graph_objects", None)
+        with pytest.raises(ImportError, match="pycatdap\\[plotly\\]"):
             plot.mosaic_plot(tway_table, backend="plotly")
-        msg = str(excinfo.value)
-        assert "plotly" in msg.lower() or "not yet implemented" in msg.lower()
 
 
 class TestBackwardCompatibilityShim:
