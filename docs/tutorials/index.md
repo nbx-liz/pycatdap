@@ -16,7 +16,6 @@ As Phases land on the [roadmap](../project/roadmap.md), additional tutorials wil
 
 | Tutorial | Phase | Status |
 |---|---|---|
-| EDA with Titanic | A/B/C | 🟡 v0.3-v0.5 |
 | Target analysis on Penguins | D | 🟡 v0.6 |
 | Classification error analysis on Titanic predictions | G/H/I | 🟡 v0.7-v0.9 |
 | Regression error analysis on California Housing | J | 🟡 v0.9 |
