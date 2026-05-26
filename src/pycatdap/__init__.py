@@ -13,6 +13,7 @@ Main functions:
 
 from __future__ import annotations
 
+from pycatdap import datasets
 from pycatdap._version import (
     __version__,
     __version_tuple__,
@@ -27,4 +28,5 @@ __all__ = [
     "Catdap2Result",
     "catdap1",
     "catdap2",
+    "datasets",
 ]
