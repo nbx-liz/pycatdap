@@ -137,9 +137,67 @@ def mosaic_plot(
     return _get_backend_module(backend).mosaic_plot(table, **kwargs)
 
 
+def plot_variable(
+    df: pd.DataFrame,
+    col: str,
+    kind: str = "auto",
+    *,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Plot a single variable: histogram for continuous, bar for categorical.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    col : str
+        Column name.
+    kind : {'auto', 'hist', 'bar'}
+        ``'auto'`` (default) infers from dtype.
+    backend : {'matplotlib', 'plotly'}
+        Plotting backend.
+    **kwargs
+        Forwarded to the chosen backend.
+
+    Returns
+    -------
+    object
+        Backend-specific figure/axes object.
+    """
+    return _get_backend_module(backend).plot_variable(df, col, kind=kind, **kwargs)
+
+
+def plot_missing(
+    df: pd.DataFrame,
+    *,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Bar chart of missing-value counts per column.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    backend : {'matplotlib', 'plotly'}
+        Plotting backend.
+    **kwargs
+        Forwarded to the chosen backend.
+
+    Returns
+    -------
+    object
+        Backend-specific figure/axes object.
+    """
+    return _get_backend_module(backend).plot_missing(df, **kwargs)
+
+
 __all__ = [
     "Backend",
     "aic_comparison_plot",
     "barplot_twoway",
     "mosaic_plot",
+    "plot_missing",
+    "plot_variable",
 ]

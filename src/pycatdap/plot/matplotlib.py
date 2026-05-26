@@ -200,3 +200,112 @@ def _draw_simple_mosaic(table: pd.DataFrame, ax: Axes) -> None:
     ax.set_ylim(0, 1)
     ax.set_xlabel(str(table.columns.name or "Explanatory"))
     ax.set_ylabel(str(table.index.name or "Response"))
+
+
+def _infer_plot_kind(series: pd.Series) -> str:
+    """Infer 'hist' (continuous) or 'bar' (categorical) for plot_variable."""
+    if (
+        pd.api.types.is_numeric_dtype(series)
+        and not pd.api.types.is_bool_dtype(series)
+        and series.dropna().nunique() > 2
+    ):
+        return "hist"
+    return "bar"
+
+
+def plot_variable(
+    df: pd.DataFrame,
+    col: str,
+    kind: str = "auto",
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Plot a single variable: histogram for continuous, bar chart for categorical.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    col : str
+        Column name.
+    kind : {'auto', 'hist', 'bar'}
+        ``'auto'`` infers from dtype; otherwise explicit.
+    ax : Axes or None
+        Matplotlib axes. Created if ``None``.
+    **kwargs
+        Forwarded to the underlying matplotlib call.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+
+    if col not in df.columns:
+        msg = f"plot_variable: column {col!r} not found in DataFrame"
+        raise KeyError(msg)
+
+    if kind not in {"auto", "hist", "bar"}:
+        msg = f"plot_variable: kind must be 'auto', 'hist', or 'bar' (got {kind!r})"
+        raise ValueError(msg)
+
+    series = df[col].dropna()
+    resolved_kind = _infer_plot_kind(series) if kind == "auto" else kind
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    if resolved_kind == "hist":
+        ax.hist(series.to_numpy(), **kwargs)
+        ax.set_xlabel(str(col))
+        ax.set_ylabel("Frequency")
+    else:
+        counts = series.value_counts().sort_index()
+        ax.bar(
+            [str(idx) for idx in counts.index],
+            counts.to_numpy(),
+            **kwargs,
+        )
+        ax.set_xlabel(str(col))
+        ax.set_ylabel("Count")
+
+    ax.set_title(str(col))
+    return ax
+
+
+def plot_missing(
+    df: pd.DataFrame,
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Bar chart of missing-value counts per column.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    ax : Axes or None
+        Matplotlib axes. Created if ``None``.
+    **kwargs
+        Forwarded to :meth:`Axes.bar`.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+
+    counts = df.isna().sum().astype(int)
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    columns = [str(c) for c in counts.index]
+    ax.bar(columns, counts.to_numpy(), **kwargs)
+    ax.set_xlabel("Variable")
+    ax.set_ylabel("Missing count")
+    ax.set_title("Missing values per column")
+    if len(columns) > 6:
+        ax.tick_params(axis="x", rotation=45)
+    return ax

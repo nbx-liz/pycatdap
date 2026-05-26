@@ -13,8 +13,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import pandas as pd
+
 if TYPE_CHECKING:
-    import pandas as pd
     import plotly.graph_objects as _go
 
     from pycatdap.catdap1 import Catdap1Result
@@ -239,5 +240,121 @@ def mosaic_plot(
             "zeroline": False,
         },
         legend={"title": {"text": str(table.index.name or "")}},
+    )
+    return fig
+
+
+def _infer_plot_kind(series: pd.Series) -> str:
+    """Infer 'hist' (continuous) or 'bar' (categorical) for plot_variable."""
+    if (
+        pd.api.types.is_numeric_dtype(series)
+        and not pd.api.types.is_bool_dtype(series)
+        and series.dropna().nunique() > 2
+    ):
+        return "hist"
+    return "bar"
+
+
+def plot_variable(
+    df: pd.DataFrame,
+    col: str,
+    kind: str = "auto",
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Plot a single variable (Plotly): histogram or bar chart.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    col : str
+        Column name.
+    kind : {'auto', 'hist', 'bar'}
+        ``'auto'`` infers from dtype; otherwise explicit.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    go = _import_plotly()
+
+    if col not in df.columns:
+        msg = f"plot_variable: column {col!r} not found in DataFrame"
+        raise KeyError(msg)
+    if kind not in {"auto", "hist", "bar"}:
+        msg = f"plot_variable: kind must be 'auto', 'hist', or 'bar' (got {kind!r})"
+        raise ValueError(msg)
+
+    series = df[col].dropna()
+    resolved_kind = _infer_plot_kind(series) if kind == "auto" else kind
+
+    if resolved_kind == "hist":
+        fig = go.Figure(
+            data=[
+                go.Histogram(
+                    x=series.to_numpy(),
+                    marker={"color": "#1f77b4"},
+                    name=str(col),
+                )
+            ]
+        )
+        fig.update_layout(
+            title=str(col),
+            xaxis={"title": str(col)},
+            yaxis={"title": "Frequency"},
+        )
+        return fig
+
+    counts = series.value_counts().sort_index()
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=[str(idx) for idx in counts.index],
+                y=counts.to_numpy(),
+                marker={"color": "#1f77b4"},
+                name=str(col),
+            )
+        ]
+    )
+    fig.update_layout(
+        title=str(col),
+        xaxis={"title": str(col)},
+        yaxis={"title": "Count"},
+    )
+    return fig
+
+
+def plot_missing(
+    df: pd.DataFrame,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Bar chart of missing-value counts per column (Plotly).
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    go = _import_plotly()
+
+    counts = df.isna().sum().astype(int)
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                x=[str(c) for c in counts.index],
+                y=counts.to_numpy(),
+                marker={"color": "#d62728"},
+                name="Missing",
+            )
+        ]
+    )
+    fig.update_layout(
+        title="Missing values per column",
+        xaxis={"title": "Variable"},
+        yaxis={"title": "Missing count"},
     )
     return fig
