@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- 戦略ドキュメント `HISTORY.md` — 仕様変更提案・決定の履歴（H-0001/H-0002/H-0003 accepted）
+- 全体開発計画 `PLAN.md` — v0.2.x〜v1.0 のロードマップとテーマ別 Issue マップ
+- `BLUEPRINT.md` §3.2 — 5 つの Mermaid アーキテクチャ図（モジュール依存・EDA データフロー・ML 誤差分析データフロー・レイヤと拡張ポイント・統合境界）
+- ドキュメントサイト `mkdocs-material` + GitHub Pages 構築（Diátaxis 構成: getting-started / tutorials / how-to / reference / explanation / project）
+- `mkdocstrings` による API リファレンス自動生成
+- `mkdocs-jupyter` による tutorial notebook の埋め込み
+- `.github/workflows/docs.yml` — PR でのビルド検証 + main push で GitHub Pages 自動デプロイ
+- `pyproject.toml` に `docs` dependency-group を追加
+
+### Changed
+
+- `docs/tutorial.ipynb` を `docs/tutorials/01-basic-catdap.ipynb` に移動
+- `BLUEPRINT.md` 冒頭に関連ドキュメント（HISTORY/PLAN/CHANGELOG）へのクロスリンクを追加
+
 ## [0.2.0] — 2026-03-22
 
 ### Added
