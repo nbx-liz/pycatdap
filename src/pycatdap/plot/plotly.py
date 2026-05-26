@@ -376,25 +376,11 @@ def plot_target(
         raise ValueError(msg)
 
     expl_kind = _detect_kind(df[explanatory])
-    valid = {"auto", "stacked", "mosaic", "violin", "box", "hist", "grouped_bar"}
-    if kind not in valid:
-        msg = f"plot_target: kind must be one of {sorted(valid)}; got {kind!r}"
-        raise ValueError(msg)
+    from pycatdap.plot import _resolve_target_kind
 
-    if kind == "auto":
-        if expl_kind in {"categorical", "boolean"}:
-            resolved = "stacked"
-        elif expl_kind == "continuous":
-            resolved = "box"  # Plotly default: box plot for cat × continuous
-        else:
-            msg = (
-                f"plot_target: cannot auto-dispatch for "
-                f"target_kind={target_kind!r}, explanatory_kind={expl_kind!r}; "
-                f"pass an explicit kind."
-            )
-            raise ValueError(msg)
-    else:
-        resolved = kind
+    resolved = _resolve_target_kind(
+        kind, target_kind, expl_kind, continuous_default="box"
+    )
 
     if resolved in {"stacked", "mosaic"}:
         summary = target_summary(df, target=target, explanatory=explanatory, bins=bins)

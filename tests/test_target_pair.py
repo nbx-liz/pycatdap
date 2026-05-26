@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -139,10 +139,10 @@ class TestContinuousExplanatory:
         # intervals must be populated for continuous explanatory
         assert result.intervals is not None
         assert len(result.intervals) >= 1
-        # ΔAIC must match catdap2 with pool=[2, 0]
+        # ΔAIC must match catdap2 with pool=[2, 1] (bottom-up, default)
         r2 = pycatdap.catdap2(
             cont_df[["y", "x"]],
-            pool=[2, 0],
+            pool=[2, 1],
             response_name="y",
         )
         expected_delta = float(r2.aic.loc[r2.aic["variable"] == "x", "aic"].iloc[0])
@@ -190,7 +190,7 @@ class TestMethods:
         assert "<html" in html.lower()
         assert "y" in html and "x" in html
 
-    def test_to_html_writes_file(self, cat_df: pd.DataFrame, tmp_path: Any) -> None:
+    def test_to_html_writes_file(self, cat_df: pd.DataFrame, tmp_path: Path) -> None:
         result = pycatdap.target_summary(cat_df, target="y", explanatory="x")
         out = tmp_path / "report.html"
         result.to_html(path=out)

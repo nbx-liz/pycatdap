@@ -168,6 +168,43 @@ def plot_variable(
     return _get_backend_module(backend).plot_variable(df, col, kind=kind, **kwargs)
 
 
+_VALID_TARGET_KINDS: frozenset[str] = frozenset(
+    {"auto", "stacked", "mosaic", "violin", "box", "hist"}
+)
+
+
+def _resolve_target_kind(
+    kind: str,
+    target_kind: str,
+    expl_kind: str,
+    *,
+    continuous_default: str,
+) -> str:
+    """Resolve ``kind='auto'`` to a concrete kind based on dtype combination.
+
+    Shared between matplotlib and plotly backends. The two backends differ
+    only on ``continuous_default`` (matplotlib prefers ``violin``, plotly
+    prefers ``box``) — every other dispatch is identical.
+    """
+    if kind not in _VALID_TARGET_KINDS:
+        msg = (
+            f"plot_target: kind must be one of {sorted(_VALID_TARGET_KINDS)}; "
+            f"got {kind!r}"
+        )
+        raise ValueError(msg)
+    if kind != "auto":
+        return kind
+    if expl_kind in {"categorical", "boolean"}:
+        return "stacked"
+    if expl_kind == "continuous":
+        return continuous_default
+    msg = (
+        f"plot_target: cannot auto-dispatch for target_kind={target_kind!r}, "
+        f"explanatory_kind={expl_kind!r}; pass an explicit kind."
+    )
+    raise ValueError(msg)
+
+
 def plot_target(
     df: pd.DataFrame,
     target: str,
@@ -250,4 +287,5 @@ __all__ = [
     "plot_missing",
     "plot_target",
     "plot_variable",
+    "_resolve_target_kind",
 ]

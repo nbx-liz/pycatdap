@@ -336,7 +336,11 @@ def plot_target(
         raise ValueError(msg)
 
     expl_kind = _detect_kind(df[explanatory])
-    resolved = _resolve_target_kind(kind, target_kind, expl_kind)
+    from pycatdap.plot import _resolve_target_kind
+
+    resolved = _resolve_target_kind(
+        kind, target_kind, expl_kind, continuous_default="violin"
+    )
 
     if ax is None:
         _fig: Figure
@@ -384,25 +388,6 @@ def plot_target(
         raise ValueError(msg)
 
     return ax
-
-
-def _resolve_target_kind(kind: str, target_kind: str, expl_kind: str) -> str:
-    """Map kind='auto' to a concrete kind based on the dtype combination."""
-    valid = {"auto", "stacked", "mosaic", "violin", "box", "hist", "grouped_bar"}
-    if kind not in valid:
-        msg = f"plot_target: kind must be one of {sorted(valid)}; got {kind!r}"
-        raise ValueError(msg)
-    if kind != "auto":
-        return kind
-    if expl_kind in {"categorical", "boolean"}:
-        return "stacked"
-    if expl_kind == "continuous":
-        return "violin"
-    msg = (
-        f"plot_target: cannot auto-dispatch for target_kind={target_kind!r}, "
-        f"explanatory_kind={expl_kind!r}; pass an explicit kind."
-    )
-    raise ValueError(msg)
 
 
 def plot_missing(

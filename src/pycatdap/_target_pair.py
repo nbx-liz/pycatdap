@@ -94,11 +94,11 @@ class TargetSummary:
                 print(f"\n--- {name} ---")
                 print(df)
             return
-        display(f"TargetSummary: {self.target} × {self.explanatory}")  # type: ignore[no-untyped-call,unused-ignore]
-        display(f"ΔAIC = {self.delta_aic:.4f}")  # type: ignore[no-untyped-call,unused-ignore]
+        display(f"TargetSummary: {self.target} × {self.explanatory}")
+        display(f"ΔAIC = {self.delta_aic:.4f}")
         for name, df in tables:
-            display(name)  # type: ignore[no-untyped-call,unused-ignore]
-            display(df)  # type: ignore[no-untyped-call,unused-ignore]
+            display(name)
+            display(df)
 
     def to_html(self, path: str | Path | None = None) -> str:
         """Render the summary as a standalone HTML string.
@@ -227,10 +227,8 @@ def _bin_continuous(
     arr = values.to_numpy(dtype=float)
 
     if bins is None:
-        # AIC-optimal binning using the catdap2 (pool=0) machinery
-        result = optimal_binning(
-            arr, target.to_numpy(), method="top_down", accuracy=None
-        )
+        # AIC-optimal binning: bottom-up merge (catdap2 pool=1 default)
+        result = optimal_binning(arr, target.to_numpy(), accuracy=None)
         boundaries = list(result.boundaries)
     elif isinstance(bins, int):
         if bins < 2:

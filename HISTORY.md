@@ -837,6 +837,8 @@ pycatdap.plot_target(
 
 `TargetSummary.intervals` で実際に使われた境界を返す。
 
+**`bins=None` 時の `optimal_binning` メソッド**: デフォルト `method="bottom_up"`(catdap2 デフォルト `pool=1` と同等の unequal pooling)を採用。fine bins から始めて貪欲に merge する方式で、`top_down`(等幅初期 + merge)より AIC 最適に近い解を返す傾向がある。Proposal 当初稿では `pool=0 相当` と記載したが、`optimal_binning` 実装側のデフォルトと catdap2 のデフォルトに合わせて `pool=1 相当`(bottom_up)に統一する。
+
 ### Impact
 
 - **公開 API の追加のみ**(2 関数 + 1 dataclass)
@@ -878,7 +880,7 @@ pycatdap.plot_target(
 #### 数値整合
 - [ ] `TargetSummary.delta_aic` が `catdap1(df[[target, explanatory]], response_names=[target]).aic.loc[target, explanatory]` と一致
 - [ ] `pearson_residuals` の絶対値が 2 を超える場合の符号と大きさが `scipy.stats.chi2_contingency` の結果と一致(参考実装比較)
-- [ ] 連続 explanatory の `bins=None` 時、`intervals` が `catdap2(pool=[0])` の `intervals[explanatory]` と一致
+- [ ] 連続 explanatory の `bins=None` 時、`intervals` が `catdap2(pool=[2,1])`(unequal pooling、catdap2 デフォルト)の `intervals[explanatory]` と一致
 
 #### コード品質
 - [ ] `tests/test_target_pair.py` に unit テスト 12 個以上(各 kind / 各 dtype 組合せ + エラーパス)
