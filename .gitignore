@@ -24,6 +24,10 @@ htmlcov/
 .pytest_cache/
 .mypy_cache/
 
+# Docs build output
+site/
+.cache/
+
 # OS
 .DS_Store
 Thumbs.db

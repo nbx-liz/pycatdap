@@ -1,0 +1,3 @@
+# plotting
+
+::: pycatdap.plotting

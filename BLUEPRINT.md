@@ -1,13 +1,21 @@
-# CATDAP Python実装計画
+# pycatdap 仕様書 (BLUEPRINT)
+
+> 関連ドキュメント:
+> - [HISTORY.md](HISTORY.md) — 仕様変更の Proposal / Decision / Migration
+> - [PLAN.md](PLAN.md) — 全体開発計画・リリース計画・Issue マップ
+> - [CHANGELOG.md](CHANGELOG.md) — リリース履歴
 
 ## 1. 概要
 
 CATDAP（CATegorical Data Analysis Program）は、赤池弘次のAIC（赤池情報量規準）をカテゴリカルデータの分析に適用した手法であり、統計数理研究所の坂元慶行・桂光一により1980年に開発された。現在はRパッケージ（`catdap`）としてのみ公式実装が存在し、Python実装は存在しない。
 
-本計画では、Pythonパッケージ `pycatdap` として以下の2つの主要機能を実装する。
+本計画では、Pythonパッケージ `pycatdap` を以下の用途に対応するライブラリとして開発する（[H-0001](HISTORY.md) 以降）:
 
-- **CATDAP-01**: 全カテゴリカル変数ペア間の関連度をAICで評価
-- **CATDAP-02**: 指定した目的変数に対する最適な説明変数の部分集合探索（連続変数の最適カテゴリ化を含む）
+1. **CATDAP コア機能**:
+   - **CATDAP-01**: 全カテゴリカル変数ペア間の関連度をAICで評価
+   - **CATDAP-02**: 指定した目的変数に対する最適な説明変数の部分集合探索（連続変数の最適カテゴリ化を含む）
+2. **AIC ベース EDA**(H-0001 / H-0002 以降): ydata-profiling / Skrub / DataExplorer 相当の探索的データ解析
+3. **ML 誤差分析**(H-0001 / H-0002 以降): DivExplorer / pysubgroup / Microsoft Error Analysis Tool 相当のスライス発見・コホート分析
 
 ---
 
@@ -73,13 +81,260 @@ tests/
 
 ## 4. 依存ライブラリ
 
-| ライブラリ | 用途 | 必須/任意 |
-|-----------|------|----------|
-| numpy | 数値計算・配列操作 | 必須 |
-| pandas | DataFrame入出力 | 必須 |
-| scipy | 組み合わせ列挙 (`itertools` で代替可) | 任意 |
-| matplotlib | モザイクプロット・帯グラフ | 任意 |
-| statsmodels | モザイクプロット（`graphics.mosaicplot`） | 任意 |
+| ライブラリ | 用途 | 必須/任意 | Extras |
+|-----------|------|----------|--------|
+| numpy | 数値計算・配列操作 | 必須 | - |
+| pandas | DataFrame入出力 | 必須 | - |
+| scipy | 組み合わせ列挙・`xlogy` (`itertools` で代替可) | 任意 | - |
+| matplotlib | モザイクプロット・帯グラフ | 任意 | `[plot]` |
+| statsmodels | モザイクプロット（`graphics.mosaicplot`） | 任意 | `[plot]` |
+| plotly | インタラクティブ可視化（LizyStudio 統合用、H-0001） | 任意 | `[plotly]` |
+| jinja2 | HTML レポート生成（`profile.to_html()`, H-0001） | 任意 | `[plotly]` |
+| anywidget | Jupyter インタラクティブウィジェット（pooling slider 等） | 任意 | `[widget]` |
+
+`pycatdap[all]` で全 extras を一括導入できる。
+
+---
+
+### 3.1 パッケージ構成（v0.3 以降、H-0001/H-0002 で拡張）
+
+```
+pycatdap/
+├── __init__.py             # 公開API
+├── catdap1.py              # CATDAP-01 実装（既存）
+├── catdap2.py              # CATDAP-02 実装（既存）
+├── _aic.py                 # AIC計算コア（既存）
+├── _pooling.py             # 連続変数のカテゴリ化（既存）
+├── _subset_search.py       # 最適部分集合探索（既存）
+├── _contingency.py         # 分割表構築ユーティリティ（既存）
+├── datasets.py             # サンプルデータセット（拡張予定）
+├── plotting.py             # v0.2 互換 API（既存、matplotlib）
+├── plot/                   # v0.3+ 拡張可視化 API（H-0001）
+│   ├── matplotlib.py
+│   └── plotly.py
+├── profile.py              # ワンコール EDA レポート（§5.9, H-0001）
+├── error/                  # ML 誤差分析（§5.8, H-0002）
+│   ├── labels.py
+│   ├── analysis.py
+│   ├── confusion.py
+│   ├── residual.py
+│   ├── calibration.py
+│   ├── slice_discovery.py
+│   └── drift.py
+├── suite/                  # CI 統合スイート（§5.10, H-0002）
+│   ├── independence.py
+│   ├── cardinality.py
+│   └── pooling.py
+└── measures/               # Pluggable な関連度指標（§5.11, H-0002）
+    ├── aic.py
+    ├── cramers_v.py
+    └── mutual_info.py
+```
+
+---
+
+### 3.2 アーキテクチャ図（視覚版）
+
+5つの観点からアーキテクチャを示す。各図は Mermaid 形式で記述されており、GitHub および mkdocs-material 上で自動的にレンダリングされる。
+
+#### A. モジュール依存グラフ
+
+```mermaid
+graph TD
+    subgraph "Public API (v0.2 — released)"
+        catdap1[catdap1.py]
+        catdap2[catdap2.py]
+        plotting[plotting.py]
+        datasets[datasets.py]
+    end
+
+    subgraph "Public API (v0.3+ — planned)"
+        profile[profile.py]
+        error_pkg[error/]
+        suite_pkg[suite/]
+        measures_pkg[measures/]
+        plot_pkg[plot/]
+    end
+
+    subgraph "Private core"
+        aic[_aic.py]
+        cont[_contingency.py]
+        pool[_pooling.py]
+        subset[_subset_search.py]
+    end
+
+    subgraph "Optional dependencies (extras)"
+        scipy[scipy.special.xlogy]
+        mpl[matplotlib]
+        sm[statsmodels]
+        plotly[plotly]
+        jinja2[jinja2]
+        anywidget[anywidget]
+    end
+
+    catdap1 --> aic
+    catdap1 --> cont
+    catdap2 --> aic
+    catdap2 --> cont
+    catdap2 --> pool
+    catdap2 --> subset
+    pool --> aic
+    subset --> aic
+    subset --> cont
+    aic -.optional.-> scipy
+    plotting -.-> mpl
+    plotting -.-> sm
+
+    profile --> catdap1
+    profile --> catdap2
+    profile --> plot_pkg
+    profile --> datasets
+    error_pkg --> catdap1
+    error_pkg --> catdap2
+    error_pkg --> measures_pkg
+    suite_pkg --> aic
+    suite_pkg --> cont
+    measures_pkg --> aic
+    plot_pkg -.-> mpl
+    plot_pkg -.-> plotly
+    plot_pkg -.-> jinja2
+    profile -.-> jinja2
+
+    classDef planned fill:#fff3cd,stroke:#856404,stroke-dasharray: 5 5
+    class profile,error_pkg,suite_pkg,measures_pkg,plot_pkg planned
+```
+
+**読み方**: 実線は必須 import、点線は任意依存(extras)経由の利用、黄色破線枠は v0.3 以降に追加予定のモジュール。
+
+#### B. EDA データフロー — `profile()` の経路
+
+```mermaid
+flowchart LR
+    DF[pd.DataFrame] --> P["pycatdap.profile<br/>(df, response)"]
+    P --> D[describe<br/>univariate stats]
+    P --> Q[quality_report<br/>missing/cardinality]
+    P --> C1[catdap1<br/>m×m ΔAIC]
+    P --> C2[catdap2<br/>top-K subsets]
+    P --> H[aic_heatmap]
+    P --> A[association_matrix]
+
+    D --> R[ProfileResult]
+    Q --> R
+    C1 --> R
+    C2 --> R
+    H --> R
+    A --> R
+
+    R --> HTML[".to_html(path)<br/>standalone HTML"]
+    R --> Show[".show()<br/>Jupyter inline"]
+    R --> JSON[".to_plotly_json()<br/>LizyStudio"]
+    R --> Dict[".to_dict()<br/>serialization"]
+```
+
+**読み方**: 入力 DataFrame から `ProfileResult` が組み立てられ、用途別の表現に変換される。
+
+#### C. ML 誤差分析データフロー — `error_analysis()` の経路
+
+```mermaid
+flowchart LR
+    Input["(df, y_true, y_pred)"] --> EA["pycatdap.error_analysis<br/>task=auto"]
+    EA --> Detect[_detect_task]
+    EA --> EL{Error labeling}
+    EL --> EE[error_label<br/>correct/incorrect]
+    EL --> CE[confusion_label<br/>TP/FP/FN/TN]
+    EL --> RE[residual_label<br/>AIC pooling]
+
+    EE --> Rank[catdap1<br/>variable ranking]
+    CE --> Rank
+    RE --> Rank
+    Rank --> Discover[discover_error_slices<br/>CATDAP-02 search]
+
+    Discover --> Result[ErrorAnalysisResult]
+    Rank --> Result
+    Result --> Slices[".top_slices<br/>(with .description)"]
+    Result --> Conf[".confusion / .residual_pooling"]
+    Result --> Out1[".to_html()"]
+    Result --> Out2[".to_plotly_json()"]
+    Result --> Out3[".to_divexplorer_format()"]
+```
+
+**読み方**: 予測結果は分類か回帰かを判定後、適切な error label に変換され、CATDAP-01/02 のターゲットとして扱われる。
+
+#### D. レイヤと拡張ポイント
+
+```mermaid
+graph TB
+    subgraph "Layer 1: Public API"
+        L1["catdap1 / catdap2 / profile / error_analysis<br/>plot.* / suite.* / measures.* / datasets.*"]
+    end
+
+    subgraph "Layer 2: Private core"
+        L2["_aic / _contingency / _pooling / _subset_search"]
+    end
+
+    subgraph "Layer 3: Required dependencies"
+        L3["numpy / pandas"]
+    end
+
+    subgraph "Layer 4: Optional dependencies (extras)"
+        L4a["[plot]: matplotlib / statsmodels"]
+        L4b["[plotly]: plotly / jinja2"]
+        L4c["[widget]: anywidget"]
+        L4d["[data]: requests / scikit-learn"]
+    end
+
+    subgraph "Extension points (pluggable)"
+        E1["Measures<br/>register('name', fn)<br/>aic / cramers_v / MI / custom"]
+        E2["Plot backends<br/>matplotlib / plotly / custom"]
+        E3["Suite checks<br/>independence / cardinality / pooling / custom"]
+    end
+
+    L1 --> L2
+    L2 --> L3
+    L1 -.optional.-> L4a
+    L1 -.optional.-> L4b
+    L1 -.optional.-> L4c
+    L1 -.optional.-> L4d
+    L1 -. plugin .-> E1
+    L1 -. plugin .-> E2
+    L1 -. plugin .-> E3
+```
+
+**読み方**: 4 つのレイヤで責務を分離し、3 つの拡張ポイントでサードパーティ・ユーザー拡張を受け入れる。
+
+#### E. 統合境界(外部システム連携)
+
+```mermaid
+graph LR
+    subgraph pycatdap_core[pycatdap]
+        Core["Core analysis<br/>catdap1 / catdap2<br/>error_analysis / profile"]
+    end
+
+    subgraph Verification["Verification"]
+        R["R catdap 1.3.5"] -->|generates| CSV["docs/r_reference/*.csv"]
+        CSV --> Tests["tests/test_against_r.py<br/>atol=1e-4"]
+        Tests -.checks.-> Core
+    end
+
+    subgraph Consumption["Consumption"]
+        Core -->|".to_plotly_json"| Lizy["LizyStudio<br/>FastAPI + react-plotly.js"]
+        Core -->|".show / .to_html"| Notebook["Jupyter / browser"]
+    end
+
+    subgraph Interop["Interop"]
+        Core -->|".to_divexplorer_format"| DE["DivExplorer pipelines"]
+        Core -->|"measures.AICMeasure"| PS["pysubgroup.BeamSearch"]
+    end
+
+    subgraph DataSources["Data sources"]
+        UCI["UCI ML Repo"] -->|fetch_*| Core
+        OpenML["OpenML"] -->|fetch_*| Core
+        SK["sklearn datasets"] -->|fetch_*| Core
+        Bundled["Bundled CSVs<br/>HealthData / Titanic / etc"] -->|load_*| Core
+    end
+```
+
+**読み方**: pycatdap は4方向で外部システムと統合する — (1) 検証(R catdap)、(2) 消費(LizyStudio / Notebook)、(3) 相互運用(DivExplorer / pysubgroup)、(4) データ取得(UCI / OpenML / sklearn / 同梱)。
 
 ---
 
@@ -291,17 +546,164 @@ class Catdap2Result:
     contingency_tables: dict | None    # 最良・追加部分集合の分割表
 ```
 
-### 5.7 `plotting.py` — 可視化
+### 5.7 `plotting.py` / `plot/` — 可視化（H-0001 で拡張）
+
+**既存（v0.2 互換、matplotlib）**:
+```python
+def mosaic_plot(table, ax=None, **kwargs): ...
+def barplot_twoway(table, ax=None, **kwargs): ...
+def aic_comparison_plot(result, response=None, ax=None, **kwargs): ...
+```
+
+**新規（v0.3 以降、matplotlib / plotly 両バックエンド）**:
+```python
+# 単変量
+pycatdap.plot_variable(df, col, backend="matplotlib"|"plotly")
+pycatdap.plot_missing(df, backend="matplotlib"|"plotly")
+
+# 二変量
+pycatdap.plot_pair(df, x, y, backend=...)            # 自動的にモザイク/箱ひげ/散布
+pycatdap.aic_heatmap(catdap1_result, backend=...)    # m×m ΔAIC ヒートマップ
+pycatdap.association_matrix(df, measure="aic", backend=...)
+pycatdap.association_plot(table, backend=...)        # vcd 風標準化残差
+```
+
+全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
+
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加）
 
 ```python
-def mosaic_plot(result, ax=None, **kwargs):
-    """CATDAP結果のモザイクプロット。"""
+# 誤差ラベリング
+pycatdap.error.error_label(y_true, y_pred) -> pd.Series
+pycatdap.error.confusion_label(y_true, y_pred) -> pd.Series
+pycatdap.error.residual_label(y_true, y_pred, method="aic_pool") -> pd.Series
+pycatdap.error.abs_residual_pool(y_true, y_pred) -> pd.Series
 
-def barplot_twoway(result, response, explanatory, ax=None, **kwargs):
-    """二元表の帯グラフ（積み上げ棒グラフ）。"""
+# 1コール誤差分析
+pycatdap.error_analysis(
+    df, y_true, y_pred,
+    task="auto" | "classification" | "regression"
+) -> ErrorAnalysisResult
 
-def aic_comparison_plot(result, ax=None, **kwargs):
-    """説明変数のAIC比較棒グラフ。"""
+# 分類可視化
+pycatdap.error.plot_confusion(y_true, y_pred, backend=...)
+pycatdap.error.plot_confusion_by_slice(df, y_true, y_pred, var, backend=...)
+pycatdap.error.confusion_aic(y_true, y_pred) -> float
+
+# 回帰可視化
+pycatdap.error.residual_plot(y_true, y_pred, color_by=None, backend=...)
+pycatdap.error.residual_by_category(df, y_true, y_pred, var, backend=...)
+pycatdap.error.residual_pool_plot(y_true, y_pred, backend=...)
+
+# キャリブレーション（分類+回帰両対応、AIC binning）
+pycatdap.error.calibration_curve(y_true, y_proba, n_bins="aic"|int, backend=...)
+pycatdap.error.brier_score(y_true, y_proba) -> float
+pycatdap.error.expected_calibration_error(y_true, y_proba) -> float
+
+# スライス発見・コホート比較・ドリフト
+pycatdap.error.discover_error_slices(
+    df, y_true, y_pred,
+    max_vars=3,
+    measure="aic" | "cramers_v" | "mutual_info" | callable,
+) -> list[Slice]
+pycatdap.error.compare_cohorts(df_a, df_b, response=None) -> CohortComparison
+pycatdap.error.detect_drift(df_train, df_prod, y_true=None, y_pred=None) -> DriftResult
+```
+
+#### データクラス契約
+
+```python
+@dataclass(frozen=True)
+class Slice:
+    description: str        # 自然言語: "age ∈ [45, 60] × cholesterol = high"
+    conditions: dict        # 機械可読: {"age": (45, 60), "cholesterol": "high"}
+    size: int               # スライス内サンプル数
+    error_metric: float     # 誤差指標（accuracy, MAE 等）
+    delta_aic: float        # ΔAIC スコア
+
+@dataclass
+class ErrorAnalysisResult:
+    task: str               # "classification" | "regression"
+    feature_ranking: pd.DataFrame   # ΔAIC 降順
+    top_slices: list[Slice]
+    confusion: pd.DataFrame | None  # 分類のみ
+    residual_pooling: dict | None   # 回帰のみ
+
+    def show(self) -> None: ...
+    def to_html(self, path) -> None: ...
+    def to_plotly_json(self) -> dict: ...
+    def to_dict(self) -> dict: ...
+    def to_divexplorer_format(self) -> pd.DataFrame: ...
+```
+
+### 5.9 `profile.py` — ワンコール EDA レポート（H-0001/H-0002 で追加）
+
+```python
+pycatdap.profile(df, response=None) -> ProfileResult
+```
+
+含まれる要素:
+- Overview セクション（行数 / 列数 / 欠損率 / 重複行 / メモリ）
+- Variable cards（型推定 / カーディナリティ / 欠損 / top カテゴリ / ΔAIC vs response）
+- AIC ヒートマップ（全変数ペア）
+- CATDAP-02 上位 K サブセット
+- 連続変数の AIC 最適 binning 可視化
+- データ品質警告（高カーディナリティ / 定数列 / ID 候補列）
+
+```python
+@dataclass
+class ProfileResult:
+    overview: dict
+    variables: list[VariableCard]
+    aic_heatmap: pd.DataFrame
+    top_subsets: list[SubsetResult]
+    quality_warnings: list[Warning]
+
+    def show(self) -> None: ...
+    def to_html(self, path) -> None: ...
+    def to_plotly_json(self) -> dict: ...
+```
+
+### 5.10 `suite/` — CI 統合可能なテストスイート（H-0002 で追加）
+
+deepchecks 風 API。CI/CD パイプラインに組込可能。
+
+```python
+suite = pycatdap.suite.AICIndependenceSuite(df, response="symptoms")
+result = suite.run()
+assert result.passed, result.warnings
+
+# 個別チェック
+- IndependenceCheck       # ΔAIC で説明変数の独立性検定
+- HighCardinalityCheck    # >50 カテゴリで警告
+- ConstantColumnCheck     # 定数列・準定数列
+- PoolingSuggestionCheck  # AIC 最適 binning の推奨
+
+@dataclass
+class SuiteResult:
+    passed: bool
+    warnings: list[Warning]
+    checks: list[CheckResult]
+
+    def to_html(self, path) -> None: ...
+```
+
+### 5.11 `measures/` — Pluggable な関連度指標（H-0002 で追加）
+
+pysubgroup 互換の interestingness measure 設計（DP-6）。
+
+```python
+# 標準提供
+pycatdap.measures.aic(cross_freq, marginal_e, marginal_f, n) -> float
+pycatdap.measures.cramers_v(cross_freq) -> float
+pycatdap.measures.mutual_info(cross_freq) -> float
+
+# ユーザー定義 measure の登録
+pycatdap.measures.register("my_measure", fn)
+
+# 利用箇所
+pycatdap.error.discover_error_slices(df, y_true, y_pred, measure="aic")
+pycatdap.association_matrix(df, measure="cramers_v")
 ```
 
 ---
