@@ -145,7 +145,9 @@ class TargetSummary:
             body_parts.append(f"<h2>{label}</h2>{df.to_html(border=0)}")
         html = head + "".join(body_parts) + "</body></html>"
         if path is not None:
-            Path(path).write_text(html, encoding="utf-8")
+            from pycatdap._io import atomic_write_text
+
+            atomic_write_text(path, html, encoding="utf-8")
         return html
 
     def to_dict(self) -> dict[str, Any]:
