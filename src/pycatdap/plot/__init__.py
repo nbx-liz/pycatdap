@@ -168,6 +168,92 @@ def plot_variable(
     return _get_backend_module(backend).plot_variable(df, col, kind=kind, **kwargs)
 
 
+_VALID_TARGET_KINDS: frozenset[str] = frozenset(
+    {"auto", "stacked", "mosaic", "violin", "box", "hist"}
+)
+
+
+def _resolve_target_kind(
+    kind: str,
+    target_kind: str,
+    expl_kind: str,
+    *,
+    continuous_default: str,
+) -> str:
+    """Resolve ``kind='auto'`` to a concrete kind based on dtype combination.
+
+    Shared between matplotlib and plotly backends. The two backends differ
+    only on ``continuous_default`` (matplotlib prefers ``violin``, plotly
+    prefers ``box``) — every other dispatch is identical.
+    """
+    if kind not in _VALID_TARGET_KINDS:
+        msg = (
+            f"plot_target: kind must be one of {sorted(_VALID_TARGET_KINDS)}; "
+            f"got {kind!r}"
+        )
+        raise ValueError(msg)
+    if kind != "auto":
+        return kind
+    if expl_kind in {"categorical", "boolean"}:
+        return "stacked"
+    if expl_kind == "continuous":
+        return continuous_default
+    msg = (
+        f"plot_target: cannot auto-dispatch for target_kind={target_kind!r}, "
+        f"explanatory_kind={expl_kind!r}; pass an explicit kind."
+    )
+    raise ValueError(msg)
+
+
+def plot_target(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    kind: str = "auto",
+    bins: int | list[float] | None = None,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Plot a target × explanatory relationship (H-0004).
+
+    Auto-dispatch (``kind='auto'``):
+
+    - categorical target × categorical explanatory -> stacked bar / mosaic
+    - categorical/boolean target × continuous explanatory -> violin (mpl) / box (plotly)
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    target : str
+        Target (response) column. Must be categorical.
+    explanatory : str
+        Explanatory column. May be categorical or continuous.
+    kind : {'auto', 'stacked', 'mosaic', 'violin', 'box', 'hist'}
+        Plot kind. ``'auto'`` dispatches by dtype.
+    bins : int, sequence of float, or None
+        Binning for continuous explanatory.
+    backend : {'matplotlib', 'plotly'}
+        Plotting backend.
+    **kwargs
+        Forwarded to the chosen backend.
+
+    Returns
+    -------
+    object
+        Backend-specific figure/axes object.
+
+    See Also
+    --------
+    pycatdap.target_summary : underlying cross-tabulation with proportions
+        and Pearson residuals.
+    """
+    return _get_backend_module(backend).plot_target(
+        df, target=target, explanatory=explanatory, kind=kind, bins=bins, **kwargs
+    )
+
+
 def plot_missing(
     df: pd.DataFrame,
     *,
@@ -199,5 +285,7 @@ __all__ = [
     "barplot_twoway",
     "mosaic_plot",
     "plot_missing",
+    "plot_target",
     "plot_variable",
+    "_resolve_target_kind",
 ]

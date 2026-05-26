@@ -14,6 +14,7 @@ Main functions:
 from __future__ import annotations
 
 from pycatdap import datasets
+from pycatdap._target_pair import TargetSummary, target_summary
 from pycatdap._version import (
     __version__,
     __version_tuple__,
@@ -21,7 +22,7 @@ from pycatdap._version import (
 from pycatdap.catdap1 import Catdap1Result, catdap1
 from pycatdap.catdap2 import Catdap2Result, catdap2
 from pycatdap.eda import DescribeResult, describe
-from pycatdap.plot import plot_missing, plot_variable
+from pycatdap.plot import plot_missing, plot_target, plot_variable
 
 __all__ = [
     "__version__",
@@ -29,10 +30,13 @@ __all__ = [
     "Catdap1Result",
     "Catdap2Result",
     "DescribeResult",
+    "TargetSummary",
     "catdap1",
     "catdap2",
     "datasets",
     "describe",
     "plot_missing",
+    "plot_target",
     "plot_variable",
+    "target_summary",
 ]
