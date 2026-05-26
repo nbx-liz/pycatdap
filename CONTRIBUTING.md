@@ -81,12 +81,50 @@ Types: feat, fix, refactor, docs, test, chore, perf, ci
 3. CONTRIBUTING.md（開発フロー）
 4. ソースコード
 
-## R版との照合
+## R版との照合 (R version cross-check)
 
-`tests/test_against_r.py` でR版catdapパッケージとの数値一致を検証する。
+`tests/test_against_r.py` で R版 `catdap` パッケージとの数値一致を検証する。
 
 - 許容誤差: AIC値は小数第4位まで一致（`atol=1e-4`）
-- テストデータ: HealthData, JNcharacter, Titanic, iris, HelloGoodbye
+- 対象データセット: HealthData（現状）、Titanic / iris / JNcharacter / HelloGoodbye（[#22](https://github.com/nbx-liz/pycatdap/issues/22) で対応予定）
+- 2層構成:
+  - **Property-based tests** — R 参照 CSV がなくても実行可能(符号・順位など定性的検証)
+  - **Strict numerical tests** — R 参照 CSV (`docs/r_reference/*.csv`) が必要、`atol=1e-4` で厳密照合
+
+### R 参照 CSV の生成手順
+
+参照 CSV は git にコミットされている前提だが、再生成手順は以下:
+
+```bash
+# 1. R と catdap パッケージをインストール
+sudo apt install r-base                  # Ubuntu/Debian
+# or: brew install r                     # macOS
+
+R -e 'install.packages("catdap", repos="https://cloud.r-project.org")'
+
+# 2. 参照 CSV を生成
+make r-reference
+# or directly:
+Rscript docs/r_reference/generate_reference.R
+
+# 3. 生成された CSV を commit
+git add docs/r_reference/*.csv
+```
+
+生成される CSV:
+
+| ファイル | 内容 |
+|---|---|
+| `health_catdap1.csv` | HealthData のカテゴリ列に対する catdap1 ΔAIC(response=symptoms) |
+| `health_catdap2_aic.csv` | HealthData の catdap2 単一変数 AIC |
+| `health_catdap2_subsets.csv` | HealthData の catdap2 ベスト部分集合 |
+
+`make r-reference` ターゲットは R と catdap パッケージのインストール状態を確認したうえで生成スクリプトを実行する。R が未インストールの場合は明示的なエラーメッセージを表示する。
+
+### CI 統合
+
+- **Develop CI**: `pytest -m "not slow"` で slow テストを除外(高速フィードバック)
+- **Release CI**: `pytest -m slow` を実行し、Strict numerical テストもすべてパスすることを必須とする([#30](https://github.com/nbx-liz/pycatdap/issues/30))
 
 ## リリース手順
 
