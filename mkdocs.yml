@@ -1,0 +1,145 @@
+site_name: pycatdap
+site_description: AIC-based EDA and ML error analysis library for categorical data
+site_url: https://nbx-liz.github.io/pycatdap/
+repo_url: https://github.com/nbx-liz/pycatdap
+repo_name: nbx-liz/pycatdap
+copyright: Copyright &copy; 2026 nbx
+
+docs_dir: docs
+site_dir: site
+
+# Exclude the R reference scripts/CSVs from the build
+exclude_docs: |
+  r_reference/
+
+theme:
+  name: material
+  language: en
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+  - Tutorials:
+      - tutorials/index.md
+      - Basic CATDAP: tutorials/01-basic-catdap.ipynb
+  - How-to Guides:
+      - how-to/index.md
+  - API Reference:
+      - reference/index.md
+      - catdap1: reference/catdap1.md
+      - catdap2: reference/catdap2.md
+      - plotting: reference/plotting.md
+      - datasets: reference/datasets.md
+  - Explanation:
+      - explanation/index.md
+      - AIC Foundations: explanation/aic-foundations.md
+      - Architecture: explanation/architecture.md
+  - Project:
+      - Roadmap: project/roadmap.md
+      - Changelog: project/changelog.md
+      - Contributing: project/contributing.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            docstring_style: numpy
+            members_order: source
+            show_root_heading: true
+            show_signature_annotations: true
+            separate_signature: true
+            merge_init_into_class: true
+            show_source: true
+            heading_level: 2
+  - mkdocs-jupyter:
+      include_source: true
+      execute: false
+      ignore_h1_titles: true
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      base_path: [".", "docs"]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra_javascript:
+  - https://polyfill.io/v3/polyfill.min.js?features=es6
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nbx-liz/pycatdap
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/pycatdap/
+
+watch:
+  - src/pycatdap
+  - BLUEPRINT.md
+  - HISTORY.md
+  - PLAN.md
+  - CHANGELOG.md

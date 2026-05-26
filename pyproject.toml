@@ -47,6 +47,13 @@ dev = [
     "pre-commit>=4.0",
     "matplotlib>=3.7",
 ]
+docs = [
+    "mkdocs-material>=9.5",
+    "mkdocstrings[python]>=0.25",
+    "mkdocs-jupyter>=0.24",
+    "mkdocs-gen-files>=0.5",
+    "mkdocs-literate-nav>=0.6",
+]
 
 [project.urls]
 Homepage = "https://github.com/nbx-liz/pycatdap"

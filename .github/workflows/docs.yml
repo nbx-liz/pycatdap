@@ -1,0 +1,72 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "src/pycatdap/**"
+      - "BLUEPRINT.md"
+      - "HISTORY.md"
+      - "PLAN.md"
+      - "CHANGELOG.md"
+      - "CONTRIBUTING.md"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "src/pycatdap/**"
+  workflow_dispatch:
+
+# Required for GitHub Pages deployment
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, but don't cancel in-progress runs
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Needed for hatch-vcs version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install docs dependencies
+        run: uv sync --frozen --group docs
+
+      - name: Build docs (strict mode)
+        run: uv run mkdocs build --strict
+
+      - name: Upload artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
