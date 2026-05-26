@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- チュートリアルノートブック 3 本を追加（Issue #27）:
+  - `docs/tutorials/03-iris-pooling.ipynb` — iris での AIC 最適 binning
+  - `docs/tutorials/04-hellogoodbye-multivariate.ipynb` — 56 binary 変数での `nvar` 利用例
+  - `docs/tutorials/05-real-world-eda.ipynb` — seaborn Titanic（欠損あり）での実データ EDA
+- `pycatdap[tutorial]` extras（seaborn）— Notebook 05 用
+- CI で nbmake によるノートブック実行検証（`notebooks` ジョブ）
+- `[dependency-groups].notebooks` — Notebook 実行用開発依存（nbmake / seaborn / plotly / matplotlib / ipykernel）
+
+### Changed
+
+- `docs/tutorials/02-eda-titanic.ipynb` — 03/04/05 へのクロスリファレンスを追加、bundled clean 版と seaborn messy 版の関係を明示
+
 ## [0.3.0] — 2026-05-26
 
 このリリースで pycatdap は「AIC ベース EDA + ML 誤差分析ライブラリ」として再定位された。詳細は HISTORY.md H-0001 / H-0002 / H-0003 を参照。
