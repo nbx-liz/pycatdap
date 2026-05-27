@@ -26,13 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `docs/tutorials/03-iris-pooling.ipynb` — iris での AIC 最適 binning
   - `docs/tutorials/04-hellogoodbye-multivariate.ipynb` — 56 binary 変数での `nvar` 利用例
   - `docs/tutorials/05-real-world-eda.ipynb` — seaborn Titanic（欠損あり）での実データ EDA
+- `docs/tutorials/06-target-pair-titanic.ipynb` — `target_summary` / `plot_target`
+  の全分岐デモ（cat × cat / multi-level / cat × continuous）、AIC 最適 binning
+  と等幅 binning の比較、全 explanatory の ΔAIC ランキング、HTML / Plotly export。
+  末尾に連続 target サポートの研究 Issue #56 へのリンク
 - `pycatdap[tutorial]` extras（seaborn）— Notebook 05 用
 - CI で nbmake によるノートブック実行検証（`notebooks` ジョブ）
 - `[dependency-groups].notebooks` — Notebook 実行用開発依存（nbmake / seaborn / plotly / matplotlib / ipykernel）
 
 ### Changed
 
-- `docs/tutorials/02-eda-titanic.ipynb` — 03/04/05 へのクロスリファレンスを追加、bundled clean 版と seaborn messy 版の関係を明示
+- `docs/tutorials/02-eda-titanic.ipynb` — 03/04/05 へのクロスリファレンスを追加、bundled clean 版と seaborn messy 版の関係を明示。さらに `target_summary` を使った single-pair drill-down teaser 節を追加し、06 へリンク
+- `docs/tutorials/05-real-world-eda.ipynb` — クリーニング済み Titanic で `target_summary` を `sex` / `age`（連続）に適用する節を追加、AIC 最適 binning の効果を確認
 
 ## [0.3.0] — 2026-05-26
 
