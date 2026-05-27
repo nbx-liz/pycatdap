@@ -14,6 +14,7 @@ Main functions:
 from __future__ import annotations
 
 from pycatdap import datasets
+from pycatdap._association import association_matrix
 from pycatdap._target_pair import (
     RegressionTargetSummary,
     TargetSummary,
@@ -26,7 +27,13 @@ from pycatdap._version import (
 from pycatdap.catdap1 import Catdap1Result, catdap1
 from pycatdap.catdap2 import Catdap2Result, catdap2
 from pycatdap.eda import DescribeResult, describe
-from pycatdap.plot import plot_missing, plot_pair, plot_target, plot_variable
+from pycatdap.plot import (
+    aic_heatmap,
+    plot_missing,
+    plot_pair,
+    plot_target,
+    plot_variable,
+)
 
 __all__ = [
     "__version__",
@@ -36,6 +43,8 @@ __all__ = [
     "DescribeResult",
     "RegressionTargetSummary",
     "TargetSummary",
+    "aic_heatmap",
+    "association_matrix",
     "catdap1",
     "catdap2",
     "datasets",
