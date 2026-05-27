@@ -29,7 +29,7 @@ The candidates under evaluation:
 
 ### 2.1 The exact formula
 
-`_bin_aic` ([`_pooling.py:101-111`](../../src/pycatdap/_pooling.py)) computes, for a frequency table of shape `(C_E, C_F)`:
+`_bin_aic` (`src/pycatdap/_pooling.py:101-111`) computes, for a frequency table of shape `(C_E, C_F)`:
 
 ```
 AIC(E; F) = -2 * Σ_ij n_ij * ln(n_ij / n_·j)  +  2 * (C_E - 1) * C_F
@@ -37,7 +37,7 @@ AIC(E; F) = -2 * Σ_ij n_ij * ln(n_ij / n_·j)  +  2 * (C_E - 1) * C_F
 
 - **Conditional direction**: `n_ij / n_·j` is the MLE of `P(E = i | F = j)`. The model fitted is `P(response | bin)`, with the bin marginal `n_·j` treated as ancillary (one multinomial per column).
 - **Penalty / DOF**: each of the `C_F` columns has `(C_E − 1)` free probabilities → total `(C_E − 1) · C_F` parameters; the penalty is `2k`.
-- **Implicit null**: `compute_base_aic` ([`_aic.py:116-153`](../../src/pycatdap/_aic.py)) gives `AIC(E; φ) = −2 Σ n_E(i) ln(n_E(i)/n) + 2(C_E − 1)`.
+- **Implicit null**: `compute_base_aic` (`src/pycatdap/_aic.py:116-153`) gives `AIC(E; φ) = −2 Σ n_E(i) ln(n_E(i)/n) + 2(C_E − 1)`.
 
 ### 2.2 Asymmetry of `_bin_aic`
 
@@ -47,7 +47,7 @@ Concrete 2×3 example confirms: same cells transposed give different log-likelih
 
 ### 2.3 Algebraic symmetry of `compute_delta_aic` (with caveats)
 
-[`compute_delta_aic`](../../src/pycatdap/_aic.py) returns `AIC(E; F) − AIC(E; φ)`. Algebraic expansion gives:
+`compute_delta_aic` (`src/pycatdap/_aic.py`) returns `AIC(E; F) − AIC(E; φ)`. Algebraic expansion gives:
 
 ```
 ΔAIC = −2 · n · Î(E; F)  +  2 · (C_E − 1) · (C_F − 1)
@@ -55,7 +55,7 @@ Concrete 2×3 example confirms: same cells transposed give different log-likelih
 
 where `Î(E; F)` is the plug-in mutual information. Mathematically both terms are symmetric in `E ↔ F`. **Once both axes are discretized, the numerical ΔAIC value is the same whether you call it (E given F) or (F given E)** — provided you correctly transpose the contingency table when swapping.
 
-**Implementation caveat**: `compute_delta_aic(cross_freq, marginal_e, marginal_f, n)` has an asymmetric *interface*. The null model uses only `marginal_e` (`compute_base_aic(marginal_e, n)` at [`_aic.py:193`](../../src/pycatdap/_aic.py)), while the joint model uses `cross_freq` and `marginal_f`. To swap roles correctly at the call site, you must transpose `cross_freq` AND swap `marginal_e ↔ marginal_f`. Simply swapping the marginals without transposing produces wrong results.
+**Implementation caveat**: `compute_delta_aic(cross_freq, marginal_e, marginal_f, n)` has an asymmetric *interface*. The null model uses only `marginal_e` (`compute_base_aic(marginal_e, n)` at `src/pycatdap/_aic.py:193`), while the joint model uses `cross_freq` and `marginal_f`. To swap roles correctly at the call site, you must transpose `cross_freq` AND swap `marginal_e ↔ marginal_f`. Simply swapping the marginals without transposing produces wrong results.
 
 **Net implication for H-0005**: the *final* score is direction-agnostic *after* discretization, so the only design choice that materially affects the value is **how each axis is binned**. Asymmetry of the formula lives entirely in the pooling step, not in the final score.
 
@@ -568,6 +568,6 @@ Tracked in the Issue #56 "Out of scope" section. Not addressed here:
 
 - `2026-05-27` — Initial scaffold created; three parallel research tracks launched (literature, competitors, formula analysis).
 - `2026-05-27` — All three tracks merged. §2 formula analysis: candidate (a) symmetric pooling fails cross-pair comparability (R-1) due to C_X-dependent post-selection bias. §3 literature: candidate (c) marginal binning has strong published basis (Sturges, FD, Hall 1990 AIC histograms); (a), (b), (d) have no precedent; Solvang et al. 2024 (Environmetrics) reportedly confirms the framework-level gap. §4 competitors: no mainstream tool quantile-bins continuous target for categorical-style analysis; Manifold and MS RAI use residual-based segmentation (paradigm B, complementary to H-0005). **Recommendation: (c) marginal binning with explicit `target_bins ∈ {int, list, "quantile", "equal_width", "fd"}`; (d) deferred to experimental opt-in; (a), (b) rejected.**
-- `2026-05-27` — Independent cross-check (cross-check-reviewer agent). Verdicts on 4 key claims: (1) algebraic ΔAIC symmetry PARTIALLY-TRUE — held algebraically, but `compute_delta_aic` interface is asymmetric and the doc wording "direction-agnostic" was tightened to clarify the transpose-and-swap requirement; (2) candidate (a) failure-of-R-1 TRUE — all three sub-claims verified against [_pooling.py:101-111](../../src/pycatdap/_pooling.py), [_pooling.py:285-291](../../src/pycatdap/_pooling.py); (3) Solvang 2024 quote UNCERTAIN — marked `(primary-source quote verification pending)` in §3.3; the framework-level gap holds independently; (4) "Phase J residual_by_category as thin wrapper" PARTIALLY-TRUE — rewritten in §7.5 to acknowledge the signature mismatch and immutable-data constraint; integration shape deferred to Phase J implementation. **Direction unchanged at that point**; precision improved.
+- `2026-05-27` — Independent cross-check (cross-check-reviewer agent). Verdicts on 4 key claims: (1) algebraic ΔAIC symmetry PARTIALLY-TRUE — held algebraically, but `compute_delta_aic` interface is asymmetric and the doc wording "direction-agnostic" was tightened to clarify the transpose-and-swap requirement; (2) candidate (a) failure-of-R-1 TRUE — all three sub-claims verified against `src/pycatdap/_pooling.py:101-111`, `src/pycatdap/_pooling.py:285-291`; (3) Solvang 2024 quote UNCERTAIN — marked `(primary-source quote verification pending)` in §3.3; the framework-level gap holds independently; (4) "Phase J residual_by_category as thin wrapper" PARTIALLY-TRUE — rewritten in §7.5 to acknowledge the signature mismatch and immutable-data constraint; integration shape deferred to Phase J implementation. **Direction unchanged at that point**; precision improved.
 - `2026-05-27` — **Major revision**: discovered `nbx-liz/AdvancedCATDAP` (sibling private library) already implements continuous-target support via **Gaussian regression AIC** (`n · ln(RSS/n) + 2k`) with no Y discretization. This is candidate (f), added retroactively. (f) supersedes the original recommendation: it has stronger theoretical basis (textbook Gaussian-AIC; Yao 1988, Davis et al 2006), is already in production, is cross-pair comparable by construction (shared null), and avoids the entire "how to discretize Y" debate. **Recommendation revised**: (f) Gaussian regression AIC as **primary**; (c) marginal binning retained as **opt-in fallback** for users wanting a contingency-table view; (a), (b), (d) **rejected**; (e) user-specified bins available as alias for (c). API return type splits: existing `TargetSummary` for categorical, new `RegressionTargetSummary` for continuous. The original recommendation (c-as-default) was based on the false premise that Y must be discretized — false because Gaussian AIC is well-defined on continuous Y.
 - `2026-05-27` — **Theoretical scrutiny + cross-check**: detailed analysis added in §10 (derivation, parameter count, cross-pair comparability proof, edge cases, known limitations, numerical verification). Cross-check-reviewer agent verified 7 claims; chain holds **partially**, direction unchanged, three implementation-spec corrections required: (i) **missing-value handling** — current `_target_pair.py:328` per-pair dropna silently violates R-1 by varying `n` across pairs; spec must adopt strategy M2 (Y-only dropna + missing pseudo-bin); (ii) **default criterion** — Yao 1988 recommends BIC for changepoint structures; default changed from AICc to BIC, with AIC/AICc as user-selectable alternatives; (iii) **citations tightened** — AdvancedCATDAP's K-count includes σ² (differs from strict Hurvich-Tsai 1989); variance-shift numerical result was non-reproducible and is now flagged. **No deal-breakers**; (f) Gaussian regression AIC remains adopted as primary path with the three corrections above. The H-0005 Proposal can be drafted on this foundation.

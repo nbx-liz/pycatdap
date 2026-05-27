@@ -11,6 +11,7 @@ site_dir: site
 # Exclude the R reference scripts/CSVs from the build
 exclude_docs: |
   r_reference/
+  research/
 
 theme:
   name: material
