@@ -369,6 +369,45 @@ def plot_pair(
     )
 
 
+def aic_heatmap(
+    result: Catdap1Result | pd.DataFrame,
+    *,
+    threshold: float | None = 0.0,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Diverging ΔAIC heatmap (H-0006).
+
+    Parameters
+    ----------
+    result : Catdap1Result or DataFrame
+        ΔAIC values. ``Catdap1Result.aic`` is extracted automatically.
+        For a raw DataFrame, rows are responses and columns are
+        explanatories. Diagonal cells are typically ``NaN``.
+    threshold : float or None
+        Annotate cells with ΔAIC strictly less than ``threshold`` (default
+        ``0.0``: highlight informative cells). Pass ``None`` to disable.
+    backend : {'matplotlib', 'plotly'}
+        Plotting backend.
+    **kwargs
+        Forwarded to the chosen backend.
+
+    Returns
+    -------
+    object
+        Backend-specific figure/axes object.
+
+    See Also
+    --------
+    pycatdap.association_matrix : build the m × m ΔAIC matrix to feed in.
+    pycatdap.catdap1 : produces a ``Catdap1Result`` whose ``.aic`` is the
+        natural input for this function.
+    """
+    return _get_backend_module(backend).aic_heatmap(
+        result, threshold=threshold, **kwargs
+    )
+
+
 def plot_missing(
     df: pd.DataFrame,
     *,
@@ -397,6 +436,7 @@ def plot_missing(
 __all__ = [
     "Backend",
     "aic_comparison_plot",
+    "aic_heatmap",
     "barplot_twoway",
     "mosaic_plot",
     "plot_missing",

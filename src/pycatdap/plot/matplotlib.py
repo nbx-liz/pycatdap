@@ -583,6 +583,113 @@ def _plot_target_regression(
     raise ValueError(msg)
 
 
+def _coerce_aic_dataframe(
+    result: Catdap1Result | pd.DataFrame,
+) -> pd.DataFrame:
+    """Extract a ΔAIC DataFrame from a Catdap1Result or accept one directly."""
+    if isinstance(result, pd.DataFrame):
+        return result
+    aic = getattr(result, "aic", None)
+    if isinstance(aic, pd.DataFrame):
+        return aic
+    msg = (
+        f"aic_heatmap: expected Catdap1Result or pd.DataFrame; "
+        f"got {type(result).__name__}"
+    )
+    raise TypeError(msg)
+
+
+def aic_heatmap(
+    result: Catdap1Result | pd.DataFrame,
+    *,
+    ax: Axes | None = None,
+    threshold: float | None = 0.0,
+    cmap: str = "RdYlGn_r",
+    **kwargs: Any,
+) -> Axes:
+    """Diverging ΔAIC heatmap (H-0006).
+
+    Parameters
+    ----------
+    result : Catdap1Result or DataFrame
+        ΔAIC values. ``Catdap1Result.aic`` is extracted automatically.
+        For a raw DataFrame: rows are responses, columns are
+        explanatories. Diagonal cells should be ``NaN`` (rendered white).
+    ax : Axes or None
+        Matplotlib axes. Created if ``None``.
+    threshold : float or None
+        Mark cells whose ΔAIC is strictly less than ``threshold`` with a
+        ``*`` overlay (default ``0.0`` highlights informative cells).
+        Pass ``None`` to disable.
+    cmap : str
+        Diverging colormap name. Default ``'RdYlGn_r'`` paints negative
+        (informative) ΔAIC green and positive red, matching Issue #13.
+    **kwargs
+        Forwarded to :meth:`matplotlib.axes.Axes.imshow`.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+    from matplotlib.colors import TwoSlopeNorm
+
+    aic_df = _coerce_aic_dataframe(result)
+    data = aic_df.to_numpy(dtype=float)
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        vmin, vmax = -1.0, 1.0
+    else:
+        abs_max = float(np.nanmax(np.abs(finite)))
+        if abs_max == 0.0:
+            abs_max = 1.0
+        vmin = -abs_max
+        vmax = abs_max
+    norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
+
+    # Pass NaN-containing data directly; rely on the colormap's bad-color
+    # handling to render diagonal / undefined cells as transparent.
+    # (Avoids np.ma which is untyped in some numpy stub versions.)
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(color="white", alpha=0.0)
+    image = ax.imshow(data, cmap=cmap_obj, norm=norm, aspect="auto", **kwargs)
+
+    n_rows, n_cols = data.shape
+    ax.set_xticks(range(n_cols))
+    ax.set_yticks(range(n_rows))
+    ax.set_xticklabels([str(c) for c in aic_df.columns])
+    ax.set_yticklabels([str(r) for r in aic_df.index])
+    ax.set_xlabel("Explanatory")
+    ax.set_ylabel("Response")
+    ax.set_title("ΔAIC heatmap")
+    if n_cols > 6:
+        ax.tick_params(axis="x", rotation=45)
+
+    if threshold is not None:
+        for i in range(n_rows):
+            for j in range(n_cols):
+                value = data[i, j]
+                if np.isfinite(value) and value < threshold:
+                    ax.text(
+                        j,
+                        i,
+                        "*",
+                        ha="center",
+                        va="center",
+                        color="black",
+                        fontsize=10,
+                        fontweight="bold",
+                    )
+
+    ax.figure.colorbar(image, ax=ax, label="ΔAIC")
+    return ax
+
+
 def plot_missing(
     df: pd.DataFrame,
     ax: Axes | None = None,

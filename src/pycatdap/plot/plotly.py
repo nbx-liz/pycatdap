@@ -605,6 +605,103 @@ def _plot_target_regression_plotly(
     raise ValueError(msg)
 
 
+def _coerce_aic_dataframe(
+    result: Catdap1Result | pd.DataFrame,
+) -> pd.DataFrame:
+    """Extract a ΔAIC DataFrame from a Catdap1Result or accept one directly."""
+    if isinstance(result, pd.DataFrame):
+        return result
+    aic = getattr(result, "aic", None)
+    if isinstance(aic, pd.DataFrame):
+        return aic
+    msg = (
+        f"aic_heatmap: expected Catdap1Result or pd.DataFrame; "
+        f"got {type(result).__name__}"
+    )
+    raise TypeError(msg)
+
+
+def aic_heatmap(
+    result: Catdap1Result | pd.DataFrame,
+    *,
+    threshold: float | None = 0.0,
+    colorscale: str = "RdYlGn_r",
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Diverging ΔAIC heatmap (H-0006, Plotly backend).
+
+    Parameters
+    ----------
+    result : Catdap1Result or DataFrame
+        ΔAIC values; ``Catdap1Result.aic`` is extracted automatically.
+    threshold : float or None
+        Cells with ΔAIC strictly less than ``threshold`` get a ``*``
+        annotation. Pass ``None`` to disable.
+    colorscale : str
+        Plotly diverging colorscale name. Default ``'RdYlGn_r'`` paints
+        informative cells green.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    go = _import_plotly()
+
+    aic_df = _coerce_aic_dataframe(result)
+    data = aic_df.to_numpy(dtype=float)
+
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        abs_max = 1.0
+    else:
+        abs_max = float(np.nanmax(np.abs(finite)))
+        if abs_max == 0.0:
+            abs_max = 1.0
+
+    annotations: list[dict[str, Any]] = []
+    if threshold is not None:
+        n_rows, n_cols = data.shape
+        for i in range(n_rows):
+            for j in range(n_cols):
+                value = data[i, j]
+                if np.isfinite(value) and value < threshold:
+                    annotations.append(
+                        {
+                            "x": str(aic_df.columns[j]),
+                            "y": str(aic_df.index[i]),
+                            "text": "*",
+                            "showarrow": False,
+                            "font": {"size": 14, "color": "black"},
+                        }
+                    )
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=data,
+                x=[str(c) for c in aic_df.columns],
+                y=[str(r) for r in aic_df.index],
+                colorscale=colorscale,
+                zmid=0,
+                zmin=-abs_max,
+                zmax=abs_max,
+                colorbar={"title": "ΔAIC"},
+                hovertemplate=(
+                    "Response: %{y}<br>Explanatory: %{x}<br>"
+                    "ΔAIC: %{z:.3f}<extra></extra>"
+                ),
+            )
+        ]
+    )
+    fig.update_layout(
+        title="ΔAIC heatmap",
+        xaxis={"title": "Explanatory"},
+        yaxis={"title": "Response", "autorange": "reversed"},
+        annotations=annotations,
+    )
+    return fig
+
+
 def plot_missing(
     df: pd.DataFrame,
     **kwargs: Any,  # noqa: ARG001

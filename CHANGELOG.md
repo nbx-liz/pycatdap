@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `pycatdap.plot_pair(df, x, y, *, kind="auto", bins=None, backend=...)`
     — 対称ラッパー。dtype に基づき (target, explanatory) を決定し `plot_target` に委譲
     （連続 × カテゴリ → カテゴリが target、連続 × 連続 → `y` が target、両カテゴリ → `y` が target）
+  - `pycatdap.association_matrix(df, *, measure="aic", bins=None, criterion="bic")`
+    — 全列ペアの ΔAIC 行列を返す（非対称、対角 NaN）。`target_summary` を全 `(i, j)` ペアで
+    呼び出し、`M.loc[i, j]` に `target=i, explanatory=j` の `delta_aic` を格納。
+    `measure="cramers_v"` / `"mutual_info"` は H-0007 で別途追加予定
+  - `pycatdap.aic_heatmap(result, *, threshold=0.0, backend=...)`
+    — `Catdap1Result` または `pd.DataFrame` を受け取り、diverging colormap
+    （`RdYlGn_r`、中心 0）で ΔAIC ヒートマップを描画。`threshold` 未満のセルに `*` 注釈
 - 目的変数 × 説明変数ペア分析 API（H-0004）:
   - `pycatdap.target_summary(df, target, explanatory, *, bins=None) -> TargetSummary`
     — counts / row_prop / col_prop / expected / pearson_residuals / delta_aic を保持し、
