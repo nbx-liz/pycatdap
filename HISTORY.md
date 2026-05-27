@@ -912,3 +912,203 @@ pycatdap.plot_target(
 - seaborn `catplot` / `histplot(hue=...)`: <https://seaborn.pydata.org/>
 - plotly express: <https://plotly.com/python/plotly-express/>
 - Pearson standardized residuals(Agresti, 2002, *Categorical Data Analysis*)
+
+---
+
+## 2026-05-27: 連続目的変数サポート — Gaussian 回帰 AIC 拡張(`target_summary` / `plot_target`)
+
+- ID: `H-0005`
+- Status: `proposed`
+- Scope: `API | scope | likelihood-family`
+- Related: `H-0001 Phase J`, `H-0002`, `H-0004`, `BLUEPRINT.md §3, §5.7`, Issue #56(研究フェーズ)、Issue #18(Phase J)
+
+### Context
+
+H-0004 で実装した `target_summary` / `plot_target` は **categorical / boolean target のみ対応**(連続 target で `ValueError`)。これは「ML 誤差分析(回帰残差・キャリブレーションスコア・連続リスクスコア)を扱う」という H-0001 / H-0002 の中心ユースケースを満たさない。
+
+しかし元の CATDAP フレームワーク(Sakamoto & Katsura, 1980)は contingency table 上の多項分布 AIC で response を **離散カテゴリ前提**にしており、連続 response の AIC 化アルゴリズムを提供していない。Pooling(連続変数の AIC 最適 binning)も **explanatory 側のみ**で対称展開できない(`_bin_aic` のペナルティ `2·(C_E−1)·C_F` が response カテゴリ数 `C_E` を固定値前提)。
+
+### Research summary
+
+[Issue #56](https://github.com/nbx-liz/pycatdap/issues/56) の研究フェーズで、5 つの離散化候補(symmetric pooling / joint AIC / marginal binning / aggregate AIC / user-specified)を評価したが、いずれも cross-pair 比較性(R-1)・実装複雑度・理論基盤のいずれかで欠陥があり、**「Y を離散化する」という前提自体が誤り**と判明した。
+
+`nbx-liz/AdvancedCATDAP`(sibling 私有ライブラリ)が **Y を bin せず、ガウス回帰 AIC を直接適用** することで連続 target をサポートしており、これが教科書的に正しいアプローチ(候補 (f))。研究ドキュメント [`docs/research/h0005-continuous-target.md`](docs/research/h0005-continuous-target.md) §10 で詳細導出 + 数値検証、§11 で cross-check-reviewer の独立検証を経ている。
+
+### Proposal
+
+#### コア式: ガウス回帰 AIC
+
+連続 target `y` と binned explanatory `X`(`k_means` 個の非空 bin、bin 内平均 `ȳ_i`)に対し:
+
+```
+RSS    = Σ_i Σ_{j ∈ bin i} (y_j − ȳ_i)²    # within-bin 二乗和
+AIC    = n · log(RSS / n)  +  penalty(k_means + 1, n, criterion)
+AIC_0  = n · log(TSS / n)  +  penalty(2, n, criterion)   # null: y = global mean
+ΔAIC   = AIC − AIC_0  =  n · log(1 − R²)  +  Δ_penalty
+```
+
+ペナルティ関数:
+
+| `criterion` | penalty(k, n) | 用途 |
+|---|---|---|
+| `"bic"`(default) | `log(n) · k` | piecewise-constant の標準推奨(Yao 1988) |
+| `"aic"` | `2 · k` | 古典 AIC、AdvancedCATDAP と互換 |
+| `"aicc"` | `2k + 2k(k+1)/(n−k−1)` | 小標本補正(Hurvich & Tsai 1989 系列、注: K 規約は σ² を含む方を採用) |
+
+派生: ΔAIC = `n · log(1 − R²) + Δ_penalty`(教科書 Gaussian-AIC for piecewise-constant regression、Yao 1988、Davis-Lee-RY 2006、MARS Friedman 1991 系列)。
+
+#### 公開 API(変更点)
+
+`target_summary` / `plot_target` のシグネチャは互換維持。連続 target を内部的に dispatch:
+
+```python
+pycatdap.target_summary(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    bins: int | Sequence[float] | None = None,         # 既存(explanatory binning)
+    target_bins: int                                   # NEW(opt-in、(c) fallback)
+              | Sequence[float]
+              | Literal["quantile", "equal_width", "fd"]
+              | None = None,
+    criterion: Literal["aic", "aicc", "bic"] = "bic",  # NEW
+) -> TargetSummary | RegressionTargetSummary
+```
+
+Dispatch ルール:
+
+| target dtype | `target_bins` | 戻り値 | AIC 種別 |
+|---|---|---|---|
+| categorical / boolean | `None`(必須) | `TargetSummary`(既存 H-0004) | 多項分布 ΔAIC(既存) |
+| categorical / boolean | `not None` | `ValueError`(target は既に離散) | — |
+| **continuous** | **`None`(default)** | **`RegressionTargetSummary`(NEW)** | **Gaussian ΔAIC(本 Proposal)** |
+| continuous | `not None` | `TargetSummary`(候補 (c) fallback) | 多項分布 ΔAIC(Y を bin した contingency) |
+
+#### 新規 dataclass
+
+```python
+@dataclass(frozen=True)
+class RegressionTargetSummary:
+    target: str
+    explanatory: str
+    bin_stats: pd.DataFrame      # cols: count, target_mean, target_std, x_min, x_max
+    delta_aic: float
+    r_squared: float             # ΔAIC を解釈しやすく
+    n_effective: int             # M2 戦略による有効 N(下記)
+    intervals: list[float] | None  # X 側の binning(連続 explanatory のみ)
+    criterion: Literal["aic", "aicc", "bic"]
+```
+
+メソッド: `.show()` / `.to_html(path=None)` / `.to_dict()` / `.to_plotly_json()`(既存 `TargetSummary` と揃える)。
+
+#### 欠損値ハンドリング: 戦略 M2(Acceptance Criterion)
+
+cross-check で発見された致命的欠陥(現行 `_target_pair.py:328` の per-pair `dropna()` が ペア間で `n` を変動させ R-1 を実質的に破る)を回避するため、**M2 戦略を採用**:
+
+1. **Y のみ dropna**: 目的変数の欠損行のみ削除。これにより全 X 候補で `n` 共通。
+2. **X の欠損は明示的 missing pseudo-bin**: X に欠損がある行は `_missing_` という特別 bin に集約。`bin_stats` の最終行に表示。
+3. **`AIC_null` は全ペアで同一**: `n · log(TSS / n) + penalty(2, n)` は Y のみ依存 → 同一 Y 上の異なる X 候補で ΔAIC が直接比較可能。
+
+参考実装: AdvancedCATDAP `scoring.py:calc_score_regression_partial` が `stats_missing` を含めた同等の処理を行っている。
+
+#### `plot_target` の継続的拡張
+
+`RegressionTargetSummary` に対して `plot_target` は次の自動 kind を選択:
+
+| explanatory dtype | auto kind | 描画内容 |
+|---|---|---|
+| categorical (≤ 8 levels) | `box` | X カテゴリ別の Y 箱ひげ(seaborn 定石) |
+| categorical (> 8 levels) | `box` + sort by `target_mean` | 多水準時の可読性 |
+| continuous | `scatter` + `bin_means` overlay | X-Y 散布図に bin 平均線を重畳 |
+| boolean | overlaid hist | Y 分布の two-class 重畳 |
+
+明示 kind: `"scatter"`, `"box"`, `"violin"`, `"hist"`, `"bin_means"`(bin 平均のみ折れ線)。
+
+### Impact
+
+- **公開 API 追加**: `RegressionTargetSummary` 型 + `target_summary` / `plot_target` シグネチャに `target_bins` / `criterion` パラメータ追加(default 互換)
+- **既存 API への破壊的変更なし**: `TargetSummary` の動作不変
+- **新規モジュール**: `src/pycatdap/_aic_regression.py`(ガウス回帰 AIC 計算、AdvancedCATDAP から移植)
+- **既存モジュール改修**: `_target_pair.py`(dispatch logic + M2 dropna)、`plot/matplotlib.py` / `plot/plotly.py`(RegressionTargetSummary 対応)、`__init__.py`(新規型 export)
+- **BLUEPRINT.md §3 / §5.7**: モジュール構成・plotting 関数表に追記
+
+### Compatibility
+
+- **後方互換**: 完全
+  - 既存 `target_summary(df, "Survived", "Sex")` は `target_bins=None`, `criterion="bic"` がデフォルトに変わるが、target が categorical なので criterion は使われず動作不変
+  - `target_bins` パラメータは新規追加(default `None`)
+  - 連続 target で `ValueError` を期待していたコードは `RegressionTargetSummary` を受け取る挙動に変わる(breaking?)
+
+→ **連続 target の ValueError 期待は documentation 上の挙動であり、API 契約ではない**。H-0004 リリース時点で「連続 target はサポートされていない」と明記しているため、`RegressionTargetSummary` を返すように変わっても契約違反ではない。CHANGELOG に明示。
+
+### Alternatives Considered
+
+研究ドキュメント §6-§7 で 5 候補(a-e)を評価し棄却した経緯。要点:
+
+| 候補 | 棄却理由 |
+|---|---|
+| (a) Symmetric pooling | C_X 依存 post-selection bias で R-1 失敗(研究 §2.5) |
+| (b) Joint AIC binning | R-1 失敗 + 計算量 O(K²N²) で実用不能 |
+| (c) Marginal Y binning | (f) 採用後は不要だが、`target_bins=...` 経由で **contingency-table view fallback** として温存 |
+| (d) Aggregate AIC | (f) で動機消失 |
+| (e) User-specified | (c) のエイリアスとして温存 |
+
+#### IT-解釈ギャップ(明示的に許容)
+
+- categorical mode: ΔAIC = `−2n·Î(E;F) + penalty` → 相互情報量解釈
+- regression mode: ΔAIC = `n·log(1−R²) + penalty` → R² 解釈
+
+同じ AIC 機械を異なる likelihood family で適用するため、**カテゴリと回帰の ΔAIC は直接比較不能**。ユーザーには same-mode 内での比較に限定するよう docs で明記。
+
+### Acceptance Criteria
+
+#### API
+- [ ] 連続 target + `target_bins=None` で `RegressionTargetSummary` を返す
+- [ ] 連続 target + `target_bins=int|list|"quantile"|"equal_width"|"fd"` で既存 `TargetSummary`(候補 (c) fallback)を返す
+- [ ] `RegressionTargetSummary` に `.show / .to_html / .to_dict / .to_plotly_json` の4メソッド
+- [ ] `plot_target` の auto kind が回帰モードで `scatter+bin_means` / `box` / `violin` / `hist` を正しく選択
+
+#### 数値整合
+- [ ] `gaussian_regression_aic` の結果が `AdvancedCATDAP.calc_score_reg_bincount_idx` と一致(同一データで 1e-10 以内)
+- [ ] ΔAIC = `n · log(1−R²) + penalty_diff` が `sklearn.metrics.r2_score` から再構成可能(R² 整合性)
+- [ ] M2 missing strategy で **同一 Y、異なる欠損パターンの X 候補に対し `AIC_null` が一致**(R-1 テスト)
+- [ ] `criterion="bic" | "aic" | "aicc"` でペナルティ式が一致(`bic: log(n)·k` / `aic: 2k` / `aicc: 2k + 2k(k+1)/(n-k-1)`)
+
+#### コード品質
+- [ ] `tests/test_aic_regression.py` に unit テスト 15 個以上(各 criterion / edge case / M2 missing strategy / cross-pair comparability)
+- [ ] `tests/test_target_pair.py` に regression dispatch テスト 8 個以上(dtype 判定、戻り値型、`.to_html` / `.to_plotly_json`)
+- [ ] coverage 80%+ 維持
+- [ ] `mypy --strict` pass
+- [ ] docstring(NumPy style)に `Examples` セクション付き
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3` モジュール構成図に `_aic_regression.py` を追記
+- [ ] `BLUEPRINT.md §5.7` の signature 表に regression mode を追記
+- [ ] `CHANGELOG.md [Unreleased]` の `Added` に `RegressionTargetSummary` + 2 パラメータを記載
+- [ ] チュートリアル Notebook 06 の「Coming soon: continuous targets」節を `RegressionTargetSummary` を使うコード例に置換(別 PR)
+
+### Decision
+
+- Date: *(awaiting acceptance)*
+- Result: *(pending)*
+- Notes: *(to be filled by project owner)*
+
+### Migration
+
+破壊的変更なし。新規 API のため明示的な移行不要。CHANGELOG `[Unreleased]` の `Added` に `RegressionTargetSummary` 型と 2 つのパラメータを記載する。
+
+ユーザー側の互換ポイント:
+- 既存の `target_summary(df, "Survived", "Sex")` は完全に互換
+- 連続 target で従来 `ValueError` を `try/except` していたコードは、引き続き例外なし(`RegressionTargetSummary` が返る)に置き換える
+- `criterion` のデフォルトを `"aic"` 互換にしたい場合は `target_summary(..., criterion="aic")` で明示
+
+### Related References
+
+- Akaike, H. (1973). *Information theory and an extension of the maximum likelihood principle*. In Proc. 2nd Int. Symp. Information Theory, 267-281.
+- Hurvich, C. M., & Tsai, C. L. (1989). *Regression and time series model selection in small samples*. Biometrika 76(2), 297-307.(AICc; 注:本実装は K 規約に σ² を含む AdvancedCATDAP 流儀)
+- Yao, Y. C. (1988). *Estimating the Number of Change-Points via Schwarz Criterion*. Statistics & Probability Letters 6, 181-189.(BIC を changepoint 推奨)
+- Davis, R. A., Lee, T. C. M., & Rodriguez-Yam, G. A. (2006). *Structural Break Estimation for Nonstationary Time Series Models*. JASA 101, 223-239.
+- Friedman, J. H. (1991). *Multivariate Adaptive Regression Splines*. Annals of Statistics 19(1), 1-67.
+- 参照実装: [`nbx-liz/AdvancedCATDAP/advanced_catdap/components/scoring.py`](https://github.com/nbx-liz/AdvancedCATDAP/blob/main/advanced_catdap/components/scoring.py)
+- 研究フェーズ詳細: [`docs/research/h0005-continuous-target.md`](docs/research/h0005-continuous-target.md)
