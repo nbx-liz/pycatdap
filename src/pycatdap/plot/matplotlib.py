@@ -652,10 +652,12 @@ def aic_heatmap(
         vmax = abs_max
     norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
 
-    # np.ma.masked_invalid is untyped in some numpy stub versions; build the
-    # MaskedArray directly so mypy stays clean across the CI matrix.
-    masked = np.ma.MaskedArray(data, mask=~np.isfinite(data))
-    image = ax.imshow(masked, cmap=cmap, norm=norm, aspect="auto", **kwargs)
+    # Pass NaN-containing data directly; rely on the colormap's bad-color
+    # handling to render diagonal / undefined cells as transparent.
+    # (Avoids np.ma which is untyped in some numpy stub versions.)
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(color="white", alpha=0.0)
+    image = ax.imshow(data, cmap=cmap_obj, norm=norm, aspect="auto", **kwargs)
 
     n_rows, n_cols = data.shape
     ax.set_xticks(range(n_cols))

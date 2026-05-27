@@ -104,17 +104,17 @@ class TestRenderedValues:
     """The rendered heatmap reflects the underlying matrix."""
 
     def test_matplotlib_image_data_matches_input(self, aic_df: pd.DataFrame) -> None:
-        """imshow's data array should equal the input matrix."""
+        """imshow's data array should equal the input matrix (NaN preserved)."""
         ax = plot.aic_heatmap(aic_df)
         images = ax.get_images()
         assert len(images) == 1
         rendered = images[0].get_array()
-        # imshow returns masked array; compare non-masked values.
-        np.testing.assert_allclose(
-            np.asarray(rendered.filled(np.nan)),
-            aic_df.to_numpy(),
-            equal_nan=True,
-        )
+        # Accept both MaskedArray and ndarray return shapes.
+        if hasattr(rendered, "filled"):
+            rendered_np = np.asarray(rendered.filled(np.nan))
+        else:
+            rendered_np = np.asarray(rendered)
+        np.testing.assert_allclose(rendered_np, aic_df.to_numpy(), equal_nan=True)
 
     def test_plotly_z_data_matches_input(self, aic_df: pd.DataFrame) -> None:
         pytest.importorskip("plotly")
