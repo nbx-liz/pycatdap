@@ -105,6 +105,8 @@ pycatdap/
 ├── catdap2.py              # CATDAP-02 実装（既存）
 ├── _aic.py                 # AIC計算コア（既存）
 ├── _aic_regression.py      # 連続 target 向け Gaussian 回帰 AIC（H-0005）
+├── _target_pair.py         # target × explanatory ペア API（H-0004 + H-0005）
+├── _association.py         # 全列ペアの ΔAIC 行列（H-0006 Phase B）
 ├── _pooling.py             # 連続変数のカテゴリ化（既存）
 ├── _subset_search.py       # 最適部分集合探索（既存）
 ├── _contingency.py         # 分割表構築ユーティリティ（既存）
@@ -573,11 +575,19 @@ pycatdap.plot_target(df, target, explanatory, kind="auto", bins=None, backend=..
 # kind = "auto" | "stacked" | "mosaic" | "violin" | "box" | "hist"
 #       | "scatter" | "bin_means"   ← H-0005 で追加（連続 target 向け）
 
-# 二変量（H-0001 Phase B、v0.4.0 計画）
-pycatdap.plot_pair(df, x, y, backend=...)            # 自動的にモザイク/箱ひげ/散布
-pycatdap.aic_heatmap(catdap1_result, backend=...)    # m×m ΔAIC ヒートマップ
-pycatdap.association_matrix(df, measure="aic", backend=...)
-pycatdap.association_plot(table, backend=...)        # vcd 風標準化残差
+# 二変量（H-0006 Phase B、v0.4.0 で実装済み）
+pycatdap.plot_pair(df, x, y, *, kind="auto", bins=None, backend=...)
+# 対称ラッパー。dtype に基づき (target, explanatory) を決定し plot_target に委譲
+pycatdap.aic_heatmap(result, *, threshold=0.0, backend=...)
+# Catdap1Result または pd.DataFrame を受け取り、diverging colormap（中心 0）で
+# m × m ΔAIC ヒートマップを描画。threshold 未満のセルに "*" 注釈
+pycatdap.association_matrix(df, *, measure="aic", bins=None, criterion="bic") -> pd.DataFrame
+# 全列ペアの ΔAIC 行列（非対称、対角 NaN）。
+# v0.4.0 は measure="aic" のみ。cramers_v / mutual_info は H-0007 で別途
+pycatdap.association_plot(table, *, threshold=2.0, backend=...)
+# vcd assoc(shade=TRUE) 風 Pearson 標準化残差ヒートマップ
+# TargetSummary または pd.DataFrame（クロス頻度）を受け取る
+# RegressionTargetSummary は TypeError（plot_target(kind="scatter") を推奨）
 ```
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
