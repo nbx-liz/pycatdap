@@ -269,6 +269,106 @@ def plot_target(
     )
 
 
+def _resolve_pair_response(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+) -> tuple[str, str]:
+    """Decide which of (x, y) is the response (target) side (H-0006).
+
+    Returns ``(target, explanatory)``. Rule:
+
+    - Both discrete (categorical / boolean / datetime / other) → ``y`` wins
+      (seaborn / vcd ``y ~ x`` convention).
+    - Mixed discrete/continuous → discrete side wins (Pearson residual
+      interpretation is more natural with the discrete side as response).
+    - Both continuous → ``y`` wins (H-0005 regression: ``y`` is target).
+    """
+    from pycatdap.eda import _detect_kind
+
+    if x not in df.columns:
+        msg = f"plot_pair: x column not found: {x!r}"
+        raise KeyError(msg)
+    if y not in df.columns:
+        msg = f"plot_pair: y column not found: {y!r}"
+        raise KeyError(msg)
+
+    kind_x = _detect_kind(df[x])
+    kind_y = _detect_kind(df[y])
+
+    x_is_continuous = kind_x == "continuous"
+    y_is_continuous = kind_y == "continuous"
+
+    if x_is_continuous and not y_is_continuous:
+        return y, x
+    if y_is_continuous and not x_is_continuous:
+        return x, y
+    return y, x
+
+
+def plot_pair(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    *,
+    kind: str = "auto",
+    bins: int | list[float] | None = None,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Plot a symmetric x × y pair (H-0006 Phase B).
+
+    Decides which side is the response based on dtypes, then delegates
+    to :func:`plot_target`. The decision rule (H-0006):
+
+    - discrete × discrete → ``y`` is the response
+    - discrete × continuous → discrete side is the response
+    - continuous × continuous → ``y`` is the response (H-0005 regression
+      mode; scatter plot)
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    x, y : str
+        The two variables to compare.
+    kind : str
+        Plot kind, forwarded to :func:`plot_target`. Default ``'auto'``.
+    bins : int, sequence of float, or None
+        Binning for continuous variables, forwarded to :func:`plot_target`.
+    backend : {'matplotlib', 'plotly'}
+        Plotting backend.
+    **kwargs
+        Additional keyword arguments forwarded to :func:`plot_target`.
+
+    Returns
+    -------
+    object
+        Backend-specific figure/axes object (whatever :func:`plot_target`
+        returns).
+
+    See Also
+    --------
+    pycatdap.plot_target : the underlying target-aware dispatcher.
+
+    Examples
+    --------
+    >>> import pycatdap
+    >>> df = pycatdap.datasets.load_titanic()
+    >>> ax = pycatdap.plot_pair(df, "Sex", "Survived")
+    """
+    target, explanatory = _resolve_pair_response(df, x, y)
+    return plot_target(
+        df,
+        target=target,
+        explanatory=explanatory,
+        kind=kind,
+        bins=bins,
+        backend=backend,
+        **kwargs,
+    )
+
+
 def plot_missing(
     df: pd.DataFrame,
     *,
@@ -300,7 +400,9 @@ __all__ = [
     "barplot_twoway",
     "mosaic_plot",
     "plot_missing",
+    "plot_pair",
     "plot_target",
     "plot_variable",
+    "_resolve_pair_response",
     "_resolve_target_kind",
 ]
