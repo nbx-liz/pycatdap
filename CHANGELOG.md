@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - `docs/tutorials/02-eda-titanic.ipynb` — 03/04/05 へのクロスリファレンスを追加、bundled clean 版と seaborn messy 版の関係を明示。さらに `target_summary` を使った single-pair drill-down teaser 節を追加し、06 へリンク
 - `docs/tutorials/05-real-world-eda.ipynb` — クリーニング済み Titanic で `target_summary` を `sex` / `age`（連続）に適用する節を追加、AIC 最適 binning の効果を確認
+- `docs/tutorials/06-target-pair-titanic.ipynb` — 末尾の「Coming soon: continuous targets」プレースホルダ節を H-0005 の動作デモ（連続 target = `fare`、`RegressionTargetSummary`、`plot_target` の box / scatter、`criterion="aic" / "aicc" / "bic"` 比較、`target_bins` fallback の対比）へ置換。Summary 表に regression-mode の 3 行を追加
 
 ## [0.3.0] — 2026-05-26
 
