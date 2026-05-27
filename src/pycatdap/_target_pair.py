@@ -515,15 +515,15 @@ def _build_regression_x_codes(
                 float(x_clean.max()) + 1e-9,
             ]
             cut = pd.cut(x_clean, bins=edge_list, include_lowest=True)
-            codes_clean_raw, uniques = pd.factorize(cut, sort=True)
+            codes_clean_raw, cut_uniques = pd.factorize(cut, sort=True)
             codes_clean = codes_clean_raw.astype(np.intp)
-            labels = [str(u) for u in uniques]
+            labels = [str(u) for u in cut_uniques]
         intervals: list[float] | None = boundaries
     else:
         x_clean_series = x[~is_missing].astype(str)
-        codes_clean_raw, uniques = pd.factorize(x_clean_series, sort=False)
+        codes_clean_raw, cat_uniques = pd.factorize(x_clean_series, sort=False)
         codes_clean = codes_clean_raw.astype(np.intp)
-        labels = [str(u) for u in uniques]
+        labels = [str(u) for u in cat_uniques]
         intervals = None
 
     if is_missing.any():

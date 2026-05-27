@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -464,10 +466,11 @@ def _plot_target_regression_plotly(
                 ]
                 cuts = pd.cut(x_arr, bins=edges, include_lowest=True).astype(str)
                 for label in labels:
+                    mask: npt.NDArray[np.bool_]
                     if label == "_missing_":
                         mask = pd.isna(work[explanatory]).to_numpy()
                     else:
-                        mask = cuts == label
+                        mask = np.asarray(cuts == label, dtype=bool)
                     y_groups.append(y_arr[mask])
             else:
                 y_groups = [y_arr]
