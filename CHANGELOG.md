@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Phase B 二変量 API（H-0006、Issue #13）— 段階的に追加:
+  - `pycatdap.plot_pair(df, x, y, *, kind="auto", bins=None, backend=...)`
+    — 対称ラッパー。dtype に基づき (target, explanatory) を決定し `plot_target` に委譲
+    （連続 × カテゴリ → カテゴリが target、連続 × 連続 → `y` が target、両カテゴリ → `y` が target）
 - 目的変数 × 説明変数ペア分析 API（H-0004）:
   - `pycatdap.target_summary(df, target, explanatory, *, bins=None) -> TargetSummary`
     — counts / row_prop / col_prop / expected / pearson_residuals / delta_aic を保持し、
