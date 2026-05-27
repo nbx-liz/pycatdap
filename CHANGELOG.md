@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-05-27
+
+このリリースは EDA レイヤを **ペア・全列ペア** まで広げる minor 拡張:
+H-0004(`target_summary` / `plot_target`)+ H-0005(連続目的変数 Gaussian 回帰 AIC)
++ H-0006(Phase B 二変量 API: `plot_pair` / `aic_heatmap` / `association_matrix` /
+`association_plot`)の 3 つの HISTORY エントリと、それを支える 5 本のチュートリアル
+ノートブック(03 / 04 / 05 / 06 / 07)を含む。詳細は HISTORY.md および以下の各節を参照。
+
 ### Fixed
 
 - `DescribeResult.to_html(path)` / `TargetSummary.to_html(path)` を atomic write
@@ -74,6 +82,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - `docs/tutorials/02-eda-titanic.ipynb` — 03/04/05 へのクロスリファレンスを追加、bundled clean 版と seaborn messy 版の関係を明示。さらに `target_summary` を使った single-pair drill-down teaser 節を追加し、06 へリンク
 - `docs/tutorials/05-real-world-eda.ipynb` — クリーニング済み Titanic で `target_summary` を `sex` / `age`（連続）に適用する節を追加、AIC 最適 binning の効果を確認
 - `docs/tutorials/06-target-pair-titanic.ipynb` — 末尾の「Coming soon: continuous targets」プレースホルダ節を H-0005 の動作デモ（連続 target = `fare`、`RegressionTargetSummary`、`plot_target` の box / scatter、`criterion="aic" / "aicc" / "bic"` 比較、`target_bins` fallback の対比）へ置換。Summary 表に regression-mode の 3 行を追加
+- `docs/tutorials/01-basic-catdap.ipynb` — 解説文を英訳。v0.2 由来の日本語ナレーションを CONTRIBUTING.md の English-only ポリシーに揃える（PR #52）
+- `BLUEPRINT.md` §3.1 / §5.7 — H-0004 / H-0005 / H-0006 で追加したモジュール（`_target_pair.py` / `_association.py`）と公開 API（4 関数 + 2 ペア API）を反映
 
 ## [0.3.0] — 2026-05-26
 
