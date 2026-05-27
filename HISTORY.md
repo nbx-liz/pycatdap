@@ -1117,3 +1117,237 @@ cross-check で発見された致命的欠陥(現行 `_target_pair.py:328` の p
 - Friedman, J. H. (1991). *Multivariate Adaptive Regression Splines*. Annals of Statistics 19(1), 1-67.
 - 参照実装: [`nbx-liz/AdvancedCATDAP/advanced_catdap/components/scoring.py`](https://github.com/nbx-liz/AdvancedCATDAP/blob/main/advanced_catdap/components/scoring.py)
 - 研究フェーズ詳細: [`docs/research/h0005-continuous-target.md`](docs/research/h0005-continuous-target.md)
+
+---
+
+## 2026-05-27: Phase B 二変量 API(`plot_pair` / `aic_heatmap` / `association_matrix` / `association_plot`)
+
+- ID: `H-0006`
+- Status: `proposed`
+- Scope: `API | scope`
+- Related: `H-0001 Phase B`, `H-0002 FR-3`, `H-0004`, `BLUEPRINT.md §3, §5.7`, Issue #13
+
+### Context
+
+H-0004 / H-0005 で **目的変数指向**(asymmetric)の `target_summary` / `plot_target` は揃った。一方、`H-0001 Phase B`(Issue #13)が想定している残りの 4 つの公開 API は、いずれも **対称な二変量** または **多変数まとめ** の視点を提供するもので、未着手:
+
+| API | 視点 | 必要性 |
+|---|---|---|
+| `plot_pair(df, x, y)` | 任意の 2 変数(対称) | EDA で `target` が定まっていない初手の探索 |
+| `aic_heatmap(catdap1_result)` | m×m ΔAIC をヒートマップ化 | `Catdap1Result.aic` の DataFrame 表示は読みにくい |
+| `association_matrix(df, measure=...)` | 全列ペアの関連度行列 | `catdap1` は **response 軸を指定する** ため対称行列を直接返さない |
+| `association_plot(table)` | vcd 風 Pearson 残差ヒートマップ | `TargetSummary.pearson_residuals` の数値 DataFrame は解釈が重い |
+
+H-0004 §A1 で「`plot_pair` は対称設計のため Phase B に分離」と明記済み。本 Proposal はその約束を回収する。
+
+### 競合分析(対象パッケージ)
+
+| Package | 該当機能 | 形式 | pycatdap での参考点 |
+|---|---|---|---|
+| **R `vcd::assoc(table, shade=TRUE)`** | 標準化残差ヒートマップ | mosaic + Pearson 残差で色付け | `association_plot` のリファレンス |
+| **R `vcd::pairs(table)`** | 多変数 mosaic マトリクス | 全ペアの mosaic を grid 配置 | `plot_pair` の対称版に類似 |
+| **seaborn `heatmap(corr_matrix)`** | 相関行列のヒートマップ | 連続変数の Pearson 相関を全ペアで | `association_matrix` + `aic_heatmap` の参考(連続のみ) |
+| **ydata-profiling Correlations タブ** | 関連度行列 | `phi_k` / Cramér's V / Spearman 等を選択 | `association_matrix(measure=...)` の参考 |
+| **plotly `imshow`** | ヒートマップ | matrix → interactive heatmap | plotly backend の実装方針 |
+| **sweetviz Associations** | 関連度行列 | Cramér's V + 相関比、対角=NaN | `association_matrix` の出力契約 |
+
+**学び**:
+- 残差ヒートマップは **diverging colormap**(負=青、正=赤、ゼロ=白)+ 閾値線(±2σ)を引くのが業界標準(vcd)
+- 関連度行列の対角は **NaN**(自己関連は意味なし)が pandas / seaborn / sweetviz の共通慣習
+- 「**測度を選べる**」設計(`measure=` キーワード)が `phi_k` / Cramér's V / mutual_info の並立を可能にする
+- `aic_heatmap` の色は **ΔAIC < 0 が informative**(Issue #13 では緑、≥ 0 で赤を指定)— これは vcd の「informative=高彩度」と方向は一致するが、AIC は **0 が baseline** という追加意味があるため diverging colormap の中心を 0 にする必要がある
+
+### Proposal
+
+#### 公開 API(新規 4 関数)
+
+```python
+# B1. 対称ラッパー: plot_pair
+pycatdap.plot_pair(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    *,
+    kind: Literal["auto", "stacked", "mosaic", "violin", "box", "hist",
+                   "scatter", "bin_means"] = "auto",
+    bins: int | Sequence[float] | None = None,
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    **kwargs: Any,
+) -> Any
+```
+
+**応答側の決定ルール**(`plot_pair` 専用、`plot_target` には影響しない):
+
+| `x` dtype | `y` dtype | response として選ぶ側 | 根拠 |
+|---|---|---|---|
+| categorical / boolean | categorical / boolean | `y`(慣習: 縦軸=応答) | seaborn / vcd の formula 順序に一致 |
+| categorical / boolean | continuous | `x`(離散側) | Pearson 残差の解釈は離散側を応答とする方が自然(H-0004 §A1) |
+| continuous | categorical / boolean | `y`(離散側) | 同上 |
+| continuous | continuous | `y`(慣習: 縦軸=応答) | H-0005 回帰モードでは `y` を target、`x` を explanatory |
+
+ルール確定後は `plot_target(df, target=<response>, explanatory=<other>, kind=kind, bins=bins, backend=backend, **kwargs)` に **完全に委譲** する。`plot_pair` 単体ではロジックを持たない(対称→非対称の翻訳のみ)。
+
+#### B2. `aic_heatmap`
+
+```python
+pycatdap.aic_heatmap(
+    result: Catdap1Result | pd.DataFrame,
+    *,
+    threshold: float | None = 0.0,        # 強調する ΔAIC 閾値
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    **kwargs: Any,
+) -> Any
+```
+
+- `Catdap1Result` を受け取った場合は `result.aic` を内部で使用
+- `pd.DataFrame` を受け取った場合は **rows=response, cols=explanatory** と解釈(`association_matrix` の戻り値と互換)
+- カラーマップ: **diverging**(`RdYlGn_r` 互換 — ΔAIC < 0=緑、> 0=赤、中心 0=白)
+- `threshold` が指定された場合、各セルのテキストに `*` を付与(`< threshold` のセル)
+- 対角(self)は NaN なので白(透明)表示
+
+#### B3. `association_matrix`
+
+```python
+pycatdap.association_matrix(
+    df: pd.DataFrame,
+    *,
+    measure: Literal["aic"] = "aic",     # v0.4.0 では "aic" のみ
+    bins: int | None = None,             # 連続変数の binning
+    criterion: Literal["aic", "aicc", "bic"] = "bic",   # 連続 target 時
+) -> pd.DataFrame
+```
+
+- 戻り値: 正方 DataFrame, rows=`df.columns`, cols=`df.columns`, **対角=NaN**
+- `measure="aic"`: 各セル `(i, j)` は **`target_summary(df, target=i, explanatory=j).delta_aic`** を格納
+  - 連続 target × 連続 explanatory は H-0005 の `RegressionTargetSummary.delta_aic`
+  - 連続 target × カテゴリ explanatory も H-0005 経由
+  - カテゴリ target × * は H-0004 経由
+- **非対称**(`M[i, j] != M[j, i]`):「i を target としたとき j がどれだけ説明するか」と「j を target としたとき i がどれだけ説明するか」は別物。これを行列で同時に提示することで、対称性の崩れ自体がユーザーへの情報になる
+- `measure="cramers_v"` / `"mutual_info"` は **本 Proposal のスコープ外**(後続 H-0007 等で追加。H-0002 `measures/` プラグイン層が前提)
+
+#### B4. `association_plot`
+
+```python
+pycatdap.association_plot(
+    table: pd.DataFrame | TargetSummary,
+    *,
+    threshold: float = 2.0,              # |residual| > threshold を強調
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    **kwargs: Any,
+) -> Any
+```
+
+- `TargetSummary` を受け取った場合は `table.pearson_residuals` を内部で使用
+- `pd.DataFrame` を直接受け取る場合は **クロス頻度表** と解釈し、内部で Pearson 標準化残差を計算
+- カラーマップ: **diverging**(青=負、赤=正、白=ゼロ)— vcd `assoc(shade=TRUE)` 互換
+- `threshold` を超えるセルは **アスタリスク** をオーバーレイ(matplotlib)/ hover text(plotly)
+- `RegressionTargetSummary` は対象外(連続 target には Pearson 残差概念がない)— 渡された場合 `TypeError` を上げ、`plot_target(kind="scatter")` を推奨するエラーメッセージを返す
+
+#### dispatch / 配置
+
+- `src/pycatdap/_association.py`(新規)— `association_matrix` のロジック(全ペア走査)を集約
+- `src/pycatdap/plot/__init__.py` に 3 つの dispatcher(`plot_pair`, `aic_heatmap`, `association_plot`)を追加
+- `src/pycatdap/plot/matplotlib.py` / `plotly.py` に各 backend 実装を追加
+  - `plot_pair`: `plot_target` への委譲のみ(backend ごとの実装は不要)
+  - `aic_heatmap` / `association_plot`: backend ごとに heatmap を実装
+- `src/pycatdap/__init__.py` に再 export: `plot_pair`, `aic_heatmap`, `association_matrix`, `association_plot`
+
+### Impact
+
+- **公開 API の追加のみ**(4 関数)
+- 既存 API への破壊的変更なし
+- 新規モジュール: `src/pycatdap/_association.py`
+- 既存モジュール変更: `src/pycatdap/plot/__init__.py` / `matplotlib.py` / `plotly.py` / `__init__.py`
+- `BLUEPRINT.md §3`(モジュール構成)と `§5.7`(plotting テーブル)を改訂
+- 任意依存の追加なし(matplotlib / plotly は既存 extras)
+
+### Compatibility
+
+- **後方互換**: 完全
+- 既存の `target_summary` / `plot_target` / `Catdap1Result` への変更なし
+- `plot_pair` は `plot_target` に委譲するため、`plot_target` の挙動変更がそのまま伝播する(`plot_pair` 単体の挙動を別 spec で固定はしない)
+
+### Alternatives Considered
+
+#### A1: `plot_pair` を `plot_target` とは独立のロジックで再実装
+- **不採用理由**: 同じ dispatch を 2 つ保守するのは反 DRY。`plot_target` を改訂したときに `plot_pair` の auto 選択が乖離する事故を招く。委譲することで H-0004 / H-0005 の改善が自動的に `plot_pair` にも反映される。
+
+#### A2: `association_matrix` を **対称化**(`(M + M.T) / 2` を返す)
+- **不採用理由**: ΔAIC は **「i を target としたときの j の情報量」** という方向性のある量。対称化すると `cramers_v` や `phi_k` と区別がつかなくなり、AIC の優位性(モデル選択フレームワーク)を捨てる。非対称のまま提示する方が「**変数 i は j からよく説明されるが、逆は弱い**」というアサイメトリ自体を発見できる(因果探索の手がかり)。
+
+#### A3: `association_matrix(measure="cramers_v" | "mutual_info")` を本 PR に同梱
+- **不採用理由**: BLUEPRINT §5.11 で planned 状態の `measures/` プラグイン層(H-0002 で言及)が未実装。先に `measures/` 層を入れるか、本 PR では `aic` のみで出して別 Proposal(H-0007)で他測度を追加する方が、テストもレビューも軽い。
+
+#### A4: `aic_heatmap` を **対角を 0 で埋める**(NaN は白だが意味不明)
+- **不採用理由**: 自己 ΔAIC は数学的に未定義(`catdap1` も NaN を返す慣習)。0 で埋めると「自己関連が baseline と同等」というミスリードを生む。NaN を白(透明)表示し、tooltip / legend で「diagonal: undefined」と明記する方が誠実。
+
+#### A5: `association_plot` を **`mosaic_plot` + shade=True フラグ** として既存に追加
+- **不採用理由**: mosaic と heatmap は表現が根本的に異なる(mosaic は面積エンコード、heatmap は色エンコード)。`association_plot` は **heatmap 専用** で残差の数値解釈に特化する方が役割分担が明確。`mosaic_plot(table, shade=True)` を別途追加するのは将来の検討事項。
+
+#### A6: `plot_pair` の応答決定ルールを **常に `y` を target** にする(seaborn 慣習に統一)
+- **不採用理由**: カテゴリ × 連続のペアで連続側を target にすると、`plot_target` は H-0005 回帰モードに入る。連続変数を「目的」として扱うのは EDA 初手としては重い解釈になる。**離散側を優先** することで「カテゴリの違いによる連続変数の分布変化」という解釈しやすい view に揃える。
+
+### Acceptance Criteria
+
+#### API
+- [ ] `pycatdap.plot_pair(df, x, y)` が matplotlib / plotly 両 backend で動作
+- [ ] `plot_pair` の応答決定ルール 4 パターン(cat×cat / cat×cont / cont×cat / cont×cont)を unit テストで確認
+- [ ] `pycatdap.aic_heatmap(catdap1_result)` が `Catdap1Result` と `pd.DataFrame` の両方を受け取れる
+- [ ] `pycatdap.aic_heatmap` が両 backend で動作、diverging colormap で中心 0
+- [ ] `pycatdap.association_matrix(df, measure="aic")` が正方 DataFrame を返し、対角 NaN、shape=(m, m)
+- [ ] `association_matrix` の `M.loc[i, j]` が `target_summary(df, target=i, explanatory=j).delta_aic` と一致(全 (i,j) ペア)
+- [ ] `pycatdap.association_plot(table)` が `TargetSummary` と `pd.DataFrame`(クロス頻度)の両方を受け取れる
+- [ ] `association_plot` に `RegressionTargetSummary` を渡すと `TypeError` を `plot_target(kind="scatter")` を推奨するメッセージ付きで上げる
+- [ ] 4 関数すべてに `**kwargs` フォワード機構あり
+
+#### 数値整合
+- [ ] `aic_heatmap` が表示する数値が `Catdap1Result.aic` の DataFrame の数値と一致
+- [ ] `association_matrix(df, measure="aic")` の `M.loc[i, i]` が NaN
+- [ ] `association_plot(target_summary(df, t, e))` のセル色が Pearson 残差の符号と一致(`> threshold` で強調)
+
+#### コード品質
+- [ ] `tests/test_plot_pair.py` に dispatch テスト 8 件以上(4 dtype 組合せ × 2 backend)
+- [ ] `tests/test_aic_heatmap.py` に backend / 入力型 / colormap テスト 6 件以上
+- [ ] `tests/test_association.py` に `association_matrix` + `association_plot` のテスト 10 件以上(計算正しさ・対角 NaN・対称性チェック・kwargs フォワード・回帰結果拒否)
+- [ ] coverage 80%+ 維持
+- [ ] `mypy --strict` pass
+- [ ] 4 関数すべてに NumPy style docstring + `Examples` セクション
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3` のモジュール構成図に `_association.py` を追記
+- [ ] `BLUEPRINT.md §5.7` の plotting 関数一覧に 4 関数を追記
+- [ ] 新規 tutorial `docs/tutorials/07-bivariate-phase-b.ipynb`(別 PR、PR-B4)
+- [ ] `docs/tutorials/index.md` に Notebook 07 を追加
+
+### PR 分割
+
+実装は **4 PR** に分割する:
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-B0**(本 Proposal) | `docs(history): propose H-0006` | none |
+| **PR-B1** | `plot_pair`(委譲ラッパー)+ tests | PR-B0 merge |
+| **PR-B2** | `aic_heatmap` + `association_matrix(measure="aic")` + `_association.py` + tests | PR-B1 merge |
+| **PR-B3** | `association_plot` + tests | PR-B2 merge |
+| **PR-B4** | tutorial Notebook 07 + BLUEPRINT 反映 + Issue #13 close | PR-B3 merge |
+
+各 PR は CI green を確認してから次に進む(`feedback_pr_dirty_blocks_ci` に従う)。
+
+### Decision
+
+- Date: `pending`
+- Result: `pending`
+- Notes:
+
+### Migration
+
+破壊的変更なし。新規 API のため移行不要。CHANGELOG `[Unreleased]` の `Added` に 4 関数を順次記載する(PR 毎)。
+
+### Related References
+
+- R `vcd::assoc` / `vcd::pairs`(Friendly, M.): <https://cran.r-project.org/package=vcd>
+- ydata-profiling Correlations: <https://docs.profiling.ydata.ai/>
+- sweetviz Associations: <https://github.com/fbdesignpro/sweetviz>
+- seaborn heatmap: <https://seaborn.pydata.org/generated/seaborn.heatmap.html>
+- Pearson standardized residuals(Agresti, 2002, *Categorical Data Analysis*, §3.2)
+- 親仕様: H-0001 §Phase B、H-0004 §A1(plot_pair の Phase B 分離決定)
