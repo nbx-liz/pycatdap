@@ -690,6 +690,135 @@ def aic_heatmap(
     return ax
 
 
+def _coerce_residuals(table: Any) -> pd.DataFrame:
+    """Extract Pearson residuals from a TargetSummary or compute from a crosstab.
+
+    Rejects RegressionTargetSummary (continuous targets have no Pearson
+    residual concept) with a pointer to plot_target(kind="scatter").
+    """
+    from pycatdap._target_pair import RegressionTargetSummary, TargetSummary
+
+    if isinstance(table, TargetSummary):
+        return table.pearson_residuals
+    if isinstance(table, RegressionTargetSummary):
+        msg = (
+            "association_plot does not support RegressionTargetSummary: "
+            "Pearson standardized residuals are undefined for a continuous "
+            "target. Use pycatdap.plot_target(df, target, explanatory, "
+            'kind="scatter") instead.'
+        )
+        raise TypeError(msg)
+    if isinstance(table, pd.DataFrame):
+        observed = table.to_numpy(dtype=float)
+        total = observed.sum()
+        if total <= 0:
+            msg = "association_plot: crosstab total must be positive"
+            raise ValueError(msg)
+        row_sum = observed.sum(axis=1, keepdims=True)
+        col_sum = observed.sum(axis=0, keepdims=True)
+        expected = row_sum @ col_sum / total
+        residuals = np.divide(
+            observed - expected,
+            np.sqrt(expected),
+            out=np.zeros_like(observed),
+            where=expected > 0,
+        )
+        return pd.DataFrame(residuals, index=table.index, columns=table.columns)
+    msg = (
+        f"association_plot: expected TargetSummary or pd.DataFrame; "
+        f"got {type(table).__name__}"
+    )
+    raise TypeError(msg)
+
+
+def association_plot(
+    table: Any,
+    *,
+    ax: Axes | None = None,
+    threshold: float | None = 2.0,
+    cmap: str = "RdBu_r",
+    **kwargs: Any,
+) -> Axes:
+    """vcd-style heatmap of Pearson standardized residuals (H-0006).
+
+    Parameters
+    ----------
+    table : TargetSummary or DataFrame
+        :class:`TargetSummary` (residuals taken from
+        ``pearson_residuals``) or a raw two-way contingency table
+        (residuals computed internally).
+    ax : Axes or None
+        Matplotlib axes. Created if ``None``.
+    threshold : float or None
+        Overlay ``*`` on cells whose ``|residual| > threshold`` (default
+        ``2.0``: convention for "strong" association). ``None`` disables.
+    cmap : str
+        Diverging colormap. Default ``'RdBu_r'`` (blue=negative,
+        red=positive), matching vcd ``assoc(shade=TRUE)``.
+    **kwargs
+        Forwarded to :meth:`matplotlib.axes.Axes.imshow`.
+
+    Returns
+    -------
+    Axes
+
+    Raises
+    ------
+    TypeError
+        If *table* is a :class:`RegressionTargetSummary` (use
+        ``plot_target(kind='scatter')`` instead) or an unsupported type.
+    """
+    plt = _import_matplotlib()
+    from matplotlib.colors import TwoSlopeNorm
+
+    residuals = _coerce_residuals(table)
+    data = residuals.to_numpy(dtype=float)
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    finite = data[np.isfinite(data)]
+    abs_max = float(np.nanmax(np.abs(finite))) if finite.size else 1.0
+    if abs_max == 0.0:
+        abs_max = 1.0
+    norm = TwoSlopeNorm(vmin=-abs_max, vcenter=0.0, vmax=abs_max)
+
+    cmap_obj = plt.get_cmap(cmap).copy()
+    cmap_obj.set_bad(color="white", alpha=0.0)
+    image = ax.imshow(data, cmap=cmap_obj, norm=norm, aspect="auto", **kwargs)
+
+    n_rows, n_cols = data.shape
+    ax.set_xticks(range(n_cols))
+    ax.set_yticks(range(n_rows))
+    ax.set_xticklabels([str(c) for c in residuals.columns])
+    ax.set_yticklabels([str(r) for r in residuals.index])
+    ax.set_xlabel(str(residuals.columns.name) if residuals.columns.name else "")
+    ax.set_ylabel(str(residuals.index.name) if residuals.index.name else "")
+    ax.set_title("Pearson standardized residuals")
+    if n_cols > 6:
+        ax.tick_params(axis="x", rotation=45)
+
+    if threshold is not None:
+        for i in range(n_rows):
+            for j in range(n_cols):
+                value = data[i, j]
+                if np.isfinite(value) and abs(value) > threshold:
+                    ax.text(
+                        j,
+                        i,
+                        "*",
+                        ha="center",
+                        va="center",
+                        color="black",
+                        fontsize=10,
+                        fontweight="bold",
+                    )
+
+    ax.figure.colorbar(image, ax=ax, label="Pearson residual")
+    return ax
+
+
 def plot_missing(
     df: pd.DataFrame,
     ax: Axes | None = None,

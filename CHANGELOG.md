@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `pycatdap.aic_heatmap(result, *, threshold=0.0, backend=...)`
     — `Catdap1Result` または `pd.DataFrame` を受け取り、diverging colormap
     （`RdYlGn_r`、中心 0）で ΔAIC ヒートマップを描画。`threshold` 未満のセルに `*` 注釈
+  - `pycatdap.association_plot(table, *, threshold=2.0, backend=...)`
+    — vcd `assoc(shade=TRUE)` 風 Pearson 標準化残差ヒートマップ。
+    `TargetSummary` または `pd.DataFrame`（クロス頻度表）を受け取り、
+    diverging colormap（`RdBu_r`、中心 0）で描画。
+    `RegressionTargetSummary` は `TypeError`（`plot_target(kind="scatter")` を推奨）
 - 目的変数 × 説明変数ペア分析 API（H-0004）:
   - `pycatdap.target_summary(df, target, explanatory, *, bins=None) -> TargetSummary`
     — counts / row_prop / col_prop / expected / pearson_residuals / delta_aic を保持し、

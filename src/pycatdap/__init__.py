@@ -29,6 +29,7 @@ from pycatdap.catdap2 import Catdap2Result, catdap2
 from pycatdap.eda import DescribeResult, describe
 from pycatdap.plot import (
     aic_heatmap,
+    association_plot,
     plot_missing,
     plot_pair,
     plot_target,
@@ -45,6 +46,7 @@ __all__ = [
     "TargetSummary",
     "aic_heatmap",
     "association_matrix",
+    "association_plot",
     "catdap1",
     "catdap2",
     "datasets",
