@@ -104,6 +104,7 @@ pycatdap/
 ├── catdap1.py              # CATDAP-01 実装（既存）
 ├── catdap2.py              # CATDAP-02 実装（既存）
 ├── _aic.py                 # AIC計算コア（既存）
+├── _aic_regression.py      # 連続 target 向け Gaussian 回帰 AIC（H-0005）
 ├── _pooling.py             # 連続変数のカテゴリ化（既存）
 ├── _subset_search.py       # 最適部分集合探索（既存）
 ├── _contingency.py         # 分割表構築ユーティリティ（既存）
@@ -561,9 +562,16 @@ def aic_comparison_plot(result, response=None, ax=None, **kwargs): ...
 pycatdap.plot_variable(df, col, backend="matplotlib"|"plotly")
 pycatdap.plot_missing(df, backend="matplotlib"|"plotly")
 
-# 目的変数 × 説明変数ペア（H-0004、v0.3+）
-pycatdap.target_summary(df, target, explanatory, bins=None) -> TargetSummary
+# 目的変数 × 説明変数ペア（H-0004、v0.3+ / H-0005 で連続 target 拡張）
+pycatdap.target_summary(
+    df, target, explanatory,
+    bins=None,
+    target_bins=None,                # H-0005: continuous target 用 fallback
+    criterion="bic",                 # H-0005: aic | aicc | bic
+) -> TargetSummary | RegressionTargetSummary
 pycatdap.plot_target(df, target, explanatory, kind="auto", bins=None, backend=...)
+# kind = "auto" | "stacked" | "mosaic" | "violin" | "box" | "hist"
+#       | "scatter" | "bin_means"   ← H-0005 で追加（連続 target 向け）
 
 # 二変量（H-0001 Phase B、v0.4.0 計画）
 pycatdap.plot_pair(df, x, y, backend=...)            # 自動的にモザイク/箱ひげ/散布

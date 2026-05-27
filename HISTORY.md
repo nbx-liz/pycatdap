@@ -1090,9 +1090,14 @@ cross-check で発見された致命的欠陥(現行 `_target_pair.py:328` の p
 
 ### Decision
 
-- Date: *(awaiting acceptance)*
-- Result: *(pending)*
-- Notes: *(to be filled by project owner)*
+- Date: `2026-05-27`
+- Result: `accepted`
+- Notes: プロジェクトオーナー承認(PR #58 squash merge by `nbx`)。実装は本リポジトリの後続 PR で:
+  - `src/pycatdap/_aic_regression.py`(新規)— `compute_rss` / `compute_gaussian_aic` / `compute_gaussian_null_aic` / `compute_delta_aic_regression` + `_penalty(criterion=aic|aicc|bic)`
+  - `src/pycatdap/_target_pair.py`(拡張)— `RegressionTargetSummary` dataclass + `target_summary` の dispatch + M2 missing strategy + `_apply_target_discretization` (c) fallback
+  - `src/pycatdap/plot/{matplotlib,plotly}.py`(拡張)— 回帰モードに対応(`box` / `violin` / `scatter` / `bin_means` / `hist`)
+  - `__init__.py` に `RegressionTargetSummary` を export
+  - `tests/test_aic_regression.py`(26 件)+ `tests/test_target_pair.py` 追加分(24 件)= 計 273 テスト pass、coverage 81.16%、ruff/mypy strict 通過(IPython display は既存と同じ pre-existing)
 
 ### Migration
 

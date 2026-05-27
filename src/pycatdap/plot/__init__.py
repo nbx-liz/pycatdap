@@ -169,7 +169,7 @@ def plot_variable(
 
 
 _VALID_TARGET_KINDS: frozenset[str] = frozenset(
-    {"auto", "stacked", "mosaic", "violin", "box", "hist"}
+    {"auto", "stacked", "mosaic", "violin", "box", "hist", "scatter", "bin_means"}
 )
 
 
@@ -183,8 +183,13 @@ def _resolve_target_kind(
     """Resolve ``kind='auto'`` to a concrete kind based on dtype combination.
 
     Shared between matplotlib and plotly backends. The two backends differ
-    only on ``continuous_default`` (matplotlib prefers ``violin``, plotly
-    prefers ``box``) — every other dispatch is identical.
+    only on ``continuous_default`` for the categorical-target case
+    (matplotlib prefers ``violin``, plotly prefers ``box``).
+
+    For continuous targets (H-0005 regression mode), the dispatch is:
+
+    - continuous target × categorical / boolean explanatory -> ``box``
+    - continuous target × continuous explanatory          -> ``scatter``
     """
     if kind not in _VALID_TARGET_KINDS:
         msg = (
@@ -194,6 +199,16 @@ def _resolve_target_kind(
         raise ValueError(msg)
     if kind != "auto":
         return kind
+    if target_kind == "continuous":
+        if expl_kind in {"categorical", "boolean"}:
+            return "box"
+        if expl_kind == "continuous":
+            return "scatter"
+        msg = (
+            f"plot_target: cannot auto-dispatch for target_kind='continuous', "
+            f"explanatory_kind={expl_kind!r}; pass an explicit kind."
+        )
+        raise ValueError(msg)
     if expl_kind in {"categorical", "boolean"}:
         return "stacked"
     if expl_kind == "continuous":

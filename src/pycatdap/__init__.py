@@ -14,7 +14,11 @@ Main functions:
 from __future__ import annotations
 
 from pycatdap import datasets
-from pycatdap._target_pair import TargetSummary, target_summary
+from pycatdap._target_pair import (
+    RegressionTargetSummary,
+    TargetSummary,
+    target_summary,
+)
 from pycatdap._version import (
     __version__,
     __version_tuple__,
@@ -30,6 +34,7 @@ __all__ = [
     "Catdap1Result",
     "Catdap2Result",
     "DescribeResult",
+    "RegressionTargetSummary",
     "TargetSummary",
     "catdap1",
     "catdap2",
