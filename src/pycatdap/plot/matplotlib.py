@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -317,7 +319,7 @@ def plot_target(
     """
     plt = _import_matplotlib()
 
-    from pycatdap._target_pair import target_summary
+    from pycatdap._target_pair import _summary_categorical
     from pycatdap.eda import _detect_kind
 
     if target not in df.columns:
@@ -328,13 +330,6 @@ def plot_target(
         raise KeyError(msg)
 
     target_kind = _detect_kind(df[target])
-    if target_kind == "continuous":
-        msg = (
-            f"plot_target: target {target!r} is continuous; "
-            f"a categorical or boolean target is required."
-        )
-        raise ValueError(msg)
-
     expl_kind = _detect_kind(df[explanatory])
     from pycatdap.plot import _resolve_target_kind
 
@@ -346,8 +341,22 @@ def plot_target(
         _fig: Figure
         _fig, ax = plt.subplots()
 
+    # H-0005: continuous target → regression-mode plotting (Y on y-axis raw).
+    if target_kind == "continuous":
+        return _plot_target_regression(
+            df,
+            target=target,
+            explanatory=explanatory,
+            kind=resolved,
+            bins=bins,
+            ax=ax,
+            **kwargs,
+        )
+
     if resolved in {"stacked", "mosaic"}:
-        summary = target_summary(df, target=target, explanatory=explanatory, bins=bins)
+        summary = _summary_categorical(
+            df, target=target, explanatory=explanatory, bins=bins
+        )
         if resolved == "stacked":
             barplot_twoway(summary.counts, ax=ax, **kwargs)
             ax.set_title(f"{target} × {explanatory}")
@@ -388,6 +397,190 @@ def plot_target(
         raise ValueError(msg)
 
     return ax
+
+
+def _plot_target_regression(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    explanatory: str,
+    kind: str,
+    bins: int | list[float] | None,
+    ax: Axes,
+    **kwargs: Any,
+) -> Axes:
+    """Render a continuous-target plot (H-0005 regression mode).
+
+    ``kind`` values:
+
+    - ``"box"`` / ``"violin"`` — target distribution per categorical X bin
+    - ``"scatter"`` — raw scatter of (X, target) with bin-mean overlay for
+      a continuous X (boundaries from :func:`target_summary`)
+    - ``"bin_means"`` — bar chart of ``target_mean`` per X bin (no scatter)
+    - ``"hist"`` — overlaid histograms per binary X
+    """
+    _import_matplotlib()  # raise if matplotlib missing
+    from pycatdap._target_pair import _summary_regression
+    from pycatdap.eda import _detect_kind
+
+    expl_kind = _detect_kind(df[explanatory])
+
+    # Drop rows with missing Y for plotting (M2: keep missing X visible as a
+    # group; pyplot box treats it as its own category).
+    work = df[df[target].notna()][[target, explanatory]]
+
+    if kind in {"box", "violin"}:
+        labels: list[str]
+        data: list[npt.NDArray[np.float64]]
+        if expl_kind == "continuous":
+            # For continuous X with box/violin, derive X bins from regression summary.
+            summary = _summary_regression(
+                work,
+                target=target,
+                explanatory=explanatory,
+                bins=None,
+                criterion="bic",
+            )
+            labels = [str(idx) for idx in summary.bin_stats.index]
+            x_arr = work[explanatory].to_numpy(dtype=float)
+            y_arr = work[target].to_numpy(dtype=float)
+            # Replicate the binning by reconstructing edges from summary
+            # intervals (good-enough heuristic for the plot)
+            data = []
+            if summary.intervals:
+                edges = [
+                    float(np.nanmin(x_arr)) - 1e-9,
+                    *summary.intervals,
+                    float(np.nanmax(x_arr)) + 1e-9,
+                ]
+                cuts = pd.cut(x_arr, bins=edges, include_lowest=True)
+                for label in labels:
+                    if label == "_missing_":
+                        mask = np.isnan(x_arr)
+                    else:
+                        mask = cuts.astype(str) == label
+                    data.append(y_arr[mask])
+            else:
+                data = [y_arr]
+                labels = labels or [str(explanatory)]
+        else:
+            # Categorical X: group target by X value (including _missing_)
+            x_str = (
+                work[explanatory]
+                .astype(object)
+                .where(work[explanatory].notna(), "_missing_")
+            )
+            x_str = x_str.astype(str)
+            labels = sorted(x_str.unique().tolist())
+            data = [
+                work.loc[x_str == lbl, target].to_numpy(dtype=float) for lbl in labels
+            ]
+
+        if kind == "box":
+            ax.boxplot(data, tick_labels=labels)
+        else:
+            ax.violinplot(data, showmeans=True, showmedians=False)
+            ax.set_xticks(range(1, len(labels) + 1))
+            ax.set_xticklabels(labels)
+        ax.set_xlabel(str(explanatory))
+        ax.set_ylabel(str(target))
+        ax.set_title(f"{target} by {explanatory}")
+        if expl_kind == "continuous" and len(labels) > 6:
+            ax.tick_params(axis="x", rotation=45)
+        return ax
+
+    if kind == "bin_means":
+        summary = _summary_regression(
+            work,
+            target=target,
+            explanatory=explanatory,
+            bins=bins,
+            criterion="bic",
+        )
+        labels = [str(idx) for idx in summary.bin_stats.index]
+        means = summary.bin_stats["target_mean"].to_numpy(dtype=float)
+        ax.bar(range(len(labels)), means, **kwargs)
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels)
+        ax.set_xlabel(str(explanatory))
+        ax.set_ylabel(f"mean({target})")
+        ax.set_title(f"mean({target}) by {explanatory} (ΔAIC={summary.delta_aic:.2f})")
+        if len(labels) > 6:
+            ax.tick_params(axis="x", rotation=45)
+        return ax
+
+    if kind == "scatter":
+        if expl_kind != "continuous":
+            msg = "plot_target: kind='scatter' requires a continuous explanatory"
+            raise ValueError(msg)
+        x = work[explanatory].to_numpy(dtype=float)
+        y = work[target].to_numpy(dtype=float)
+        # Drop missing X for scatter
+        mask = ~np.isnan(x)
+        ax.scatter(x[mask], y[mask], alpha=0.4, s=12, **kwargs)
+        # Overlay bin means as a step line
+        summary = _summary_regression(
+            work,
+            target=target,
+            explanatory=explanatory,
+            bins=bins,
+            criterion="bic",
+        )
+        if summary.intervals:
+            edges = [
+                float(np.nanmin(x)),
+                *summary.intervals,
+                float(np.nanmax(x)),
+            ]
+            centers = [(edges[i] + edges[i + 1]) / 2 for i in range(len(edges) - 1)]
+            # Exclude _missing_ from the overlay
+            bin_means_no_missing = [
+                float(v)
+                for label, v in summary.bin_stats["target_mean"].items()
+                if str(label) != "_missing_"
+            ]
+            if len(centers) == len(bin_means_no_missing):
+                ax.plot(
+                    centers,
+                    bin_means_no_missing,
+                    "o-",
+                    color="red",
+                    linewidth=2,
+                    label="bin mean",
+                )
+                ax.legend()
+        ax.set_xlabel(str(explanatory))
+        ax.set_ylabel(str(target))
+        ax.set_title(f"{target} vs {explanatory} (ΔAIC={summary.delta_aic:.2f})")
+        return ax
+
+    if kind == "hist":
+        # Treat X as the (categorical) hue dimension
+        x_str = (
+            work[explanatory]
+            .astype(object)
+            .where(work[explanatory].notna(), "_missing_")
+        )
+        x_str = x_str.astype(str)
+        groups_h: list[str] = sorted(x_str.unique().tolist())
+        for g in groups_h:
+            ax.hist(
+                work.loc[x_str == g, target].to_numpy(dtype=float),
+                bins=20,
+                alpha=0.5,
+                label=str(g),
+            )
+        ax.set_xlabel(str(target))
+        ax.set_ylabel("Frequency")
+        ax.legend(title=str(explanatory))
+        ax.set_title(f"{target} by {explanatory}")
+        return ax
+
+    msg = (
+        f"plot_target: kind {kind!r} is not supported for a continuous target. "
+        f"Use 'auto', 'box', 'violin', 'scatter', 'bin_means', or 'hist'."
+    )
+    raise ValueError(msg)
 
 
 def plot_missing(

@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -357,7 +359,6 @@ def plot_target(
     """
     go = _import_plotly()
 
-    from pycatdap._target_pair import target_summary
     from pycatdap.eda import _detect_kind
 
     if target not in df.columns:
@@ -368,13 +369,6 @@ def plot_target(
         raise KeyError(msg)
 
     target_kind = _detect_kind(df[target])
-    if target_kind == "continuous":
-        msg = (
-            f"plot_target: target {target!r} is continuous; "
-            f"a categorical or boolean target is required."
-        )
-        raise ValueError(msg)
-
     expl_kind = _detect_kind(df[explanatory])
     from pycatdap.plot import _resolve_target_kind
 
@@ -382,8 +376,22 @@ def plot_target(
         kind, target_kind, expl_kind, continuous_default="box"
     )
 
+    # H-0005: continuous target → regression-mode plotting.
+    if target_kind == "continuous":
+        return _plot_target_regression_plotly(
+            df,
+            target=target,
+            explanatory=explanatory,
+            kind=resolved,
+            bins=bins,
+        )
+
     if resolved in {"stacked", "mosaic"}:
-        summary = target_summary(df, target=target, explanatory=explanatory, bins=bins)
+        from pycatdap._target_pair import _summary_categorical
+
+        summary = _summary_categorical(
+            df, target=target, explanatory=explanatory, bins=bins
+        )
         if resolved == "stacked":
             fig = barplot_twoway(summary.counts)
         else:
@@ -415,6 +423,186 @@ def plot_target(
         )
     fig.update_layout(title=f"{explanatory} by {target}")
     return fig
+
+
+def _plot_target_regression_plotly(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    explanatory: str,
+    kind: str,
+    bins: int | list[float] | None,
+) -> _go.Figure:
+    """Continuous-target Plotly plotting (H-0005 regression mode)."""
+    go = _import_plotly()
+    from pycatdap._target_pair import _summary_regression
+    from pycatdap.eda import _detect_kind
+
+    expl_kind = _detect_kind(df[explanatory])
+    work = df[df[target].notna()][[target, explanatory]]
+
+    if kind in {"box", "violin"}:
+        labels: list[str]
+        y_groups: list[Any]
+        if expl_kind == "continuous":
+            summary = _summary_regression(
+                work,
+                target=target,
+                explanatory=explanatory,
+                bins=bins,
+                criterion="bic",
+            )
+            labels = [str(idx) for idx in summary.bin_stats.index]
+            x_arr = work[explanatory].to_numpy(dtype=float)
+            y_arr = work[target].to_numpy(dtype=float)
+            y_groups = []
+            if summary.intervals:
+                import numpy as _np
+
+                edges = [
+                    float(_np.nanmin(x_arr)) - 1e-9,
+                    *summary.intervals,
+                    float(_np.nanmax(x_arr)) + 1e-9,
+                ]
+                cuts = pd.cut(x_arr, bins=edges, include_lowest=True).astype(str)
+                for label in labels:
+                    mask: npt.NDArray[np.bool_]
+                    if label == "_missing_":
+                        mask = pd.isna(work[explanatory]).to_numpy()
+                    else:
+                        mask = np.asarray(cuts == label, dtype=bool)
+                    y_groups.append(y_arr[mask])
+            else:
+                y_groups = [y_arr]
+                labels = labels or [str(explanatory)]
+        else:
+            x_filled = (
+                work[explanatory]
+                .astype(object)
+                .where(work[explanatory].notna(), "_missing_")
+                .astype(str)
+            )
+            labels = sorted(x_filled.unique().tolist())
+            y_groups = [
+                work.loc[x_filled == lbl, target].to_numpy(dtype=float)
+                for lbl in labels
+            ]
+
+        fig = go.Figure()
+        for label, arr in zip(labels, y_groups, strict=True):
+            if kind == "violin":
+                fig.add_trace(go.Violin(y=arr, name=label, box_visible=True))
+            else:
+                fig.add_trace(go.Box(y=arr, name=label))
+        fig.update_layout(
+            title=f"{target} by {explanatory}",
+            xaxis={"title": str(explanatory)},
+            yaxis={"title": str(target)},
+        )
+        return fig
+
+    if kind == "bin_means":
+        summary = _summary_regression(
+            work,
+            target=target,
+            explanatory=explanatory,
+            bins=bins,
+            criterion="bic",
+        )
+        labels = [str(idx) for idx in summary.bin_stats.index]
+        means = summary.bin_stats["target_mean"].to_list()
+        fig = go.Figure(data=[go.Bar(x=labels, y=means)])
+        fig.update_layout(
+            title=f"mean({target}) by {explanatory} (ΔAIC={summary.delta_aic:.2f})",
+            xaxis={"title": str(explanatory)},
+            yaxis={"title": f"mean({target})"},
+        )
+        return fig
+
+    if kind == "scatter":
+        if expl_kind != "continuous":
+            msg = "plot_target: kind='scatter' requires a continuous explanatory"
+            raise ValueError(msg)
+        import numpy as _np
+
+        x = work[explanatory].to_numpy(dtype=float)
+        y = work[target].to_numpy(dtype=float)
+        mask = ~_np.isnan(x)
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scattergl(
+                x=x[mask],
+                y=y[mask],
+                mode="markers",
+                marker={"opacity": 0.4, "size": 6},
+                name="points",
+            )
+        )
+        summary = _summary_regression(
+            work,
+            target=target,
+            explanatory=explanatory,
+            bins=bins,
+            criterion="bic",
+        )
+        if summary.intervals:
+            edges = [
+                float(_np.nanmin(x)),
+                *summary.intervals,
+                float(_np.nanmax(x)),
+            ]
+            centers = [(edges[i] + edges[i + 1]) / 2 for i in range(len(edges) - 1)]
+            bin_means_no_missing = [
+                float(v)
+                for label, v in summary.bin_stats["target_mean"].items()
+                if str(label) != "_missing_"
+            ]
+            if len(centers) == len(bin_means_no_missing):
+                fig.add_trace(
+                    go.Scatter(
+                        x=centers,
+                        y=bin_means_no_missing,
+                        mode="lines+markers",
+                        line={"color": "red", "width": 2},
+                        name="bin mean",
+                    )
+                )
+        fig.update_layout(
+            title=f"{target} vs {explanatory} (ΔAIC={summary.delta_aic:.2f})",
+            xaxis={"title": str(explanatory)},
+            yaxis={"title": str(target)},
+        )
+        return fig
+
+    if kind == "hist":
+        x_filled = (
+            work[explanatory]
+            .astype(object)
+            .where(work[explanatory].notna(), "_missing_")
+            .astype(str)
+        )
+        labels = sorted(x_filled.unique().tolist())
+        fig = go.Figure()
+        for label in labels:
+            fig.add_trace(
+                go.Histogram(
+                    x=work.loc[x_filled == label, target].to_numpy(dtype=float),
+                    name=str(label),
+                    opacity=0.5,
+                )
+            )
+        fig.update_layout(
+            barmode="overlay",
+            title=f"{target} by {explanatory}",
+            xaxis={"title": str(target)},
+        )
+        return fig
+
+    msg = (
+        f"plot_target: kind {kind!r} is not supported for a continuous target. "
+        f"Use 'auto', 'box', 'violin', 'scatter', 'bin_means', or 'hist'."
+    )
+    raise ValueError(msg)
 
 
 def plot_missing(

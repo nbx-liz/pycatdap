@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `pycatdap.plot_target(df, target, explanatory, *, kind="auto", bins=None, backend=...)`
     — dtype 組合せで stacked / mosaic / violin / box / hist を自動選択（matplotlib/plotly 両対応）
   - 連続説明変数は `bins=None` で AIC 最適 binning、`bins=int` で等幅、`bins=list` で明示境界
+- 連続目的変数サポート — Gaussian 回帰 AIC 拡張（H-0005、Issue #56）:
+  - `pycatdap.RegressionTargetSummary` 新規 dataclass — 連続 target に対する
+    per-X-bin `{count, target_mean, target_std}` + `delta_aic` + `r_squared` +
+    `n_effective` + `intervals` + `criterion`、`.show / .to_html / .to_dict /
+    .to_plotly_json` を提供
+  - `target_summary` に `target_bins` / `criterion` パラメータ追加。連続 target
+    かつ `target_bins=None` で `RegressionTargetSummary` を返し、`target_bins`
+    指定で既存 `TargetSummary`(候補 (c) fallback)を返す
+  - `criterion="bic"`(default、Yao 1988 推奨)/ `"aic"` / `"aicc"`(Hurvich-Tsai 系)
+  - 欠損値ハンドリング戦略 **M2**: Y のみ dropna; X 欠損は明示的 `_missing_`
+    pseudo-bin に集約。同一 Y 上の異なる X 候補で `AIC_null` が一致(R-1)
+  - `plot_target` の `kind` に `"scatter"` / `"bin_means"` を追加、連続 target ×
+    連続 X で散布図 + bin 平均線、連続 target × カテゴリ X で box / violin を自動選択
+  - 参照実装: [`nbx-liz/AdvancedCATDAP`](https://github.com/nbx-liz/AdvancedCATDAP)
+    `scoring.py:calc_score_reg_bincount_idx` から移植
+  - 連続 target に対する従来の `ValueError` は廃止 — `RegressionTargetSummary`
+    を返す挙動に変更
 - チュートリアルノートブック 3 本を追加（Issue #27）:
   - `docs/tutorials/03-iris-pooling.ipynb` — iris での AIC 最適 binning
   - `docs/tutorials/04-hellogoodbye-multivariate.ipynb` — 56 binary 変数での `nvar` 利用例
