@@ -58,6 +58,8 @@ nav:
       - AIC-optimal binning on iris: tutorials/03-iris-pooling.ipynb
       - Multivariate HelloGoodbye: tutorials/04-hellogoodbye-multivariate.ipynb
       - Real-world EDA on seaborn Titanic: tutorials/05-real-world-eda.ipynb
+      - Target-pair analysis: tutorials/06-target-pair-titanic.ipynb
+      - Bivariate Phase B APIs: tutorials/07-bivariate-phase-b.ipynb
   - How-to Guides:
       - how-to/index.md
   - API Reference:

@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     `TargetSummary` または `pd.DataFrame`（クロス頻度表）を受け取り、
     diverging colormap（`RdBu_r`、中心 0）で描画。
     `RegressionTargetSummary` は `TypeError`（`plot_target(kind="scatter")` を推奨）
+  - チュートリアル `docs/tutorials/07-bivariate-phase-b.ipynb`
+    — Phase B の 4 つの API を Titanic データセットで通しデモ
 - 目的変数 × 説明変数ペア分析 API（H-0004）:
   - `pycatdap.target_summary(df, target, explanatory, *, bins=None) -> TargetSummary`
     — counts / row_prop / col_prop / expected / pearson_residuals / delta_aic を保持し、

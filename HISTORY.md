@@ -1123,7 +1123,7 @@ cross-check で発見された致命的欠陥(現行 `_target_pair.py:328` の p
 ## 2026-05-27: Phase B 二変量 API(`plot_pair` / `aic_heatmap` / `association_matrix` / `association_plot`)
 
 - ID: `H-0006`
-- Status: `proposed`
+- Status: `accepted`
 - Scope: `API | scope`
 - Related: `H-0001 Phase B`, `H-0002 FR-3`, `H-0004`, `BLUEPRINT.md §3, §5.7`, Issue #13
 
@@ -1335,9 +1335,14 @@ pycatdap.association_plot(
 
 ### Decision
 
-- Date: `pending`
-- Result: `pending`
-- Notes:
+- Date: `2026-05-27`
+- Result: `accepted`
+- Notes: PR-B0(#62)で Proposal 承認。実装は 4 PR に分けて develop へ:
+  - PR-B1(#63): `plot_pair`(committed `f328c68`)
+  - PR-B2(#64): `aic_heatmap` + `association_matrix` + `_association.py`(committed `490b5f1`、CI で `np.ma` untyped 問題 2 回踏んで `cmap.set_bad` に切替)
+  - PR-B3(#65): `association_plot`(committed `c9be5b3`)
+  - PR-B4: tutorial Notebook 07 + BLUEPRINT 反映 + Issue #13 close(本 PR)
+  - 全 4 関数の合計 76 テスト(plot_pair 21 + association_matrix 15 + aic_heatmap 14 + association_plot 16 + 重複ラッパー除く)、最終 coverage 82.02%
 
 ### Migration
 
