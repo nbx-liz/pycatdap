@@ -652,7 +652,9 @@ def aic_heatmap(
         vmax = abs_max
     norm = TwoSlopeNorm(vmin=vmin, vcenter=0.0, vmax=vmax)
 
-    masked = np.ma.masked_invalid(data)
+    # np.ma.masked_invalid is untyped in some numpy stub versions; build the
+    # MaskedArray directly so mypy stays clean across the CI matrix.
+    masked = np.ma.MaskedArray(data, mask=~np.isfinite(data))
     image = ax.imshow(masked, cmap=cmap, norm=norm, aspect="auto", **kwargs)
 
     n_rows, n_cols = data.shape
