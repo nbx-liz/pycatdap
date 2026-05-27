@@ -727,3 +727,632 @@ docs/r_reference/
 - Folktables (Adult replacement): <https://github.com/socialfoundations/folktables>
 
 ---
+
+## 2026-05-27: 目的変数 × 説明変数 ペア分析 API(`target_summary` / `plot_target`)
+
+- ID: `H-0004`
+- Status: `accepted`
+- Scope: `API | scope`
+- Related: `H-0001 Phase B`, `BLUEPRINT.md §3, §5.7`, Issue #13
+
+### Context
+
+v0.3.0 で出荷した EDA API は **単変量**(`describe`, `plot_variable`, `plot_missing`)に閉じている。一方、チュートリアル(02/05)を実装した過程で次の欠落が判明した:
+
+- **目的変数と各説明変数の関係を「1コール」で要約・可視化する手段がない**
+- 既存の `plot.mosaic_plot(table)` / `plot.barplot_twoway(table)` は2変数を扱えるが、**呼び出し側で `pd.crosstab` 等を組み立てる必要があり、利用障壁が高い**
+- `Catdap1Result.tway_tables` / `Catdap2Result.tway_tables` に2-way テーブル自体は格納されているが、**目的変数を軸にした「縦割り」の解釈ビューが提供されていない**
+
+`H-0001 Phase B`(Issue #13)に `plot_pair(df, x, y)` 等の双方向 API が提案されているが、これは **対称**(x と y が交換可能)な設計であり、ユーザーが期待する「**目的変数を中心に各説明変数を見る**」エルゴノミクスとは噛み合わない。本 Proposal は Phase B を **目的変数指向に絞った最小 API** として段階的に細分化する。
+
+### 競合分析(対象パッケージ)
+
+| Package | 該当機能 | 提供されている形 | pycatdap での参考点 |
+|---|---|---|---|
+| **R `gmodels::CrossTable()`** | 集計表 | counts + row% + col% + total% + Chi² 寄与 セル毎 | 「**1関数で多視点の集計表**」 |
+| **R `vcd::mosaic(formula, shade=TRUE)` / `vcd::assoc()`** | 図 | モザイク + Pearson 標準化残差で色付け | 「**残差ベースの色付けで関連の方向を可視化**」 |
+| **R `descr::CrossTable()`** | 集計表 | gmodels 互換だが出力整形が異なる | 同上 |
+| **sweetviz `sv.analyze(df, target_feat='Survived')`** | ターゲット指向の EDA | 列ごとに「数値列: 分布 + 相関」「カテゴリ列: ターゲット率 per level」のパネル | 「**target_feat という明示的キーワードでターゲット中心の API を構築**」 |
+| **ydata-profiling** | 双方向 | Interactions(散布図)+ Correlations(phi_k 行列) | target awareness は弱い・参考度低 |
+| **seaborn** | プリミティブ | `catplot(kind='bar'\|'violin'\|'box')`, `histplot(hue=target)` | 「**hue=target という1引数で target 軸を導入**」 |
+| **plotly express** | プリミティブ | `px.histogram(df, x=feature, color=target)`, `px.box(df, x=target, y=feature)` | 同上 |
+
+**学び**:
+- 「**目的変数を明示するキーワード**」(`target_feat` / `hue` / `color` / `response`)で API を分岐させるのが業界標準
+- 集計表は「counts + 行/列/全体 比率 + 統計量」を **同一オブジェクト** で持たせる(gmodels)
+- 図はカテゴリ×カテゴリで **mosaic + Pearson 残差**(vcd)、カテゴリ×連続で **箱ひげ/バイオリン**(seaborn)が定石
+
+### Proposal
+
+#### 公開 API(新規 2 関数)
+
+```python
+# 1. 集計表(target × explanatory のクロス表 + 比率 + ΔAIC)
+pycatdap.target_summary(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    bins: int | list[float] | None = None,   # 連続 explanatory の binning 制御
+) -> TargetSummary
+```
+
+返り値 `TargetSummary` は frozen dataclass:
+
+| 属性 | 型 | 内容 |
+|---|---|---|
+| `target` | `str` | 目的変数列名 |
+| `explanatory` | `str` | 説明変数列名 |
+| `counts` | `pd.DataFrame` | クロス頻度(rows=target, cols=explanatory) |
+| `row_prop` | `pd.DataFrame` | 行方向比率(target カテゴリ内の説明変数分布) |
+| `col_prop` | `pd.DataFrame` | 列方向比率(説明変数カテゴリ内の target 率) |
+| `expected` | `pd.DataFrame` | 独立を仮定した期待頻度 |
+| `pearson_residuals` | `pd.DataFrame` | `(observed - expected) / sqrt(expected)` |
+| `delta_aic` | `float` | ΔAIC(`catdap1` と同一の計算) |
+| `intervals` | `list[float] \| None` | 連続変数の binning 境界(該当時のみ) |
+
+メソッド(既存 `DescribeResult` / `Catdap1Result` に揃える):
+- `.show()` — Jupyter inline 表示
+- `.to_html(path=None) -> str` — スタンドアロン HTML(複数視点の表を縦に積む)
+- `.to_dict() -> dict` — JSON シリアライズ可能
+- `.to_plotly_json() -> dict` — Plotly Table Figure spec
+
+```python
+# 2. 可視化(target × explanatory)
+pycatdap.plot_target(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    kind: Literal["auto", "stacked", "mosaic", "grouped_bar", "box", "violin", "hist"] = "auto",
+    bins: int | list[float] | None = None,
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    ax: Any = None,
+    **kwargs: Any,
+) -> Any
+```
+
+**`kind="auto"` の自動判定ルール**(`pycatdap.eda._detect_kind` を流用):
+
+| target | explanatory | 自動選択 | 根拠 |
+|---|---|---|---|
+| categorical(任意) | categorical(≤ 8 levels) | `stacked`(target カテゴリ内の説明変数分布、Pearson 残差で色) | vcd `assoc()` 風、解釈容易 |
+| categorical | categorical(> 8 levels) | `mosaic` | スペース効率 |
+| categorical | continuous | `violin`(matplotlib)/ `box`(plotly fallback) | target 群間の分布比較、seaborn 定石 |
+| boolean | continuous | `hist`(target 値で hue 分け) | 二値分類の標準ビュー |
+| continuous | * | `auto` で `ValueError`、明示的 `kind` を要求 | v0.4.0 のスコープ外 |
+
+`kind="stacked"` / `"mosaic"` は**Pearson 標準化残差で色付け**(vcd 風)— 残差 > +2 を強い正の関連、< -2 を強い負の関連として配色。これは `target_summary().pearson_residuals` を内部で使用。
+
+#### 既存 API との関係
+
+- 既存 `pycatdap.plot.mosaic_plot(table)` / `barplot_twoway(table)` は **低レベル API**(pd.DataFrame テーブルを直接受け取る)として残す。新規 `plot_target` は内部でこれらに委譲する。
+- Issue #13 の `plot_pair(df, x, y)` はこの Proposal を受けて **`plot_target` の別名 / 対称ラッパー**として再定義する案を別 Proposal(将来)に回す。
+
+#### 連続変数の binning
+
+- `bins=None`(default): 連続 explanatory には `pycatdap._pooling.optimal_binning` を呼び、AIC 最適 binning を採用(`pool=0` 相当)
+- `bins=int`: 等幅 K-bin(`pd.cut`)
+- `bins=list[float]`: 明示的境界
+
+`TargetSummary.intervals` で実際に使われた境界を返す。
+
+**`bins=None` 時の `optimal_binning` メソッド**: デフォルト `method="bottom_up"`(catdap2 デフォルト `pool=1` と同等の unequal pooling)を採用。fine bins から始めて貪欲に merge する方式で、`top_down`(等幅初期 + merge)より AIC 最適に近い解を返す傾向がある。Proposal 当初稿では `pool=0 相当` と記載したが、`optimal_binning` 実装側のデフォルトと catdap2 のデフォルトに合わせて `pool=1 相当`(bottom_up)に統一する。
+
+### Impact
+
+- **公開 API の追加のみ**(2 関数 + 1 dataclass)
+- 既存 API への破壊的変更なし
+- 新規モジュール: `src/pycatdap/_target_pair.py`(実装)+ `src/pycatdap/__init__.py` への再 export
+- `BLUEPRINT.md §3`(モジュール構成)と `§5.7`(plotting テーブル)を改訂
+- 任意依存の追加なし(matplotlib / plotly は既存 extras で十分)
+
+### Compatibility
+
+- **後方互換**: 完全
+- 既存の `Catdap1Result.tway_tables` / `Catdap2Result.tway_tables` は **アクセサがそのまま動く**。`TargetSummary` は新規型なのでアクセサが衝突しない。
+
+### Alternatives Considered
+
+#### A1: 既存 `plot_pair(df, x, y)`(Issue #13)を対称 API として実装し、target 軸はユーザーが慣習で先頭に置く
+- **不採用理由**: 「どちらが target か」が型シグネチャから読み取れない。Pearson 残差の正負解釈や `kind="auto"` の dtype 判定で曖昧性が残る。sweetviz / `vcd::mosaic(formula)` も target を明示する設計。
+
+#### A2: target を Catdap1Result / Catdap2Result に紐づけ、`result.plot(var)` 形式とする
+- **不採用理由**: catdap を実行せずに 2 変数の関係だけ見たいユースケース(EDA 初手)で使えない。`DescribeResult` のように分析実行に紐付かない独立 API である方が用途が広い。
+
+#### A3: keyword 名を `response` に統一(`response` は既存 `catdap1` / `catdap2` の vocabulary)
+- **採用検討**: 一貫性は高い。**ただし** sweetviz / sklearn / seaborn / plotly は全て `target`(または `hue` / `color`)を使っており、新規ユーザーの参照点としては `target` の方が広く認知される。**本 Proposal では `target` を採用するが、別途 v1.0 で `response` ↔ `target` の整理を行う**(別 Proposal)。
+
+#### A4: 集計表と図を1つの関数 `pycatdap.target_pair(df, target, explanatory)` に統合し、戻り値で両方持つ
+- **不採用理由**: pandas 1.x スタイル(計算と描画を分離する `DescribeResult.show()` 風)に揃える方が `.to_html()` / `.to_plotly_json()` のテストが書きやすい。
+
+#### A5: 多目的変数を同時にサポート(`target=[c1, c2]`)
+- **不採用理由**: スコープ拡大。`target_summary` を for ループで呼べば代替可能。将来 `target_summary_grid` を別 Proposal で検討。
+
+### Acceptance Criteria
+
+#### API
+- [ ] `pycatdap.target_summary(df, target, explanatory)` が `TargetSummary` を返す
+- [ ] `TargetSummary` に `.show / .to_html / .to_dict / .to_plotly_json` の4メソッド
+- [ ] `pycatdap.plot_target(df, target, explanatory, kind="auto", backend=...)` が matplotlib / plotly 両 backend で動作
+- [ ] `kind="auto"` が上記表の dtype 組合せで正しい kind を選択
+
+#### 数値整合
+- [ ] `TargetSummary.delta_aic` が `catdap1(df[[target, explanatory]], response_names=[target]).aic.loc[target, explanatory]` と一致
+- [ ] `pearson_residuals` の絶対値が 2 を超える場合の符号と大きさが `scipy.stats.chi2_contingency` の結果と一致(参考実装比較)
+- [ ] 連続 explanatory の `bins=None` 時、`intervals` が `catdap2(pool=[2,1])`(unequal pooling、catdap2 デフォルト)の `intervals[explanatory]` と一致
+
+#### コード品質
+- [ ] `tests/test_target_pair.py` に unit テスト 12 個以上(各 kind / 各 dtype 組合せ + エラーパス)
+- [ ] coverage 80%+ 維持
+- [ ] `mypy --strict` pass(現存する `eda.py` の `display` 未型付き呼び出しは別 Issue で対応)
+- [ ] docstring(NumPy style)に `Examples` セクション付き
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3` のモジュール構成図に `_target_pair.py` を追記
+- [ ] `BLUEPRINT.md §5.7` の plotting 関数一覧に `plot_target` / `target_summary` を追記
+- [ ] `docs/reference/plotting.md` に新規関数を追加
+- [ ] 既存の 02 / 05 チュートリアルに `target_summary` / `plot_target` を使う節を追加(別 PR)
+
+### Decision
+
+- Date: `2026-05-27`
+- Result: `accepted`
+- Notes: プロジェクトオーナー承認(PR #53)。実装は PR kappa で `src/pycatdap/_target_pair.py` + `plot/{matplotlib,plotly}.py` に追加、tests/test_target_pair.py(31 テスト全 pass、coverage 87%)で検証済み。
+
+### Migration
+
+破壊的変更なし。新規 API のため移行不要。CHANGELOG `[Unreleased]` の `Added` に2関数 + 1 dataclass を記載する。
+
+### Related References
+
+- R `vcd` package(Friendly, M.): <https://cran.r-project.org/package=vcd>
+- R `gmodels::CrossTable`: <https://cran.r-project.org/package=gmodels>
+- sweetviz: <https://github.com/fbdesignpro/sweetviz>
+- seaborn `catplot` / `histplot(hue=...)`: <https://seaborn.pydata.org/>
+- plotly express: <https://plotly.com/python/plotly-express/>
+- Pearson standardized residuals(Agresti, 2002, *Categorical Data Analysis*)
+
+---
+
+## 2026-05-27: 連続目的変数サポート — Gaussian 回帰 AIC 拡張(`target_summary` / `plot_target`)
+
+- ID: `H-0005`
+- Status: `proposed`
+- Scope: `API | scope | likelihood-family`
+- Related: `H-0001 Phase J`, `H-0002`, `H-0004`, `BLUEPRINT.md §3, §5.7`, Issue #56(研究フェーズ)、Issue #18(Phase J)
+
+### Context
+
+H-0004 で実装した `target_summary` / `plot_target` は **categorical / boolean target のみ対応**(連続 target で `ValueError`)。これは「ML 誤差分析(回帰残差・キャリブレーションスコア・連続リスクスコア)を扱う」という H-0001 / H-0002 の中心ユースケースを満たさない。
+
+しかし元の CATDAP フレームワーク(Sakamoto & Katsura, 1980)は contingency table 上の多項分布 AIC で response を **離散カテゴリ前提**にしており、連続 response の AIC 化アルゴリズムを提供していない。Pooling(連続変数の AIC 最適 binning)も **explanatory 側のみ**で対称展開できない(`_bin_aic` のペナルティ `2·(C_E−1)·C_F` が response カテゴリ数 `C_E` を固定値前提)。
+
+### Research summary
+
+[Issue #56](https://github.com/nbx-liz/pycatdap/issues/56) の研究フェーズで、5 つの離散化候補(symmetric pooling / joint AIC / marginal binning / aggregate AIC / user-specified)を評価したが、いずれも cross-pair 比較性(R-1)・実装複雑度・理論基盤のいずれかで欠陥があり、**「Y を離散化する」という前提自体が誤り**と判明した。
+
+`nbx-liz/AdvancedCATDAP`(sibling 私有ライブラリ)が **Y を bin せず、ガウス回帰 AIC を直接適用** することで連続 target をサポートしており、これが教科書的に正しいアプローチ(候補 (f))。研究ドキュメント [`docs/research/h0005-continuous-target.md`](docs/research/h0005-continuous-target.md) §10 で詳細導出 + 数値検証、§11 で cross-check-reviewer の独立検証を経ている。
+
+### Proposal
+
+#### コア式: ガウス回帰 AIC
+
+連続 target `y` と binned explanatory `X`(`k_means` 個の非空 bin、bin 内平均 `ȳ_i`)に対し:
+
+```
+RSS    = Σ_i Σ_{j ∈ bin i} (y_j − ȳ_i)²    # within-bin 二乗和
+AIC    = n · log(RSS / n)  +  penalty(k_means + 1, n, criterion)
+AIC_0  = n · log(TSS / n)  +  penalty(2, n, criterion)   # null: y = global mean
+ΔAIC   = AIC − AIC_0  =  n · log(1 − R²)  +  Δ_penalty
+```
+
+ペナルティ関数:
+
+| `criterion` | penalty(k, n) | 用途 |
+|---|---|---|
+| `"bic"`(default) | `log(n) · k` | piecewise-constant の標準推奨(Yao 1988) |
+| `"aic"` | `2 · k` | 古典 AIC、AdvancedCATDAP と互換 |
+| `"aicc"` | `2k + 2k(k+1)/(n−k−1)` | 小標本補正(Hurvich & Tsai 1989 系列、注: K 規約は σ² を含む方を採用) |
+
+派生: ΔAIC = `n · log(1 − R²) + Δ_penalty`(教科書 Gaussian-AIC for piecewise-constant regression、Yao 1988、Davis-Lee-RY 2006、MARS Friedman 1991 系列)。
+
+#### 公開 API(変更点)
+
+`target_summary` / `plot_target` のシグネチャは互換維持。連続 target を内部的に dispatch:
+
+```python
+pycatdap.target_summary(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    bins: int | Sequence[float] | None = None,         # 既存(explanatory binning)
+    target_bins: int                                   # NEW(opt-in、(c) fallback)
+              | Sequence[float]
+              | Literal["quantile", "equal_width", "fd"]
+              | None = None,
+    criterion: Literal["aic", "aicc", "bic"] = "bic",  # NEW
+) -> TargetSummary | RegressionTargetSummary
+```
+
+Dispatch ルール:
+
+| target dtype | `target_bins` | 戻り値 | AIC 種別 |
+|---|---|---|---|
+| categorical / boolean | `None`(必須) | `TargetSummary`(既存 H-0004) | 多項分布 ΔAIC(既存) |
+| categorical / boolean | `not None` | `ValueError`(target は既に離散) | — |
+| **continuous** | **`None`(default)** | **`RegressionTargetSummary`(NEW)** | **Gaussian ΔAIC(本 Proposal)** |
+| continuous | `not None` | `TargetSummary`(候補 (c) fallback) | 多項分布 ΔAIC(Y を bin した contingency) |
+
+#### 新規 dataclass
+
+```python
+@dataclass(frozen=True)
+class RegressionTargetSummary:
+    target: str
+    explanatory: str
+    bin_stats: pd.DataFrame      # cols: count, target_mean, target_std, x_min, x_max
+    delta_aic: float
+    r_squared: float             # ΔAIC を解釈しやすく
+    n_effective: int             # M2 戦略による有効 N(下記)
+    intervals: list[float] | None  # X 側の binning(連続 explanatory のみ)
+    criterion: Literal["aic", "aicc", "bic"]
+```
+
+メソッド: `.show()` / `.to_html(path=None)` / `.to_dict()` / `.to_plotly_json()`(既存 `TargetSummary` と揃える)。
+
+#### 欠損値ハンドリング: 戦略 M2(Acceptance Criterion)
+
+cross-check で発見された致命的欠陥(現行 `_target_pair.py:328` の per-pair `dropna()` が ペア間で `n` を変動させ R-1 を実質的に破る)を回避するため、**M2 戦略を採用**:
+
+1. **Y のみ dropna**: 目的変数の欠損行のみ削除。これにより全 X 候補で `n` 共通。
+2. **X の欠損は明示的 missing pseudo-bin**: X に欠損がある行は `_missing_` という特別 bin に集約。`bin_stats` の最終行に表示。
+3. **`AIC_null` は全ペアで同一**: `n · log(TSS / n) + penalty(2, n)` は Y のみ依存 → 同一 Y 上の異なる X 候補で ΔAIC が直接比較可能。
+
+参考実装: AdvancedCATDAP `scoring.py:calc_score_regression_partial` が `stats_missing` を含めた同等の処理を行っている。
+
+#### `plot_target` の継続的拡張
+
+`RegressionTargetSummary` に対して `plot_target` は次の自動 kind を選択:
+
+| explanatory dtype | auto kind | 描画内容 |
+|---|---|---|
+| categorical (≤ 8 levels) | `box` | X カテゴリ別の Y 箱ひげ(seaborn 定石) |
+| categorical (> 8 levels) | `box` + sort by `target_mean` | 多水準時の可読性 |
+| continuous | `scatter` + `bin_means` overlay | X-Y 散布図に bin 平均線を重畳 |
+| boolean | overlaid hist | Y 分布の two-class 重畳 |
+
+明示 kind: `"scatter"`, `"box"`, `"violin"`, `"hist"`, `"bin_means"`(bin 平均のみ折れ線)。
+
+### Impact
+
+- **公開 API 追加**: `RegressionTargetSummary` 型 + `target_summary` / `plot_target` シグネチャに `target_bins` / `criterion` パラメータ追加(default 互換)
+- **既存 API への破壊的変更なし**: `TargetSummary` の動作不変
+- **新規モジュール**: `src/pycatdap/_aic_regression.py`(ガウス回帰 AIC 計算、AdvancedCATDAP から移植)
+- **既存モジュール改修**: `_target_pair.py`(dispatch logic + M2 dropna)、`plot/matplotlib.py` / `plot/plotly.py`(RegressionTargetSummary 対応)、`__init__.py`(新規型 export)
+- **BLUEPRINT.md §3 / §5.7**: モジュール構成・plotting 関数表に追記
+
+### Compatibility
+
+- **後方互換**: 完全
+  - 既存 `target_summary(df, "Survived", "Sex")` は `target_bins=None`, `criterion="bic"` がデフォルトに変わるが、target が categorical なので criterion は使われず動作不変
+  - `target_bins` パラメータは新規追加(default `None`)
+  - 連続 target で `ValueError` を期待していたコードは `RegressionTargetSummary` を受け取る挙動に変わる(breaking?)
+
+→ **連続 target の ValueError 期待は documentation 上の挙動であり、API 契約ではない**。H-0004 リリース時点で「連続 target はサポートされていない」と明記しているため、`RegressionTargetSummary` を返すように変わっても契約違反ではない。CHANGELOG に明示。
+
+### Alternatives Considered
+
+研究ドキュメント §6-§7 で 5 候補(a-e)を評価し棄却した経緯。要点:
+
+| 候補 | 棄却理由 |
+|---|---|
+| (a) Symmetric pooling | C_X 依存 post-selection bias で R-1 失敗(研究 §2.5) |
+| (b) Joint AIC binning | R-1 失敗 + 計算量 O(K²N²) で実用不能 |
+| (c) Marginal Y binning | (f) 採用後は不要だが、`target_bins=...` 経由で **contingency-table view fallback** として温存 |
+| (d) Aggregate AIC | (f) で動機消失 |
+| (e) User-specified | (c) のエイリアスとして温存 |
+
+#### IT-解釈ギャップ(明示的に許容)
+
+- categorical mode: ΔAIC = `−2n·Î(E;F) + penalty` → 相互情報量解釈
+- regression mode: ΔAIC = `n·log(1−R²) + penalty` → R² 解釈
+
+同じ AIC 機械を異なる likelihood family で適用するため、**カテゴリと回帰の ΔAIC は直接比較不能**。ユーザーには same-mode 内での比較に限定するよう docs で明記。
+
+### Acceptance Criteria
+
+#### API
+- [ ] 連続 target + `target_bins=None` で `RegressionTargetSummary` を返す
+- [ ] 連続 target + `target_bins=int|list|"quantile"|"equal_width"|"fd"` で既存 `TargetSummary`(候補 (c) fallback)を返す
+- [ ] `RegressionTargetSummary` に `.show / .to_html / .to_dict / .to_plotly_json` の4メソッド
+- [ ] `plot_target` の auto kind が回帰モードで `scatter+bin_means` / `box` / `violin` / `hist` を正しく選択
+
+#### 数値整合
+- [ ] `gaussian_regression_aic` の結果が `AdvancedCATDAP.calc_score_reg_bincount_idx` と一致(同一データで 1e-10 以内)
+- [ ] ΔAIC = `n · log(1−R²) + penalty_diff` が `sklearn.metrics.r2_score` から再構成可能(R² 整合性)
+- [ ] M2 missing strategy で **同一 Y、異なる欠損パターンの X 候補に対し `AIC_null` が一致**(R-1 テスト)
+- [ ] `criterion="bic" | "aic" | "aicc"` でペナルティ式が一致(`bic: log(n)·k` / `aic: 2k` / `aicc: 2k + 2k(k+1)/(n-k-1)`)
+
+#### コード品質
+- [ ] `tests/test_aic_regression.py` に unit テスト 15 個以上(各 criterion / edge case / M2 missing strategy / cross-pair comparability)
+- [ ] `tests/test_target_pair.py` に regression dispatch テスト 8 個以上(dtype 判定、戻り値型、`.to_html` / `.to_plotly_json`)
+- [ ] coverage 80%+ 維持
+- [ ] `mypy --strict` pass
+- [ ] docstring(NumPy style)に `Examples` セクション付き
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3` モジュール構成図に `_aic_regression.py` を追記
+- [ ] `BLUEPRINT.md §5.7` の signature 表に regression mode を追記
+- [ ] `CHANGELOG.md [Unreleased]` の `Added` に `RegressionTargetSummary` + 2 パラメータを記載
+- [ ] チュートリアル Notebook 06 の「Coming soon: continuous targets」節を `RegressionTargetSummary` を使うコード例に置換(別 PR)
+
+### Decision
+
+- Date: `2026-05-27`
+- Result: `accepted`
+- Notes: プロジェクトオーナー承認(PR #58 squash merge by `nbx`)。実装は本リポジトリの後続 PR で:
+  - `src/pycatdap/_aic_regression.py`(新規)— `compute_rss` / `compute_gaussian_aic` / `compute_gaussian_null_aic` / `compute_delta_aic_regression` + `_penalty(criterion=aic|aicc|bic)`
+  - `src/pycatdap/_target_pair.py`(拡張)— `RegressionTargetSummary` dataclass + `target_summary` の dispatch + M2 missing strategy + `_apply_target_discretization` (c) fallback
+  - `src/pycatdap/plot/{matplotlib,plotly}.py`(拡張)— 回帰モードに対応(`box` / `violin` / `scatter` / `bin_means` / `hist`)
+  - `__init__.py` に `RegressionTargetSummary` を export
+  - `tests/test_aic_regression.py`(26 件)+ `tests/test_target_pair.py` 追加分(24 件)= 計 273 テスト pass、coverage 81.16%、ruff/mypy strict 通過(IPython display は既存と同じ pre-existing)
+
+### Migration
+
+破壊的変更なし。新規 API のため明示的な移行不要。CHANGELOG `[Unreleased]` の `Added` に `RegressionTargetSummary` 型と 2 つのパラメータを記載する。
+
+ユーザー側の互換ポイント:
+- 既存の `target_summary(df, "Survived", "Sex")` は完全に互換
+- 連続 target で従来 `ValueError` を `try/except` していたコードは、引き続き例外なし(`RegressionTargetSummary` が返る)に置き換える
+- `criterion` のデフォルトを `"aic"` 互換にしたい場合は `target_summary(..., criterion="aic")` で明示
+
+### Related References
+
+- Akaike, H. (1973). *Information theory and an extension of the maximum likelihood principle*. In Proc. 2nd Int. Symp. Information Theory, 267-281.
+- Hurvich, C. M., & Tsai, C. L. (1989). *Regression and time series model selection in small samples*. Biometrika 76(2), 297-307.(AICc; 注:本実装は K 規約に σ² を含む AdvancedCATDAP 流儀)
+- Yao, Y. C. (1988). *Estimating the Number of Change-Points via Schwarz Criterion*. Statistics & Probability Letters 6, 181-189.(BIC を changepoint 推奨)
+- Davis, R. A., Lee, T. C. M., & Rodriguez-Yam, G. A. (2006). *Structural Break Estimation for Nonstationary Time Series Models*. JASA 101, 223-239.
+- Friedman, J. H. (1991). *Multivariate Adaptive Regression Splines*. Annals of Statistics 19(1), 1-67.
+- 参照実装: [`nbx-liz/AdvancedCATDAP/advanced_catdap/components/scoring.py`](https://github.com/nbx-liz/AdvancedCATDAP/blob/main/advanced_catdap/components/scoring.py)
+- 研究フェーズ詳細: [`docs/research/h0005-continuous-target.md`](docs/research/h0005-continuous-target.md)
+
+---
+
+## 2026-05-27: Phase B 二変量 API(`plot_pair` / `aic_heatmap` / `association_matrix` / `association_plot`)
+
+- ID: `H-0006`
+- Status: `accepted`
+- Scope: `API | scope`
+- Related: `H-0001 Phase B`, `H-0002 FR-3`, `H-0004`, `BLUEPRINT.md §3, §5.7`, Issue #13
+
+### Context
+
+H-0004 / H-0005 で **目的変数指向**(asymmetric)の `target_summary` / `plot_target` は揃った。一方、`H-0001 Phase B`(Issue #13)が想定している残りの 4 つの公開 API は、いずれも **対称な二変量** または **多変数まとめ** の視点を提供するもので、未着手:
+
+| API | 視点 | 必要性 |
+|---|---|---|
+| `plot_pair(df, x, y)` | 任意の 2 変数(対称) | EDA で `target` が定まっていない初手の探索 |
+| `aic_heatmap(catdap1_result)` | m×m ΔAIC をヒートマップ化 | `Catdap1Result.aic` の DataFrame 表示は読みにくい |
+| `association_matrix(df, measure=...)` | 全列ペアの関連度行列 | `catdap1` は **response 軸を指定する** ため対称行列を直接返さない |
+| `association_plot(table)` | vcd 風 Pearson 残差ヒートマップ | `TargetSummary.pearson_residuals` の数値 DataFrame は解釈が重い |
+
+H-0004 §A1 で「`plot_pair` は対称設計のため Phase B に分離」と明記済み。本 Proposal はその約束を回収する。
+
+### 競合分析(対象パッケージ)
+
+| Package | 該当機能 | 形式 | pycatdap での参考点 |
+|---|---|---|---|
+| **R `vcd::assoc(table, shade=TRUE)`** | 標準化残差ヒートマップ | mosaic + Pearson 残差で色付け | `association_plot` のリファレンス |
+| **R `vcd::pairs(table)`** | 多変数 mosaic マトリクス | 全ペアの mosaic を grid 配置 | `plot_pair` の対称版に類似 |
+| **seaborn `heatmap(corr_matrix)`** | 相関行列のヒートマップ | 連続変数の Pearson 相関を全ペアで | `association_matrix` + `aic_heatmap` の参考(連続のみ) |
+| **ydata-profiling Correlations タブ** | 関連度行列 | `phi_k` / Cramér's V / Spearman 等を選択 | `association_matrix(measure=...)` の参考 |
+| **plotly `imshow`** | ヒートマップ | matrix → interactive heatmap | plotly backend の実装方針 |
+| **sweetviz Associations** | 関連度行列 | Cramér's V + 相関比、対角=NaN | `association_matrix` の出力契約 |
+
+**学び**:
+- 残差ヒートマップは **diverging colormap**(負=青、正=赤、ゼロ=白)+ 閾値線(±2σ)を引くのが業界標準(vcd)
+- 関連度行列の対角は **NaN**(自己関連は意味なし)が pandas / seaborn / sweetviz の共通慣習
+- 「**測度を選べる**」設計(`measure=` キーワード)が `phi_k` / Cramér's V / mutual_info の並立を可能にする
+- `aic_heatmap` の色は **ΔAIC < 0 が informative**(Issue #13 では緑、≥ 0 で赤を指定)— これは vcd の「informative=高彩度」と方向は一致するが、AIC は **0 が baseline** という追加意味があるため diverging colormap の中心を 0 にする必要がある
+
+### Proposal
+
+#### 公開 API(新規 4 関数)
+
+```python
+# B1. 対称ラッパー: plot_pair
+pycatdap.plot_pair(
+    df: pd.DataFrame,
+    x: str,
+    y: str,
+    *,
+    kind: Literal["auto", "stacked", "mosaic", "violin", "box", "hist",
+                   "scatter", "bin_means"] = "auto",
+    bins: int | Sequence[float] | None = None,
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    **kwargs: Any,
+) -> Any
+```
+
+**応答側の決定ルール**(`plot_pair` 専用、`plot_target` には影響しない):
+
+| `x` dtype | `y` dtype | response として選ぶ側 | 根拠 |
+|---|---|---|---|
+| categorical / boolean | categorical / boolean | `y`(慣習: 縦軸=応答) | seaborn / vcd の formula 順序に一致 |
+| categorical / boolean | continuous | `x`(離散側) | Pearson 残差の解釈は離散側を応答とする方が自然(H-0004 §A1) |
+| continuous | categorical / boolean | `y`(離散側) | 同上 |
+| continuous | continuous | `y`(慣習: 縦軸=応答) | H-0005 回帰モードでは `y` を target、`x` を explanatory |
+
+ルール確定後は `plot_target(df, target=<response>, explanatory=<other>, kind=kind, bins=bins, backend=backend, **kwargs)` に **完全に委譲** する。`plot_pair` 単体ではロジックを持たない(対称→非対称の翻訳のみ)。
+
+#### B2. `aic_heatmap`
+
+```python
+pycatdap.aic_heatmap(
+    result: Catdap1Result | pd.DataFrame,
+    *,
+    threshold: float | None = 0.0,        # 強調する ΔAIC 閾値
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    **kwargs: Any,
+) -> Any
+```
+
+- `Catdap1Result` を受け取った場合は `result.aic` を内部で使用
+- `pd.DataFrame` を受け取った場合は **rows=response, cols=explanatory** と解釈(`association_matrix` の戻り値と互換)
+- カラーマップ: **diverging**(`RdYlGn_r` 互換 — ΔAIC < 0=緑、> 0=赤、中心 0=白)
+- `threshold` が指定された場合、各セルのテキストに `*` を付与(`< threshold` のセル)
+- 対角(self)は NaN なので白(透明)表示
+
+#### B3. `association_matrix`
+
+```python
+pycatdap.association_matrix(
+    df: pd.DataFrame,
+    *,
+    measure: Literal["aic"] = "aic",     # v0.4.0 では "aic" のみ
+    bins: int | None = None,             # 連続変数の binning
+    criterion: Literal["aic", "aicc", "bic"] = "bic",   # 連続 target 時
+) -> pd.DataFrame
+```
+
+- 戻り値: 正方 DataFrame, rows=`df.columns`, cols=`df.columns`, **対角=NaN**
+- `measure="aic"`: 各セル `(i, j)` は **`target_summary(df, target=i, explanatory=j).delta_aic`** を格納
+  - 連続 target × 連続 explanatory は H-0005 の `RegressionTargetSummary.delta_aic`
+  - 連続 target × カテゴリ explanatory も H-0005 経由
+  - カテゴリ target × * は H-0004 経由
+- **非対称**(`M[i, j] != M[j, i]`):「i を target としたとき j がどれだけ説明するか」と「j を target としたとき i がどれだけ説明するか」は別物。これを行列で同時に提示することで、対称性の崩れ自体がユーザーへの情報になる
+- `measure="cramers_v"` / `"mutual_info"` は **本 Proposal のスコープ外**(後続 H-0007 等で追加。H-0002 `measures/` プラグイン層が前提)
+
+#### B4. `association_plot`
+
+```python
+pycatdap.association_plot(
+    table: pd.DataFrame | TargetSummary,
+    *,
+    threshold: float = 2.0,              # |residual| > threshold を強調
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    **kwargs: Any,
+) -> Any
+```
+
+- `TargetSummary` を受け取った場合は `table.pearson_residuals` を内部で使用
+- `pd.DataFrame` を直接受け取る場合は **クロス頻度表** と解釈し、内部で Pearson 標準化残差を計算
+- カラーマップ: **diverging**(青=負、赤=正、白=ゼロ)— vcd `assoc(shade=TRUE)` 互換
+- `threshold` を超えるセルは **アスタリスク** をオーバーレイ(matplotlib)/ hover text(plotly)
+- `RegressionTargetSummary` は対象外(連続 target には Pearson 残差概念がない)— 渡された場合 `TypeError` を上げ、`plot_target(kind="scatter")` を推奨するエラーメッセージを返す
+
+#### dispatch / 配置
+
+- `src/pycatdap/_association.py`(新規)— `association_matrix` のロジック(全ペア走査)を集約
+- `src/pycatdap/plot/__init__.py` に 3 つの dispatcher(`plot_pair`, `aic_heatmap`, `association_plot`)を追加
+- `src/pycatdap/plot/matplotlib.py` / `plotly.py` に各 backend 実装を追加
+  - `plot_pair`: `plot_target` への委譲のみ(backend ごとの実装は不要)
+  - `aic_heatmap` / `association_plot`: backend ごとに heatmap を実装
+- `src/pycatdap/__init__.py` に再 export: `plot_pair`, `aic_heatmap`, `association_matrix`, `association_plot`
+
+### Impact
+
+- **公開 API の追加のみ**(4 関数)
+- 既存 API への破壊的変更なし
+- 新規モジュール: `src/pycatdap/_association.py`
+- 既存モジュール変更: `src/pycatdap/plot/__init__.py` / `matplotlib.py` / `plotly.py` / `__init__.py`
+- `BLUEPRINT.md §3`(モジュール構成)と `§5.7`(plotting テーブル)を改訂
+- 任意依存の追加なし(matplotlib / plotly は既存 extras)
+
+### Compatibility
+
+- **後方互換**: 完全
+- 既存の `target_summary` / `plot_target` / `Catdap1Result` への変更なし
+- `plot_pair` は `plot_target` に委譲するため、`plot_target` の挙動変更がそのまま伝播する(`plot_pair` 単体の挙動を別 spec で固定はしない)
+
+### Alternatives Considered
+
+#### A1: `plot_pair` を `plot_target` とは独立のロジックで再実装
+- **不採用理由**: 同じ dispatch を 2 つ保守するのは反 DRY。`plot_target` を改訂したときに `plot_pair` の auto 選択が乖離する事故を招く。委譲することで H-0004 / H-0005 の改善が自動的に `plot_pair` にも反映される。
+
+#### A2: `association_matrix` を **対称化**(`(M + M.T) / 2` を返す)
+- **不採用理由**: ΔAIC は **「i を target としたときの j の情報量」** という方向性のある量。対称化すると `cramers_v` や `phi_k` と区別がつかなくなり、AIC の優位性(モデル選択フレームワーク)を捨てる。非対称のまま提示する方が「**変数 i は j からよく説明されるが、逆は弱い**」というアサイメトリ自体を発見できる(因果探索の手がかり)。
+
+#### A3: `association_matrix(measure="cramers_v" | "mutual_info")` を本 PR に同梱
+- **不採用理由**: BLUEPRINT §5.11 で planned 状態の `measures/` プラグイン層(H-0002 で言及)が未実装。先に `measures/` 層を入れるか、本 PR では `aic` のみで出して別 Proposal(H-0007)で他測度を追加する方が、テストもレビューも軽い。
+
+#### A4: `aic_heatmap` を **対角を 0 で埋める**(NaN は白だが意味不明)
+- **不採用理由**: 自己 ΔAIC は数学的に未定義(`catdap1` も NaN を返す慣習)。0 で埋めると「自己関連が baseline と同等」というミスリードを生む。NaN を白(透明)表示し、tooltip / legend で「diagonal: undefined」と明記する方が誠実。
+
+#### A5: `association_plot` を **`mosaic_plot` + shade=True フラグ** として既存に追加
+- **不採用理由**: mosaic と heatmap は表現が根本的に異なる(mosaic は面積エンコード、heatmap は色エンコード)。`association_plot` は **heatmap 専用** で残差の数値解釈に特化する方が役割分担が明確。`mosaic_plot(table, shade=True)` を別途追加するのは将来の検討事項。
+
+#### A6: `plot_pair` の応答決定ルールを **常に `y` を target** にする(seaborn 慣習に統一)
+- **不採用理由**: カテゴリ × 連続のペアで連続側を target にすると、`plot_target` は H-0005 回帰モードに入る。連続変数を「目的」として扱うのは EDA 初手としては重い解釈になる。**離散側を優先** することで「カテゴリの違いによる連続変数の分布変化」という解釈しやすい view に揃える。
+
+### Acceptance Criteria
+
+#### API
+- [ ] `pycatdap.plot_pair(df, x, y)` が matplotlib / plotly 両 backend で動作
+- [ ] `plot_pair` の応答決定ルール 4 パターン(cat×cat / cat×cont / cont×cat / cont×cont)を unit テストで確認
+- [ ] `pycatdap.aic_heatmap(catdap1_result)` が `Catdap1Result` と `pd.DataFrame` の両方を受け取れる
+- [ ] `pycatdap.aic_heatmap` が両 backend で動作、diverging colormap で中心 0
+- [ ] `pycatdap.association_matrix(df, measure="aic")` が正方 DataFrame を返し、対角 NaN、shape=(m, m)
+- [ ] `association_matrix` の `M.loc[i, j]` が `target_summary(df, target=i, explanatory=j).delta_aic` と一致(全 (i,j) ペア)
+- [ ] `pycatdap.association_plot(table)` が `TargetSummary` と `pd.DataFrame`(クロス頻度)の両方を受け取れる
+- [ ] `association_plot` に `RegressionTargetSummary` を渡すと `TypeError` を `plot_target(kind="scatter")` を推奨するメッセージ付きで上げる
+- [ ] 4 関数すべてに `**kwargs` フォワード機構あり
+
+#### 数値整合
+- [ ] `aic_heatmap` が表示する数値が `Catdap1Result.aic` の DataFrame の数値と一致
+- [ ] `association_matrix(df, measure="aic")` の `M.loc[i, i]` が NaN
+- [ ] `association_plot(target_summary(df, t, e))` のセル色が Pearson 残差の符号と一致(`> threshold` で強調)
+
+#### コード品質
+- [ ] `tests/test_plot_pair.py` に dispatch テスト 8 件以上(4 dtype 組合せ × 2 backend)
+- [ ] `tests/test_aic_heatmap.py` に backend / 入力型 / colormap テスト 6 件以上
+- [ ] `tests/test_association.py` に `association_matrix` + `association_plot` のテスト 10 件以上(計算正しさ・対角 NaN・対称性チェック・kwargs フォワード・回帰結果拒否)
+- [ ] coverage 80%+ 維持
+- [ ] `mypy --strict` pass
+- [ ] 4 関数すべてに NumPy style docstring + `Examples` セクション
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3` のモジュール構成図に `_association.py` を追記
+- [ ] `BLUEPRINT.md §5.7` の plotting 関数一覧に 4 関数を追記
+- [ ] 新規 tutorial `docs/tutorials/07-bivariate-phase-b.ipynb`(別 PR、PR-B4)
+- [ ] `docs/tutorials/index.md` に Notebook 07 を追加
+
+### PR 分割
+
+実装は **4 PR** に分割する:
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-B0**(本 Proposal) | `docs(history): propose H-0006` | none |
+| **PR-B1** | `plot_pair`(委譲ラッパー)+ tests | PR-B0 merge |
+| **PR-B2** | `aic_heatmap` + `association_matrix(measure="aic")` + `_association.py` + tests | PR-B1 merge |
+| **PR-B3** | `association_plot` + tests | PR-B2 merge |
+| **PR-B4** | tutorial Notebook 07 + BLUEPRINT 反映 + Issue #13 close | PR-B3 merge |
+
+各 PR は CI green を確認してから次に進む(`feedback_pr_dirty_blocks_ci` に従う)。
+
+### Decision
+
+- Date: `2026-05-27`
+- Result: `accepted`
+- Notes: PR-B0(#62)で Proposal 承認。実装は 4 PR に分けて develop へ:
+  - PR-B1(#63): `plot_pair`(committed `f328c68`)
+  - PR-B2(#64): `aic_heatmap` + `association_matrix` + `_association.py`(committed `490b5f1`、CI で `np.ma` untyped 問題 2 回踏んで `cmap.set_bad` に切替)
+  - PR-B3(#65): `association_plot`(committed `c9be5b3`)
+  - PR-B4: tutorial Notebook 07 + BLUEPRINT 反映 + Issue #13 close(本 PR)
+  - 全 4 関数の合計 76 テスト(plot_pair 21 + association_matrix 15 + aic_heatmap 14 + association_plot 16 + 重複ラッパー除く)、最終 coverage 82.02%
+
+### Migration
+
+破壊的変更なし。新規 API のため移行不要。CHANGELOG `[Unreleased]` の `Added` に 4 関数を順次記載する(PR 毎)。
+
+### Related References
+
+- R `vcd::assoc` / `vcd::pairs`(Friendly, M.): <https://cran.r-project.org/package=vcd>
+- ydata-profiling Correlations: <https://docs.profiling.ydata.ai/>
+- sweetviz Associations: <https://github.com/fbdesignpro/sweetviz>
+- seaborn heatmap: <https://seaborn.pydata.org/generated/seaborn.heatmap.html>
+- Pearson standardized residuals(Agresti, 2002, *Categorical Data Analysis*, §3.2)
+- 親仕様: H-0001 §Phase B、H-0004 §A1(plot_pair の Phase B 分離決定)

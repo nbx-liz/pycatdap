@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -320,6 +322,502 @@ def plot_variable(
         title=str(col),
         xaxis={"title": str(col)},
         yaxis={"title": "Count"},
+    )
+    return fig
+
+
+def plot_target(
+    df: pd.DataFrame,
+    target: str,
+    explanatory: str,
+    *,
+    kind: str = "auto",
+    bins: int | list[float] | None = None,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Plot a target × explanatory relationship (Plotly backend).
+
+    Auto-dispatch mirrors the matplotlib backend; see
+    :func:`pycatdap.plot.plot_target` for the dispatch table.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source data.
+    target : str
+        Target (response) column. Must be categorical.
+    explanatory : str
+        Explanatory column. May be categorical or continuous.
+    kind : {'auto', 'stacked', 'mosaic', 'violin', 'box', 'hist'}
+        Plot kind. ``'auto'`` dispatches by dtype.
+    bins : int, sequence of float, or None
+        Binning for continuous explanatory.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    go = _import_plotly()
+
+    from pycatdap.eda import _detect_kind
+
+    if target not in df.columns:
+        msg = f"plot_target: target column not found: {target!r}"
+        raise KeyError(msg)
+    if explanatory not in df.columns:
+        msg = f"plot_target: explanatory column not found: {explanatory!r}"
+        raise KeyError(msg)
+
+    target_kind = _detect_kind(df[target])
+    expl_kind = _detect_kind(df[explanatory])
+    from pycatdap.plot import _resolve_target_kind
+
+    resolved = _resolve_target_kind(
+        kind, target_kind, expl_kind, continuous_default="box"
+    )
+
+    # H-0005: continuous target → regression-mode plotting.
+    if target_kind == "continuous":
+        return _plot_target_regression_plotly(
+            df,
+            target=target,
+            explanatory=explanatory,
+            kind=resolved,
+            bins=bins,
+        )
+
+    if resolved in {"stacked", "mosaic"}:
+        from pycatdap._target_pair import _summary_categorical
+
+        summary = _summary_categorical(
+            df, target=target, explanatory=explanatory, bins=bins
+        )
+        if resolved == "stacked":
+            fig = barplot_twoway(summary.counts)
+        else:
+            fig = mosaic_plot(summary.counts)
+        fig.update_layout(title=f"{target} × {explanatory}")
+        return fig
+
+    work = df[[target, explanatory]].dropna()
+    groups = sorted(work[target].astype(str).unique().tolist())
+
+    fig = go.Figure()
+    for g in groups:
+        arr = work.loc[work[target].astype(str) == g, explanatory].to_numpy(dtype=float)
+        if resolved == "violin":
+            fig.add_trace(go.Violin(y=arr, name=str(g), box_visible=True))
+        elif resolved == "box":
+            fig.add_trace(go.Box(y=arr, name=str(g)))
+        elif resolved == "hist":
+            fig.add_trace(go.Histogram(x=arr, name=str(g), opacity=0.5))
+        else:
+            msg = f"plot_target: unsupported kind {resolved!r}"
+            raise ValueError(msg)
+
+    if resolved == "hist":
+        fig.update_layout(barmode="overlay", xaxis={"title": str(explanatory)})
+    else:
+        fig.update_layout(
+            xaxis={"title": str(target)}, yaxis={"title": str(explanatory)}
+        )
+    fig.update_layout(title=f"{explanatory} by {target}")
+    return fig
+
+
+def _plot_target_regression_plotly(
+    df: pd.DataFrame,
+    *,
+    target: str,
+    explanatory: str,
+    kind: str,
+    bins: int | list[float] | None,
+) -> _go.Figure:
+    """Continuous-target Plotly plotting (H-0005 regression mode)."""
+    go = _import_plotly()
+    from pycatdap._target_pair import _summary_regression
+    from pycatdap.eda import _detect_kind
+
+    expl_kind = _detect_kind(df[explanatory])
+    work = df[df[target].notna()][[target, explanatory]]
+
+    if kind in {"box", "violin"}:
+        labels: list[str]
+        y_groups: list[Any]
+        if expl_kind == "continuous":
+            summary = _summary_regression(
+                work,
+                target=target,
+                explanatory=explanatory,
+                bins=bins,
+                criterion="bic",
+            )
+            labels = [str(idx) for idx in summary.bin_stats.index]
+            x_arr = work[explanatory].to_numpy(dtype=float)
+            y_arr = work[target].to_numpy(dtype=float)
+            y_groups = []
+            if summary.intervals:
+                import numpy as _np
+
+                edges = [
+                    float(_np.nanmin(x_arr)) - 1e-9,
+                    *summary.intervals,
+                    float(_np.nanmax(x_arr)) + 1e-9,
+                ]
+                cuts = pd.cut(x_arr, bins=edges, include_lowest=True).astype(str)
+                for label in labels:
+                    mask: npt.NDArray[np.bool_]
+                    if label == "_missing_":
+                        mask = pd.isna(work[explanatory]).to_numpy()
+                    else:
+                        mask = np.asarray(cuts == label, dtype=bool)
+                    y_groups.append(y_arr[mask])
+            else:
+                y_groups = [y_arr]
+                labels = labels or [str(explanatory)]
+        else:
+            x_filled = (
+                work[explanatory]
+                .astype(object)
+                .where(work[explanatory].notna(), "_missing_")
+                .astype(str)
+            )
+            labels = sorted(x_filled.unique().tolist())
+            y_groups = [
+                work.loc[x_filled == lbl, target].to_numpy(dtype=float)
+                for lbl in labels
+            ]
+
+        fig = go.Figure()
+        for label, arr in zip(labels, y_groups, strict=True):
+            if kind == "violin":
+                fig.add_trace(go.Violin(y=arr, name=label, box_visible=True))
+            else:
+                fig.add_trace(go.Box(y=arr, name=label))
+        fig.update_layout(
+            title=f"{target} by {explanatory}",
+            xaxis={"title": str(explanatory)},
+            yaxis={"title": str(target)},
+        )
+        return fig
+
+    if kind == "bin_means":
+        summary = _summary_regression(
+            work,
+            target=target,
+            explanatory=explanatory,
+            bins=bins,
+            criterion="bic",
+        )
+        labels = [str(idx) for idx in summary.bin_stats.index]
+        means = summary.bin_stats["target_mean"].to_list()
+        fig = go.Figure(data=[go.Bar(x=labels, y=means)])
+        fig.update_layout(
+            title=f"mean({target}) by {explanatory} (ΔAIC={summary.delta_aic:.2f})",
+            xaxis={"title": str(explanatory)},
+            yaxis={"title": f"mean({target})"},
+        )
+        return fig
+
+    if kind == "scatter":
+        if expl_kind != "continuous":
+            msg = "plot_target: kind='scatter' requires a continuous explanatory"
+            raise ValueError(msg)
+        import numpy as _np
+
+        x = work[explanatory].to_numpy(dtype=float)
+        y = work[target].to_numpy(dtype=float)
+        mask = ~_np.isnan(x)
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scattergl(
+                x=x[mask],
+                y=y[mask],
+                mode="markers",
+                marker={"opacity": 0.4, "size": 6},
+                name="points",
+            )
+        )
+        summary = _summary_regression(
+            work,
+            target=target,
+            explanatory=explanatory,
+            bins=bins,
+            criterion="bic",
+        )
+        if summary.intervals:
+            edges = [
+                float(_np.nanmin(x)),
+                *summary.intervals,
+                float(_np.nanmax(x)),
+            ]
+            centers = [(edges[i] + edges[i + 1]) / 2 for i in range(len(edges) - 1)]
+            bin_means_no_missing = [
+                float(v)
+                for label, v in summary.bin_stats["target_mean"].items()
+                if str(label) != "_missing_"
+            ]
+            if len(centers) == len(bin_means_no_missing):
+                fig.add_trace(
+                    go.Scatter(
+                        x=centers,
+                        y=bin_means_no_missing,
+                        mode="lines+markers",
+                        line={"color": "red", "width": 2},
+                        name="bin mean",
+                    )
+                )
+        fig.update_layout(
+            title=f"{target} vs {explanatory} (ΔAIC={summary.delta_aic:.2f})",
+            xaxis={"title": str(explanatory)},
+            yaxis={"title": str(target)},
+        )
+        return fig
+
+    if kind == "hist":
+        x_filled = (
+            work[explanatory]
+            .astype(object)
+            .where(work[explanatory].notna(), "_missing_")
+            .astype(str)
+        )
+        labels = sorted(x_filled.unique().tolist())
+        fig = go.Figure()
+        for label in labels:
+            fig.add_trace(
+                go.Histogram(
+                    x=work.loc[x_filled == label, target].to_numpy(dtype=float),
+                    name=str(label),
+                    opacity=0.5,
+                )
+            )
+        fig.update_layout(
+            barmode="overlay",
+            title=f"{target} by {explanatory}",
+            xaxis={"title": str(target)},
+        )
+        return fig
+
+    msg = (
+        f"plot_target: kind {kind!r} is not supported for a continuous target. "
+        f"Use 'auto', 'box', 'violin', 'scatter', 'bin_means', or 'hist'."
+    )
+    raise ValueError(msg)
+
+
+def _coerce_aic_dataframe(
+    result: Catdap1Result | pd.DataFrame,
+) -> pd.DataFrame:
+    """Extract a ΔAIC DataFrame from a Catdap1Result or accept one directly."""
+    if isinstance(result, pd.DataFrame):
+        return result
+    aic = getattr(result, "aic", None)
+    if isinstance(aic, pd.DataFrame):
+        return aic
+    msg = (
+        f"aic_heatmap: expected Catdap1Result or pd.DataFrame; "
+        f"got {type(result).__name__}"
+    )
+    raise TypeError(msg)
+
+
+def aic_heatmap(
+    result: Catdap1Result | pd.DataFrame,
+    *,
+    threshold: float | None = 0.0,
+    colorscale: str = "RdYlGn_r",
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Diverging ΔAIC heatmap (H-0006, Plotly backend).
+
+    Parameters
+    ----------
+    result : Catdap1Result or DataFrame
+        ΔAIC values; ``Catdap1Result.aic`` is extracted automatically.
+    threshold : float or None
+        Cells with ΔAIC strictly less than ``threshold`` get a ``*``
+        annotation. Pass ``None`` to disable.
+    colorscale : str
+        Plotly diverging colorscale name. Default ``'RdYlGn_r'`` paints
+        informative cells green.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+    """
+    go = _import_plotly()
+
+    aic_df = _coerce_aic_dataframe(result)
+    data = aic_df.to_numpy(dtype=float)
+
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        abs_max = 1.0
+    else:
+        abs_max = float(np.nanmax(np.abs(finite)))
+        if abs_max == 0.0:
+            abs_max = 1.0
+
+    annotations: list[dict[str, Any]] = []
+    if threshold is not None:
+        n_rows, n_cols = data.shape
+        for i in range(n_rows):
+            for j in range(n_cols):
+                value = data[i, j]
+                if np.isfinite(value) and value < threshold:
+                    annotations.append(
+                        {
+                            "x": str(aic_df.columns[j]),
+                            "y": str(aic_df.index[i]),
+                            "text": "*",
+                            "showarrow": False,
+                            "font": {"size": 14, "color": "black"},
+                        }
+                    )
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=data,
+                x=[str(c) for c in aic_df.columns],
+                y=[str(r) for r in aic_df.index],
+                colorscale=colorscale,
+                zmid=0,
+                zmin=-abs_max,
+                zmax=abs_max,
+                colorbar={"title": "ΔAIC"},
+                hovertemplate=(
+                    "Response: %{y}<br>Explanatory: %{x}<br>"
+                    "ΔAIC: %{z:.3f}<extra></extra>"
+                ),
+            )
+        ]
+    )
+    fig.update_layout(
+        title="ΔAIC heatmap",
+        xaxis={"title": "Explanatory"},
+        yaxis={"title": "Response", "autorange": "reversed"},
+        annotations=annotations,
+    )
+    return fig
+
+
+def _coerce_residuals(table: Any) -> pd.DataFrame:
+    """Extract Pearson residuals from a TargetSummary or compute from a crosstab.
+
+    Mirrors the matplotlib backend's implementation. Rejects
+    RegressionTargetSummary with a pointer to plot_target(kind="scatter").
+    """
+    from pycatdap._target_pair import RegressionTargetSummary, TargetSummary
+
+    if isinstance(table, TargetSummary):
+        return table.pearson_residuals
+    if isinstance(table, RegressionTargetSummary):
+        msg = (
+            "association_plot does not support RegressionTargetSummary: "
+            "Pearson standardized residuals are undefined for a continuous "
+            "target. Use pycatdap.plot_target(df, target, explanatory, "
+            'kind="scatter") instead.'
+        )
+        raise TypeError(msg)
+    if isinstance(table, pd.DataFrame):
+        observed = table.to_numpy(dtype=float)
+        total = observed.sum()
+        if total <= 0:
+            msg = "association_plot: crosstab total must be positive"
+            raise ValueError(msg)
+        row_sum = observed.sum(axis=1, keepdims=True)
+        col_sum = observed.sum(axis=0, keepdims=True)
+        expected = row_sum @ col_sum / total
+        residuals = np.divide(
+            observed - expected,
+            np.sqrt(expected),
+            out=np.zeros_like(observed),
+            where=expected > 0,
+        )
+        return pd.DataFrame(residuals, index=table.index, columns=table.columns)
+    msg = (
+        f"association_plot: expected TargetSummary or pd.DataFrame; "
+        f"got {type(table).__name__}"
+    )
+    raise TypeError(msg)
+
+
+def association_plot(
+    table: Any,
+    *,
+    threshold: float | None = 2.0,
+    colorscale: str = "RdBu_r",
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """vcd-style heatmap of Pearson standardized residuals (H-0006, Plotly).
+
+    Parameters
+    ----------
+    table : TargetSummary or DataFrame
+        :class:`TargetSummary` or a raw two-way contingency table.
+    threshold : float or None
+        Overlay ``*`` on cells whose ``|residual| > threshold``. ``None``
+        disables the annotation.
+    colorscale : str
+        Plotly diverging colorscale. Default ``'RdBu_r'``.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+
+    Raises
+    ------
+    TypeError
+        If *table* is a :class:`RegressionTargetSummary` or unsupported.
+    """
+    go = _import_plotly()
+
+    residuals = _coerce_residuals(table)
+    data = residuals.to_numpy(dtype=float)
+
+    finite = data[np.isfinite(data)]
+    abs_max = float(np.nanmax(np.abs(finite))) if finite.size else 1.0
+    if abs_max == 0.0:
+        abs_max = 1.0
+
+    annotations: list[dict[str, Any]] = []
+    if threshold is not None:
+        n_rows, n_cols = data.shape
+        for i in range(n_rows):
+            for j in range(n_cols):
+                value = data[i, j]
+                if np.isfinite(value) and abs(value) > threshold:
+                    annotations.append(
+                        {
+                            "x": str(residuals.columns[j]),
+                            "y": str(residuals.index[i]),
+                            "text": "*",
+                            "showarrow": False,
+                            "font": {"size": 14, "color": "black"},
+                        }
+                    )
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=data,
+                x=[str(c) for c in residuals.columns],
+                y=[str(r) for r in residuals.index],
+                colorscale=colorscale,
+                zmid=0,
+                zmin=-abs_max,
+                zmax=abs_max,
+                colorbar={"title": "Pearson residual"},
+                hovertemplate=("%{y} × %{x}<br>residual: %{z:.3f}<extra></extra>"),
+            )
+        ]
+    )
+    fig.update_layout(
+        title="Pearson standardized residuals",
+        xaxis={"title": str(residuals.columns.name or "")},
+        yaxis={"title": str(residuals.index.name or ""), "autorange": "reversed"},
+        annotations=annotations,
     )
     return fig
 

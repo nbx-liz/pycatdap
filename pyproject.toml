@@ -44,6 +44,9 @@ all = [
     "plotly>=5.20",
     "jinja2>=3.1",
 ]
+tutorial = [
+    "seaborn>=0.13",
+]
 
 [dependency-groups]
 dev = [
@@ -57,6 +60,13 @@ dev = [
     "vulture",
     "pre-commit>=4.0",
     "matplotlib>=3.7",
+]
+notebooks = [
+    "nbmake>=1.5",
+    "seaborn>=0.13",
+    "plotly>=5.20",
+    "matplotlib>=3.7",
+    "ipykernel>=6.29",
 ]
 docs = [
     "mkdocs-material>=9.5",
