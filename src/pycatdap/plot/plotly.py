@@ -702,6 +702,126 @@ def aic_heatmap(
     return fig
 
 
+def _coerce_residuals(table: Any) -> pd.DataFrame:
+    """Extract Pearson residuals from a TargetSummary or compute from a crosstab.
+
+    Mirrors the matplotlib backend's implementation. Rejects
+    RegressionTargetSummary with a pointer to plot_target(kind="scatter").
+    """
+    from pycatdap._target_pair import RegressionTargetSummary, TargetSummary
+
+    if isinstance(table, TargetSummary):
+        return table.pearson_residuals
+    if isinstance(table, RegressionTargetSummary):
+        msg = (
+            "association_plot does not support RegressionTargetSummary: "
+            "Pearson standardized residuals are undefined for a continuous "
+            "target. Use pycatdap.plot_target(df, target, explanatory, "
+            'kind="scatter") instead.'
+        )
+        raise TypeError(msg)
+    if isinstance(table, pd.DataFrame):
+        observed = table.to_numpy(dtype=float)
+        total = observed.sum()
+        if total <= 0:
+            msg = "association_plot: crosstab total must be positive"
+            raise ValueError(msg)
+        row_sum = observed.sum(axis=1, keepdims=True)
+        col_sum = observed.sum(axis=0, keepdims=True)
+        expected = row_sum @ col_sum / total
+        residuals = np.divide(
+            observed - expected,
+            np.sqrt(expected),
+            out=np.zeros_like(observed),
+            where=expected > 0,
+        )
+        return pd.DataFrame(residuals, index=table.index, columns=table.columns)
+    msg = (
+        f"association_plot: expected TargetSummary or pd.DataFrame; "
+        f"got {type(table).__name__}"
+    )
+    raise TypeError(msg)
+
+
+def association_plot(
+    table: Any,
+    *,
+    threshold: float | None = 2.0,
+    colorscale: str = "RdBu_r",
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """vcd-style heatmap of Pearson standardized residuals (H-0006, Plotly).
+
+    Parameters
+    ----------
+    table : TargetSummary or DataFrame
+        :class:`TargetSummary` or a raw two-way contingency table.
+    threshold : float or None
+        Overlay ``*`` on cells whose ``|residual| > threshold``. ``None``
+        disables the annotation.
+    colorscale : str
+        Plotly diverging colorscale. Default ``'RdBu_r'``.
+
+    Returns
+    -------
+    plotly.graph_objects.Figure
+
+    Raises
+    ------
+    TypeError
+        If *table* is a :class:`RegressionTargetSummary` or unsupported.
+    """
+    go = _import_plotly()
+
+    residuals = _coerce_residuals(table)
+    data = residuals.to_numpy(dtype=float)
+
+    finite = data[np.isfinite(data)]
+    abs_max = float(np.nanmax(np.abs(finite))) if finite.size else 1.0
+    if abs_max == 0.0:
+        abs_max = 1.0
+
+    annotations: list[dict[str, Any]] = []
+    if threshold is not None:
+        n_rows, n_cols = data.shape
+        for i in range(n_rows):
+            for j in range(n_cols):
+                value = data[i, j]
+                if np.isfinite(value) and abs(value) > threshold:
+                    annotations.append(
+                        {
+                            "x": str(residuals.columns[j]),
+                            "y": str(residuals.index[i]),
+                            "text": "*",
+                            "showarrow": False,
+                            "font": {"size": 14, "color": "black"},
+                        }
+                    )
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=data,
+                x=[str(c) for c in residuals.columns],
+                y=[str(r) for r in residuals.index],
+                colorscale=colorscale,
+                zmid=0,
+                zmin=-abs_max,
+                zmax=abs_max,
+                colorbar={"title": "Pearson residual"},
+                hovertemplate=("%{y} × %{x}<br>residual: %{z:.3f}<extra></extra>"),
+            )
+        ]
+    )
+    fig.update_layout(
+        title="Pearson standardized residuals",
+        xaxis={"title": str(residuals.columns.name or "")},
+        yaxis={"title": str(residuals.index.name or ""), "autorange": "reversed"},
+        annotations=annotations,
+    )
+    return fig
+
+
 def plot_missing(
     df: pd.DataFrame,
     **kwargs: Any,  # noqa: ARG001

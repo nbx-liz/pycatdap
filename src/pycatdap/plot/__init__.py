@@ -408,6 +408,52 @@ def aic_heatmap(
     )
 
 
+def association_plot(
+    table: Any,
+    *,
+    threshold: float | None = 2.0,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """vcd-style heatmap of Pearson standardized residuals (H-0006).
+
+    Parameters
+    ----------
+    table : TargetSummary or DataFrame
+        :class:`pycatdap.TargetSummary` (residuals from
+        ``pearson_residuals``) or a raw two-way contingency table
+        (residuals computed internally as ``(obs - exp) / sqrt(exp)``).
+    threshold : float or None
+        Annotate cells where ``|residual| > threshold`` with a ``*``
+        overlay (default ``2.0``: conventional "strong" association
+        cutoff). Pass ``None`` to disable.
+    backend : {'matplotlib', 'plotly'}
+        Plotting backend.
+    **kwargs
+        Forwarded to the chosen backend.
+
+    Returns
+    -------
+    object
+        Backend-specific figure/axes object.
+
+    Raises
+    ------
+    TypeError
+        If *table* is a :class:`pycatdap.RegressionTargetSummary` (Pearson
+        residuals are undefined for a continuous target; use
+        :func:`pycatdap.plot_target` with ``kind="scatter"``) or an
+        unsupported input type.
+
+    See Also
+    --------
+    pycatdap.target_summary : computes ``pearson_residuals`` to feed in.
+    """
+    return _get_backend_module(backend).association_plot(
+        table, threshold=threshold, **kwargs
+    )
+
+
 def plot_missing(
     df: pd.DataFrame,
     *,
@@ -437,6 +483,7 @@ __all__ = [
     "Backend",
     "aic_comparison_plot",
     "aic_heatmap",
+    "association_plot",
     "barplot_twoway",
     "mosaic_plot",
     "plot_missing",
