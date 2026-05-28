@@ -35,6 +35,12 @@ from pycatdap.plot import (
     plot_target,
     plot_variable,
 )
+from pycatdap.profile import (
+    ProfileResult,
+    QualityWarning,
+    VariableCard,
+    profile,
+)
 
 __all__ = [
     "__version__",
@@ -42,8 +48,11 @@ __all__ = [
     "Catdap1Result",
     "Catdap2Result",
     "DescribeResult",
+    "ProfileResult",
+    "QualityWarning",
     "RegressionTargetSummary",
     "TargetSummary",
+    "VariableCard",
     "aic_heatmap",
     "association_matrix",
     "association_plot",
@@ -55,5 +64,6 @@ __all__ = [
     "plot_pair",
     "plot_target",
     "plot_variable",
+    "profile",
     "target_summary",
 ]
