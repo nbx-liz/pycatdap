@@ -220,15 +220,13 @@ class ProfileResult:
     def to_plotly_json(self) -> dict[str, Any]:
         """Return per-section Plotly figure specs for LizyStudio (DP-4).
 
-        Currently exposes the AIC heatmap and (when a response is set)
-        the CATDAP-02 single-variable bar; the HTML template (PR-C2) will
-        consume the same payloads.
+        Builds the specs directly (no plotly dependency) for consumption
+        by ``react-plotly.js`` or any Plotly renderer. Currently exposes
+        the AIC heatmap and (when a response is set) the CATDAP-02
+        single-variable bar.
         """
-        from pycatdap.plot.plotly import aic_heatmap as _aic_heatmap_plotly
-
-        heatmap_fig = _aic_heatmap_plotly(self.association)
         sections: dict[str, Any] = {
-            "association_heatmap": heatmap_fig.to_dict(),
+            "association_heatmap": _association_heatmap_spec(self.association),
         }
         if self.top_subsets is not None:
             sections["top_subsets"] = self.top_subsets.to_plotly_json()
@@ -475,6 +473,45 @@ def _scan_quality(
             )
 
     return warnings
+
+
+# -- helpers for to_plotly_json -------------------------------------------
+
+
+def _association_heatmap_spec(association: pd.DataFrame) -> dict[str, Any]:
+    """Build a Plotly Heatmap figure spec from the ΔAIC matrix.
+
+    Mirrors :func:`pycatdap.plot.plotly.aic_heatmap` but constructs the
+    dict directly so the function works without plotly installed.
+    """
+    data = association.to_numpy(dtype=float)
+    finite = data[np.isfinite(data)]
+    abs_max = float(np.nanmax(np.abs(finite))) if finite.size else 1.0
+    if abs_max == 0.0:
+        abs_max = 1.0
+    return {
+        "data": [
+            {
+                "type": "heatmap",
+                "z": [
+                    [None if not np.isfinite(v) else float(v) for v in row]
+                    for row in data
+                ],
+                "x": [str(c) for c in association.columns],
+                "y": [str(r) for r in association.index],
+                "colorscale": "RdYlGn_r",
+                "zmid": 0,
+                "zmin": -abs_max,
+                "zmax": abs_max,
+                "colorbar": {"title": "ΔAIC"},
+            }
+        ],
+        "layout": {
+            "title": "ΔAIC heatmap",
+            "xaxis": {"title": "Explanatory"},
+            "yaxis": {"title": "Response", "autorange": "reversed"},
+        },
+    }
 
 
 # -- helpers for to_dict ---------------------------------------------------
