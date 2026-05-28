@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-28
+
+このリリースは H-0008 Phase D に対応し、**target 駆動分析と CI 統合可能な
+品質スイート** を追加する。v0.5.0 の flagship `profile()` を補完する 4 つの
+新規公開 API（`quality_report` / `target_analysis` / `pycatdap.measures` /
+`pycatdap.suite`）と、`association_matrix(measure=...)` の non-AIC 拡張を
+含む。詳細は HISTORY.md H-0008 および以下の節を参照。
+
+主要な追加:
+- `pycatdap.quality_report(df).passed` — CI gate 用の高速データ品質スキャン
+- `pycatdap.target_analysis(df, response)` — ΔAIC ランキング + 上位 K の TargetSummary
+- `pycatdap.measures.{aic, cramers_v, mutual_info, register}` — pluggable interestingness 指標
+- `pycatdap.association_matrix(df, measure="cramers_v")` — 非 AIC 関連度行列
+- `pycatdap.suite.AICIndependenceSuite(df, response).run().passed` — deepchecks 風 CI スイート
+
 ### Added
 - Tutorial Notebook 09 — `docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb`
   walks through every Phase D API on the Titanic dataset:
@@ -23,8 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     `@dataclass(frozen=True)` so thresholds are immutable; no
     `eval()` / string DSL anywhere — safe on untrusted DataFrames)
   - `SuiteResult` with `.passed` boolean for `assert suite_result.passed`,
-    `.warnings`, `.summary()`, `.show()`, `.to_html(path)`,
-    `.to_dict()`, `.to_plotly_json()`
+    `.failures` (all non-passing checks including `"info"`-severity),
+    `.summary()`, `.show()`, `.to_html(path)`, `.to_dict()`,
+    `.to_plotly_json()`
 - `association_matrix(df, measure=...)` extension — dispatch on any
   registered :mod:`pycatdap.measures` measure. ``measure="aic"``
   (default) keeps the existing :func:`target_summary`-based path;
