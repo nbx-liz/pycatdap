@@ -117,8 +117,12 @@ def _scan_quality(
     high_missing = thresholds["high_missing"]
 
     for card in cards:
-        # n_obs == 0 would require a zero-row DataFrame, which fails earlier
-        # inside association_matrix; no defensive check needed here.
+        if card.n_obs == 0:
+            # Zero-row column: no signal to scan. Skip silently rather
+            # than divide-by-zero. Caller (profile / quality_report /
+            # suite) decides whether an all-empty frame is itself an
+            # error; this helper is intentionally permissive.
+            continue
         missing_rate = card.n_missing / card.n_obs
 
         if missing_rate > high_missing:

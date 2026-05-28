@@ -58,7 +58,14 @@ def cramers_v(cross_freq: npt.NDArray[np.float64]) -> float:
     col = cf.sum(axis=0, keepdims=True)
     expected = (row @ col) / n
     diff_sq = (cf - expected) ** 2
-    chi2 = float(np.sum(np.where(expected > 0, diff_sq / expected, 0.0)))
+    # np.divide(..., where=...) skips the division for masked cells
+    # entirely, so no spurious RuntimeWarning is emitted on tables
+    # with an all-zero marginal row or column. Plain
+    # ``np.where(expected > 0, diff_sq / expected, 0.0)`` would have
+    # produced the right value but raised "invalid value encountered
+    # in divide" under ``warnings.filterwarnings('error')``.
+    safe = np.divide(diff_sq, expected, out=np.zeros_like(diff_sq), where=expected > 0)
+    chi2 = float(np.sum(safe))
 
     return float(np.sqrt(chi2 / denom))
 

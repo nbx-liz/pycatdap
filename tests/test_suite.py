@@ -238,10 +238,10 @@ class TestAICIndependenceSuite:
 
 
 class TestSuiteResult:
-    def test_warnings_returns_failed_checks(self, df_with_issues: pd.DataFrame) -> None:
+    def test_failures_returns_failed_checks(self, df_with_issues: pd.DataFrame) -> None:
         result = AICIndependenceSuite(df_with_issues, response="y").run()
-        warnings = result.warnings
-        assert all(not c.passed for c in warnings)
+        failures = result.failures
+        assert all(not c.passed for c in failures)
 
     def test_summary_returns_string(self, df_with_issues: pd.DataFrame) -> None:
         result = AICIndependenceSuite(df_with_issues, response="y").run()

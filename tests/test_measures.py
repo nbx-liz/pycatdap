@@ -107,6 +107,27 @@ def test_cramers_v_rejects_empty_table() -> None:
         measures.cramers_v(np.zeros((2, 2)))
 
 
+def test_cramers_v_no_runtime_warning_on_zero_marginal() -> None:
+    """Tables with an all-zero row or column are legal input.
+
+    Regression for the H-0008 PR-D6 quality pass: cramers_v used to
+    emit ``RuntimeWarning: invalid value encountered in divide`` on
+    rows / columns whose expected count is 0, which would break any
+    CI caller running with ``warnings.filterwarnings('error')``.
+    The numeric result is unchanged; only the warning is suppressed.
+    """
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", category=RuntimeWarning)
+        # zero-marginal row
+        v1 = measures.cramers_v(np.array([[0.0, 0.0], [10.0, 5.0]]))
+        # zero-marginal column
+        v2 = measures.cramers_v(np.array([[10.0, 0.0], [5.0, 0.0]]))
+    assert v1 == 0.0
+    assert v2 == 0.0
+
+
 # -- mutual_info ------------------------------------------------------------
 
 
