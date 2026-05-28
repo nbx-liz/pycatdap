@@ -7,14 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-05-28
+
+このリリースは EDA レイヤの **フラッグシップ API** `pycatdap.profile()` を導入:
+H-0007（Phase C）に対応し、`describe` + `association_matrix` + `target_summary` +
+`catdap2` を 1 コールに統合、jinja2 + インライン Plotly による
+self-contained HTML レポートを生成する。`ydata-profiling` / `skrub.TableReport`
+の pycatdap 版に相当。詳細は HISTORY.md H-0007 および以下の節を参照。
+
 ### Added
 
-- ワンコール EDA レポート API（H-0007 Phase C、Issue #14）— 段階的に追加:
+- ワンコール EDA レポート API（H-0007 Phase C、Issue #14）:
   - `pycatdap.profile(df, *, response=None, bins=None, criterion="bic", top_k_subsets=5, quality_thresholds=None) -> ProfileResult`
     — `describe` + `association_matrix` + `target_summary` + `catdap2` を 1 コールに統合
   - `ProfileResult` frozen dataclass — `overview` / `variables` / `association` /
     `top_subsets` / `quality_warnings` / `response` / `n_rows` / `n_cols` を保持。
-    `.show / .to_dict / .to_plotly_json` を提供（`.to_html` は H-0007 PR-C2 で追加予定）
+    `.show / .to_dict / .to_plotly_json / .to_html` を提供
   - `VariableCard` frozen dataclass — 列ごとの type / cardinality / missing /
     top / continuous 統計量 / ΔAIC vs response / AIC binning 境界
   - `QualityWarning` frozen dataclass — 4 種類の警告（`high_cardinality` /
@@ -30,6 +38,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     `ProfileResult` / `VariableCard` / `QualityWarning` の確定 API を反映
   - `README.md` Quickstart — v0.5+ One-call EDA report 節を `pycatdap.profile()` の
     動く例に置き換え（v0.3+ プレースホルダから昇格）
+
+### Fixed
+
+- `pycatdap.profile(df, quality_thresholds={})` が空 dict を `None` 同等に黙って
+  落としていた falsy trap を修正（PR #75）。空 dict は「上書き無し」として明示的に
+  扱う（`is not None` チェック、`feedback_python_falsy_or_default_trap`）
+- `ProfileResult.to_dict()` が `+/-inf` をそのまま emit していたため、`json.dumps`
+  の strict モードや JavaScript の `JSON.parse` で reject される RFC 8259 違反だった。
+  `_scalar_to_json` ヘルパーで `NaN` と統一して `None` に変換（PR #75）
+
+### Changed
+
+- `ProfileResult.show()` の Jupyter 経路を `IPython.display.HTML` ラッパーを使わない
+  形に変更し、`DescribeResult` / `TargetSummary` の慣習と揃えた（local mypy noise が
+  5 errors → 3 errors に減少、機能変更なし、PR #75）
+- `ProfileResult.to_html(path)` が `_io.atomic_write_text(..., encoding="utf-8")` を
+  明示指定（PR #75、コードベース既存 3 call site と整合）
 
 ## [0.4.0] — 2026-05-27
 
