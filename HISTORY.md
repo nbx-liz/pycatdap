@@ -1627,3 +1627,411 @@ HTML テンプレートの段組:
 - jinja2: <https://jinja.palletsprojects.com/>
 - Plotly HTML embed options: <https://plotly.com/python/interactive-html-export/>
 - 親仕様: H-0001 §Phase C、H-0002 FR-1
+
+---
+
+## 2026-05-28: Phase D ターゲット分析 + 品質レポート + Pluggable measures + CI 統合 Suite
+
+- ID: `H-0008`
+- Status: `proposed`
+- Scope: `API | scope | dependencies`
+- Related: `H-0001 Phase D`, `H-0002 FR-10 / DP-6`, `H-0007`, `BLUEPRINT.md §5.10 / §5.11`, Issue #15
+
+### Context
+
+v0.5.0 で flagship `pycatdap.profile()` を出荷し、EDA 用途の「ワンコール」体験は揃った。
+Phase D ではこの体験を **target 駆動分析** と **CI 統合可能な品質ゲート** に拡張する。
+
+| 課題 | 既存 API | 不足している点 |
+|---|---|---|
+| 「response 列に対して全説明変数を ΔAIC でランキングしたい」 | `target_summary(df, target, expl)` を for ループで回す | 直接 API がなく、ユーザー側でループ + 整形が必要 |
+| 「データ品質ウォーニングだけ手早く取り出したい」 | `profile(df).quality_warnings` | profile が catdap2 / association_matrix まで走るので過剰 |
+| 「Cramér's V / 相互情報量で関連度を測りたい」 | `association_matrix(df, measure='aic')` のみ | `measure='cramers_v'` 等が `H-0007 / H-0006` で「H-0007 で予定」と書きながら未実装 |
+| 「CI で『この CSV は使い物にならない』を pytest に統合したい」 | なし | 各 warning を例外/assert に変換する標準パターンがない |
+
+これらを **Phase D の 4 つの追加 API** で解決する。
+
+### 競合分析(対象パッケージ)
+
+| Package | API | 学ぶ点 |
+|---|---|---|
+| **deepchecks** | `Suite([HasMissing(), MixedNulls()]).run(dataset)` → `SuiteResult.passed` / `.save_as_html()` | Check / Suite / SuiteResult 階層、CI 統合パターン |
+| **great-expectations** | `expect_column_values_to_not_be_null(...)` の宣言的 expectation | Check の宣言的 API スタイル |
+| **pandera** | `pa.DataFrameSchema({'col': pa.Column(int, checks=...)}).validate(df)` | Pythonic な schema-as-data |
+| **ydata-profiling alerts** | `report.alerts` で missing / cardinality 警告を保持 | 警告 enum + threshold のレイアウト(quality_report と同方向) |
+| **phik / phi_k** | `df.phik_matrix()` で混合型相関行列 | mixed-type 関連度の参考(measures/) |
+
+**学び**:
+- **`Suite([check1, check2]).run(dataset)` が業界標準シグネチャ** — Phase D の suite はこれに合わせる
+- **Check は thresholds をコンストラクタで受ける小さなクラス** — `eval()` 不要のデータ宣言
+- **`SuiteResult.passed: bool`** が CI assert の鍵 — 各 check の condition を boolean に集約
+- **measures の register API** はユーザーが `pycatdap.measures.register("phi_k", fn)` する形式が pysubgroup 互換
+
+### Proposal
+
+#### 公開 API(新規 4 関数 + 4 dataclass + 2 サブパッケージ)
+
+```python
+# 1. target 駆動分析
+result = pycatdap.target_analysis(
+    df,
+    response="symptoms",
+    *,
+    top_k=5,
+    bins=None,
+    criterion="bic",
+    measure="aic",
+) -> TargetAnalysisResult
+
+# 2. 品質レポート
+qr = pycatdap.quality_report(
+    df,
+    *,
+    quality_thresholds=None,
+) -> QualityReport
+
+# 3. CI 統合可能な suite(deepchecks 互換 API per Issue #15)
+suite = pycatdap.suite.AICIndependenceSuite(df, response="symptoms")
+suite_result = suite.run() -> SuiteResult
+assert suite_result.passed, suite_result.summary()
+
+# 個別 check も独立利用可能
+check_result = pycatdap.suite.HighCardinalityCheck(max_categories=50).run(df) -> CheckResult
+
+# 4. measures pluggable interface
+pycatdap.measures.aic(cross_freq) -> float
+pycatdap.measures.cramers_v(cross_freq) -> float
+pycatdap.measures.mutual_info(cross_freq) -> float
+pycatdap.measures.register("my_measure", fn)
+# association_matrix が measure 引数を受けるよう拡張
+m = pycatdap.association_matrix(df, measure="cramers_v")
+```
+
+#### 1. `target_analysis()` 設計
+
+```python
+@dataclass(frozen=True)
+class TargetAnalysisResult:
+    response: str
+    ranking: pd.DataFrame             # columns: variable, delta_aic, kind, n_obs
+    top_summaries: dict[str, TargetSummary | RegressionTargetSummary]
+                                      # 上位 top_k 列の TargetSummary
+    response_card: VariableCard       # response 列自体の card(profile() 流用)
+    n_rows: int
+    n_cols: int
+
+    def show(self) -> None: ...
+    def to_html(self, path: str | Path | None = None) -> str: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_plotly_json(self) -> dict[str, Any]: ...
+```
+
+実装:
+- `target_summary(df, target=response, explanatory=col)` を全列に対して実行(`profile()` と同じパターン)
+- `delta_aic` で sort し top-K の TargetSummary をフル保持
+- HTML テンプレートは `templates/target_analysis.html.j2` 新規(profile.html.j2 と段組共通化)
+
+#### 2. `quality_report()` + `QualityReport` 設計
+
+```python
+@dataclass(frozen=True)
+class QualityReport:
+    warnings: list[QualityWarning]    # H-0007 で定義済みの dataclass を流用
+    n_rows: int
+    n_cols: int
+
+    def by_severity(self) -> dict[str, list[QualityWarning]]: ...
+    def by_kind(self) -> dict[str, list[QualityWarning]]: ...
+    def show(self) -> None: ...
+    def to_html(self, path: str | Path | None = None) -> str: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_plotly_json(self) -> dict[str, Any]: ...
+
+    @property
+    def passed(self) -> bool:
+        """No "warning"-severity findings — convenient for CI assert."""
+        return not any(w.severity == "warning" for w in self.warnings)
+```
+
+実装:
+- **`_scan_quality` を `src/pycatdap/_quality.py` に切り出す**(profile.py / quality_report() の両方が同じ helper を呼ぶ)
+- `profile.py` 側は `from pycatdap._quality import _scan_quality` に置き換え(behavior 不変、純粋 refactor)
+- `quality_report()` は内部で `_build_variables(df, response=None)` + `_scan_quality()` のみ実行(catdap2 / association_matrix は走らない → profile() より大幅高速)
+
+#### 3. `suite/` サブパッケージ設計
+
+```
+src/pycatdap/suite/
+  __init__.py              # AICIndependenceSuite, SuiteResult, CheckResult を re-export
+  _base.py                 # Check Protocol, CheckResult / SuiteResult dataclass
+  _checks.py               # 4 個別 check クラス
+  _suites.py               # AICIndependenceSuite(プリセット組合せ)
+```
+
+`_base.py`:
+```python
+from typing import Protocol
+
+@dataclass(frozen=True)
+class CheckResult:
+    name: str                # "HighCardinalityCheck"
+    passed: bool
+    severity: Literal["info", "warning"]
+    message: str
+    metric: float | None
+    affected_columns: list[str]
+
+class Check(Protocol):
+    name: str
+    def run(self, df: pd.DataFrame, *, response: str | None = None) -> list[CheckResult]: ...
+
+@dataclass(frozen=True)
+class SuiteResult:
+    suite_name: str
+    checks: list[CheckResult]
+    n_rows: int
+    n_cols: int
+    response: str | None
+
+    @property
+    def passed(self) -> bool:
+        return all(c.passed for c in self.checks)
+
+    @property
+    def warnings(self) -> list[CheckResult]:
+        return [c for c in self.checks if not c.passed]
+
+    def summary(self) -> str: ...  # CI 失敗時の見やすい要約
+    def show(self) -> None: ...
+    def to_html(self, path: str | Path | None = None) -> str: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_plotly_json(self) -> dict[str, Any]: ...
+```
+
+`_checks.py`(個別 check):
+```python
+@dataclass(frozen=True)
+class IndependenceCheck:
+    """ΔAIC ≤ threshold の説明変数を独立として警告。response 必須。"""
+    name: str = "IndependenceCheck"
+    delta_aic_max: float = 0.0    # ΔAIC > 0 で「独立」(AIC で改善せず)
+
+    def run(self, df: pd.DataFrame, *, response: str | None = None) -> list[CheckResult]: ...
+
+@dataclass(frozen=True)
+class HighCardinalityCheck:
+    name: str = "HighCardinalityCheck"
+    max_categories: int = 50
+    max_ratio: float = 0.5
+    def run(self, df: pd.DataFrame, *, response: str | None = None) -> list[CheckResult]: ...
+
+@dataclass(frozen=True)
+class ConstantColumnCheck:
+    name: str = "ConstantColumnCheck"
+    def run(self, df: pd.DataFrame, *, response: str | None = None) -> list[CheckResult]: ...
+
+@dataclass(frozen=True)
+class PoolingSuggestionCheck:
+    """連続列で AIC 最適 binning と単純等分割の差が大きい列を提案。"""
+    name: str = "PoolingSuggestionCheck"
+    min_improvement: float = 5.0    # ΔAIC 改善量
+    def run(self, df: pd.DataFrame, *, response: str | None = None) -> list[CheckResult]: ...
+```
+
+`_suites.py`(プリセット):
+```python
+class AICIndependenceSuite:
+    """Issue #15 で例示された default プリセット。
+
+    Equivalent to:
+        Suite([
+            HighCardinalityCheck(),
+            ConstantColumnCheck(),
+            IndependenceCheck(),
+            PoolingSuggestionCheck(),
+        ])
+    """
+    def __init__(self, df: pd.DataFrame, *, response: str | None = None,
+                 checks: list[Check] | None = None) -> None: ...
+
+    def run(self) -> SuiteResult: ...
+```
+
+**安全性原則**(memory `feedback_python_falsy_or_default_trap` + 設計判断):
+- `Check` は **すべて frozen dataclass**。閾値はコンストラクタで受け、`eval()` / 文字列ベース DSL は一切使わない
+- CI 設定ファイル化は将来検討(toml で `checks=[...]` を宣言的に書く)。Phase D では Python コードでの組立のみ
+
+#### 4. `measures/` サブパッケージ設計
+
+```
+src/pycatdap/measures/
+  __init__.py    # aic, cramers_v, mutual_info, register, get
+  _aic.py        # 既存 _aic.aic_independence を thin wrap
+  _cramers_v.py  # 新規実装(scipy.stats.contingency.association を fallback)
+  _mutual_info.py # 新規実装(np 自前実装、scipy 不要)
+  _registry.py   # register/get
+```
+
+API:
+```python
+# 標準提供 measure(分割表 → スカラー)
+pycatdap.measures.aic(cross_freq: np.ndarray) -> float
+pycatdap.measures.cramers_v(cross_freq: np.ndarray) -> float
+pycatdap.measures.mutual_info(cross_freq: np.ndarray) -> float
+
+# 登録
+pycatdap.measures.register("phi_k", phi_k_fn)
+pycatdap.measures.get("phi_k") -> Callable[[np.ndarray], float]
+
+# 利用箇所 — association_matrix に measure 引数を追加
+m = pycatdap.association_matrix(df, measure="cramers_v")
+```
+
+**association_matrix の互換性**:
+- 既存 `measure="aic"` のみ受け付ける動作を維持(default `"aic"`)
+- 新規に `"cramers_v"` / `"mutual_info"` / register された string を受け付ける
+- ΔAIC は **負ほど良い**(独立性 H0 からのゲイン)、Cramér's V は **正で 0..1**(大きいほど関連強)
+- → ヒートマップの colorscale は measure 毎に判定が必要。`aic_heatmap()` 側で対応(別 PR)
+- Phase D PR-D5 では `association_matrix(measure=...)` だけ拡張し、`aic_heatmap` の colorscale 自動切替は v0.7 以降の TODO とする
+
+### Impact
+
+- **公開 API の追加のみ**(4 関数 + 4 dataclass + 2 サブパッケージ)
+- 既存 API への破壊的変更なし。`association_matrix(measure='aic')` はデフォルト維持
+- 新規モジュール:
+  - `src/pycatdap/target_analysis.py`
+  - `src/pycatdap/quality_report.py`
+  - `src/pycatdap/_quality.py`(profile.py から `_scan_quality` を移設、共有 helper 化)
+  - `src/pycatdap/measures/` 配下 5 ファイル
+  - `src/pycatdap/suite/` 配下 4 ファイル
+  - `src/pycatdap/templates/target_analysis.html.j2`
+  - `src/pycatdap/templates/quality_report.html.j2`
+  - `src/pycatdap/templates/suite_result.html.j2`
+- 既存モジュール変更:
+  - `src/pycatdap/profile.py` — `_scan_quality` を `_quality` から import するよう書き換え(動作不変)
+  - `src/pycatdap/_association.py` — `measure` 引数の dispatch を追加
+  - `src/pycatdap/__init__.py` — 4 関数 + 4 dataclass + `suite` / `measures` サブパッケージを re-export
+- `BLUEPRINT.md §3.1 / §5.10 / §5.11` を実装後の確定 API に改訂
+- 任意依存: なし(scipy は既に optional。Cramér's V / mutual_info は numpy 自前実装で動作)
+
+### Compatibility
+
+- **後方互換**: 完全
+- 既存 `profile()` ユーザーは無影響(`_scan_quality` 移設は pure refactor)
+- `association_matrix(measure='aic')` はデフォルト引数値を維持
+
+### Alternatives Considered
+
+#### A1: `quality_report` を `list[QualityWarning]` 直返し
+- **不採用理由**: `.show / .to_html / .to_dict / .to_plotly_json` の 4 メソッドが付かず、`ProfileResult` との一貫性が崩れる。CI 用 `.passed` プロパティも持てない。
+
+#### A2: suite を functional API(`pycatdap.suite.run(df, checks=[...])`)に
+- **不採用理由**: Issue #15 で class-based API が明示。deepchecks のメンタルモデルに揃える方が学習コスト低い。**関数化が必要なら将来 `pycatdap.suite.run(df, checks=[...])` を追加で出せる**(class からの呼び出し優先順)。
+
+#### A3: measures/ を Phase D に含めず後回し
+- **不採用理由**: `association_matrix(measure='aic')` の `measure` 引数が H-0006 / H-0007 で「H-0007 で予定」と Proposal に明記されながら 2 リリース連続で未実装。技術的負債を解消する。
+
+#### A4: measures/ を Phase D に含めるが register API は次回
+- **不採用理由**: pluggable interface の **register** が pysubgroup / DivExplorer interop の入口(Issue #31 / #32)。標準 measure 3 個と register 1 個は同じ PR で出した方が API surface が一度で固まる。
+
+#### A5: `target_analysis` を `profile(df, response=...)` の subset として実装
+- **不採用理由**: profile は association_matrix と catdap2 を含む重い処理。target_analysis は「response 列に対して ΔAIC を全列ランキング」だけが欲しい用途で、profile を呼ぶと冗長。**`target_analysis(df, response=col).top_summaries` で個別 TargetSummary に到達できる体験**が target-driven ワークフローに合う。
+
+#### A6: `Check` を ABC(abstract base class)で実装
+- **不採用理由**: Protocol で十分。Python の static duck typing で抽象化、各 check を frozen dataclass のままにできる。継承禁止で `eval()` 経路を物理的に排除。
+
+#### A7: `SuiteResult.to_html()` を `pycatdap[plotly]` 必須に
+- **採用**: 既に `profile.to_html()` が jinja2 + plotly inline を必須としており同じパターン。`pycatdap[plotly]` extras 未インストール時は明確な ImportError を出す。
+
+#### A8: `IndependenceCheck` のデフォルト閾値 `delta_aic_max = 0.0`
+- **採用**: ΔAIC ≤ 0 は「説明変数を加えた方が AIC が悪化」= 独立に近い、を意味する CATDAP の標準解釈。ユーザーは `IndependenceCheck(delta_aic_max=-2.0)` で「最低でも 2 以上の改善が要る」と厳しくできる。
+
+### Acceptance Criteria
+
+#### API
+- [ ] `pycatdap.target_analysis(df, response)` が `TargetAnalysisResult` を返す
+- [ ] `TargetAnalysisResult` が 4 メソッド(`.show / .to_html / .to_dict / .to_plotly_json`)
+- [ ] `pycatdap.quality_report(df)` が `QualityReport` を返す
+- [ ] `QualityReport.passed` プロパティが CI assert に利用可能
+- [ ] `QualityReport.by_severity()` / `.by_kind()` で grouping 可能
+- [ ] `pycatdap.suite.AICIndependenceSuite(df, response).run()` が `SuiteResult` を返す
+- [ ] `SuiteResult.passed` プロパティ + `assert suite_result.passed, suite_result.summary()` が機能
+- [ ] 4 個別 check(`IndependenceCheck` / `HighCardinalityCheck` / `ConstantColumnCheck` / `PoolingSuggestionCheck`)が独立に `.run(df, response=...) -> list[CheckResult]`
+- [ ] `pycatdap.measures.{aic, cramers_v, mutual_info}` が `(cross_freq: np.ndarray) -> float`
+- [ ] `pycatdap.measures.register("name", fn)` + `pycatdap.measures.get("name")` 動作
+- [ ] `pycatdap.association_matrix(df, measure='cramers_v')` が動作(`'mutual_info'` も)
+
+#### 内部リファクタ
+- [ ] `_scan_quality` が `src/pycatdap/_quality.py` に移設され、`profile.py` / `quality_report.py` の両方が同じ helper を呼ぶ(behavior 不変)
+- [ ] PR-D1 で profile.py の全テスト(74 件)が無変更で pass
+
+#### 安全性
+- [ ] suite の check class はすべて frozen dataclass、`eval()` / `exec()` / 文字列 import を一切使わない
+- [ ] CI で `pycatdap.suite.AICIndependenceSuite(load_titanic(), response='Survived').run().passed` が決定的に動作(乱数依存なし)
+
+#### コード品質
+- [ ] `tests/test_target_analysis.py`: 12+ tests(各メソッド / response 必須エラー / top_k=0 / measure 拡張)
+- [ ] `tests/test_quality_report.py`: 12+ tests(4 warning kind / passed プロパティ / by_severity / by_kind / atomic write)
+- [ ] `tests/test_quality_helper.py`: 6+ tests(`_scan_quality` 単体、profile 経由でない直接テスト)
+- [ ] `tests/test_measures.py`: 10+ tests(3 measure × 2-3 入力 + register/get)
+- [ ] `tests/test_suite.py`: 15+ tests(4 check × 2 ケース + AICIndependenceSuite + SuiteResult メソッド)
+- [ ] `tests/test_association_measures.py`: 6+ tests(measure='cramers_v' / 'mutual_info' で association_matrix が動作)
+- [ ] **各新規モジュール 100% line coverage**(H-0007 PR-#75 で確立したパターン)
+- [ ] `mypy --strict` pass
+- [ ] 全公開 API に NumPy style docstring + `Examples` セクション
+
+#### パフォーマンス
+- [ ] 10k 行 × 20 列で `quality_report()` ≤ 1 秒(profile() より大幅高速)
+- [ ] 10k 行 × 20 列で `target_analysis(df, response=col, top_k=5)` ≤ 5 秒(profile() と同程度)
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3.1` のモジュール構成に `target_analysis.py` / `quality_report.py` / `_quality.py` / `measures/` / `suite/` を追記
+- [ ] `BLUEPRINT.md §5.10` を実装後の suite API に合わせて改訂
+- [ ] `BLUEPRINT.md §5.11` を実装後の measures API に合わせて改訂
+- [ ] 新規 tutorial `docs/tutorials/09-target-analysis-and-suite.ipynb`(`target_analysis` + `quality_report` + `suite.AICIndependenceSuite` をフル活用)
+- [ ] `docs/tutorials/index.md` + `mkdocs.yml` に Notebook 09 を追加
+- [ ] `README.md` Quickstart に suite 例(CI 統合の 3 行)を追加
+- [ ] CHANGELOG `[Unreleased]` `Added` セクションに各 API を順次記載
+
+### PR 分割
+
+実装は **7 PR** に分割する:
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-D0**(本 Proposal) | `docs(history): propose H-0008` | none |
+| **PR-D1** | `_quality.py` への `_scan_quality` 移設(pure refactor、profile.py の挙動不変) | PR-D0 merge |
+| **PR-D2** | `quality_report()` + `QualityReport` dataclass + jinja2 テンプレート + テスト | PR-D1 merge |
+| **PR-D3** | `target_analysis()` + `TargetAnalysisResult` dataclass + jinja2 テンプレート + テスト | PR-D1 merge(D2 と並行可) |
+| **PR-D4** | `measures/` サブパッケージ(3 measure + register/get)+ テスト | PR-D0 merge(他 PR と並行可) |
+| **PR-D5** | `suite/` サブパッケージ(4 check + AICIndependenceSuite + SuiteResult + jinja2 テンプレート)+ `association_matrix(measure=...)` 拡張 + テスト | PR-D2, D3, D4 merge |
+| **PR-D6** | Tutorial Notebook 09 + BLUEPRINT 反映 + README 更新 + CHANGELOG 整理 + Issue #15 close | PR-D5 merge |
+
+各 PR は CI green を確認してから次に進む。`feedback_release_pr_dirty_squash_trap` 通り、全 PR は develop に **squash** で merge。最終的な release PR(v0.6.0)のみ `--merge`。
+
+**並行可能ペア**:
+- PR-D2 / PR-D3 / PR-D4 は PR-D1 merge 後に並行可能(別ブランチで同時に開ける)
+- PR-D5 は D2/D3/D4 の全 merge 待ち(suite が measures + quality を呼ぶため)
+
+### Decision
+
+- Date: `TBD`
+- Result: `pending`
+- Notes: PR-D0(本 PR)で Proposal 承認待ち。
+
+### Migration
+
+破壊的変更なし。新規 API のため移行不要。
+
+`association_matrix(measure='aic')` のデフォルトを維持するため既存ユーザーは無影響。`measure='cramers_v'` / `'mutual_info'` 利用は opt-in。
+
+### Related References
+
+- deepchecks: <https://docs.deepchecks.com/stable/tabular/auto_tutorials/quickstarts/plot_quick_data_integrity.html>
+- great-expectations: <https://docs.greatexpectations.io/docs/>
+- pandera: <https://pandera.readthedocs.io/>
+- phik / phi_k: <https://github.com/KaveIO/PhiK>
+- pysubgroup interestingness measures: <https://github.com/flemmerich/pysubgroup>
+- Cramér's V: <https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V>
+- 親仕様: H-0001 Phase D、H-0002 FR-10 / DP-6、Issue #15
+
