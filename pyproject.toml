@@ -125,5 +125,6 @@ module = [
     "plotly.*",
     "statsmodels.*",
     "IPython.*",
+    "sklearn.*",
 ]
 ignore_missing_imports = true
