@@ -1356,3 +1356,263 @@ pycatdap.association_plot(
 - seaborn heatmap: <https://seaborn.pydata.org/generated/seaborn.heatmap.html>
 - Pearson standardized residuals(Agresti, 2002, *Categorical Data Analysis*, §3.2)
 - 親仕様: H-0001 §Phase B、H-0004 §A1(plot_pair の Phase B 分離決定)
+
+---
+
+## 2026-05-27: Phase C ワンコール EDA — `profile()` + HTML レポート
+
+- ID: `H-0007`
+- Status: `proposed`
+- Scope: `API | scope | dependencies`
+- Related: `H-0001 Phase C`, `H-0002 FR-1`, `H-0004`, `H-0005`, `H-0006`, `BLUEPRINT.md §3, §5.9`, Issue #14
+
+### Context
+
+v0.4.0 で揃った EDA 基盤(`describe` / `target_summary` / `plot_target` / `association_matrix` / `aic_heatmap` / `catdap1` / `catdap2`)を **1 関数呼び出し** にまとめ、HTML レポートとして出力できる **フラッグシップ API** を提供する。pycatdap が「AIC ベース EDA + ML 誤差分析ライブラリ」として再定位された H-0001 において最も重要なユーザーフェイスとなる API。
+
+競合は `ydata-profiling.ProfileReport` / `skrub.TableReport` だが、両者にはない pycatdap の差別化:
+
+- **AIC 駆動の変数ランキング**(他は Cramér's V / phi_k / 相関係数のみ)
+- **連続変数の AIC 最適 binning**(`_pooling.optimal_binning` を可視化に組み込む)
+- **CATDAP-02 トップ K サブセット**(他は単一変数ランキングのみ)
+- **target 指向と target-free モード両対応**(`response=None` でも動作)
+
+### 競合分析(対象パッケージ)
+
+| Package | ワンコール API | 出力形式 | pycatdap が学ぶ点 |
+|---|---|---|---|
+| **ydata-profiling** | `ProfileReport(df).to_file("report.html")` | self-contained HTML、Overview/Variables/Interactions/Correlations/Missing/Sample/Duplicates | セクション構成 / Plotly インライン |
+| **skrub.TableReport** | `TableReport(df).open()` | HTML + JavaScript インタラクション、列ごとの type/cardinality/distribution カード | カード型レイアウト / カラム並び替え |
+| **dataprep `create_report`** | `create_report(df).save("report.html")` | static HTML、相関ヒートマップ + 分布 | レポート構造の参考 |
+| **pandas-profiling**(旧称) | `ProfileReport(df)` | ydata-profiling と同じ系列 | レガシー、参考度低 |
+| **sweetviz** | `sv.analyze(df, target_feat=...).show_html()` | target 比較 | target awareness の参考(H-0004 で既に採用) |
+
+**学び**:
+- **「1 行 + `.to_html()`」が業界標準のシグネチャ** — `pycatdap.profile(df, response=...).to_html(path)`
+- **single self-contained HTML** がデフォルト体験(メール / Slack で 1 ファイル送付できる)
+- **target awareness は OPTIONAL**(`response=None` でも有用なレポート)
+- **セクション分け**: Overview → Variables → Pairwise(AIC heatmap) → Top subsets → Quality warnings の順が解釈しやすい
+
+### Proposal
+
+#### 公開 API(新規 1 関数 + 1 dataclass)
+
+```python
+pycatdap.profile(
+    df: pd.DataFrame,
+    *,
+    response: str | None = None,          # 指定で target-driven セクション追加
+    bins: int | None = None,              # association_matrix に forward
+    criterion: Literal["aic", "aicc", "bic"] = "bic",  # 連続 target 時
+    top_k_subsets: int = 5,               # CATDAP-02 トップ K
+    quality_thresholds: dict[str, float] | None = None,  # 品質警告閾値
+) -> ProfileResult
+```
+
+返り値 `ProfileResult` は frozen dataclass:
+
+| 属性 | 型 | 内容 |
+|---|---|---|
+| `overview` | `dict[str, Any]` | 行数 / 列数 / 欠損率 / 重複行 / メモリ / dtype カウント |
+| `variables` | `list[VariableCard]` | 列ごとの型 / カーディナリティ / 欠損 / top カテゴリ / ΔAIC vs response(指定時) |
+| `association` | `pd.DataFrame` | m × m ΔAIC 行列(`association_matrix` 結果) |
+| `top_subsets` | `Catdap2Result \| None` | response 指定時のみ。`catdap2(df, response_name=..., nvar=top_k_subsets)` |
+| `quality_warnings` | `list[QualityWarning]` | 高カーディナリティ / 定数列 / ID 候補 / 高欠損列 |
+| `response` | `str \| None` | 入力 response 引数(レポートヘッダ表示用) |
+| `n_rows` / `n_cols` | `int` | overview からも引けるが頻用するため top-level に露出 |
+
+`VariableCard` は別 frozen dataclass:
+
+```python
+@dataclass(frozen=True)
+class VariableCard:
+    name: str
+    kind: str                           # "categorical" / "continuous" / "boolean" / "datetime" / "other"
+    n_obs: int
+    n_missing: int
+    n_unique: int
+    top_value: Any                      # 最頻値
+    top_freq: int                       # 最頻値の出現回数
+    stats: dict[str, float] | None      # 連続変数: mean/std/min/q25/median/q75/max
+    delta_aic_vs_response: float | None # response 指定時のみ
+    intervals: list[float] | None       # 連続変数の AIC 最適 binning 境界(任意)
+```
+
+`QualityWarning` も frozen dataclass:
+
+```python
+@dataclass(frozen=True)
+class QualityWarning:
+    severity: Literal["info", "warning"]
+    kind: Literal["high_cardinality", "constant", "id_candidate", "high_missing"]
+    column: str
+    message: str                        # 人間可読
+    metric: float                       # threshold 比較に使った数値
+```
+
+#### 品質警告のデフォルト閾値
+
+| Warning kind | デフォルト閾値 | 根拠 |
+|---|---|---|
+| `high_cardinality` | `nunique / n_obs > 0.5` かつ `nunique > 50` | カーディナリティが行数の半分以上で 50 超 → 識別子の可能性 |
+| `constant` | `nunique <= 1`(欠損除外後) | 完全定数列は AIC 計算で無意味 |
+| `id_candidate` | `nunique == n_obs` かつ `kind == "categorical"` | 全行一意のカテゴリ列は ID |
+| `high_missing` | `missing_rate > 0.5` | 半分以上欠損は CATDAP で使い物にならない |
+
+ユーザーは `quality_thresholds={"high_cardinality": 0.7, "high_missing": 0.3}` で上書き可能。
+
+#### メソッド
+
+```python
+class ProfileResult:
+    def show(self) -> None
+        # Jupyter inline 表示: Overview を pandas table、aic_heatmap を inline figure
+    def to_html(self, path: str | Path | None = None) -> str
+        # jinja2 テンプレートで single self-contained HTML を生成
+        # Plotly figure は include_plotlyjs=True で **インライン同梱**(オフライン可)
+        # path=None なら HTML 文字列を返すのみ
+        # path 指定時は atomic write(_io.atomic_write_text、H-0005 の慣習)
+    def to_dict(self) -> dict[str, Any]
+        # JSON シリアライズ可能な dict 化
+    def to_plotly_json(self) -> dict[str, Any]
+        # ProfileResult 全体を {section_name: plotly_spec} で返す(LizyStudio 連携、DP-4)
+```
+
+#### 実装配置
+
+- `src/pycatdap/profile.py`(新規)— `profile()`, `ProfileResult`, `VariableCard`, `QualityWarning`
+- `src/pycatdap/templates/profile.html.j2`(新規)— jinja2 テンプレート
+- `src/pycatdap/templates/__init__.py`(新規)— `importlib.resources` 経由でテンプレート読み込み
+- `pyproject.toml`: `jinja2>=3.1` を **`[plotly]` extra に追加**(BLUEPRINT 通り。`profile()` 自体は core 機能だが、`.to_html()` を呼ぶ場合のみ jinja2 必要)
+- `src/pycatdap/__init__.py`: `profile`, `ProfileResult`, `VariableCard`, `QualityWarning` を再 export
+
+HTML テンプレートの段組:
+
+```
+┌─────────────────────────────────────────┐
+│ pycatdap profile: <dataset name>        │
+│ Generated: 2026-05-27 by pycatdap v0.5  │
+├─────────────────────────────────────────┤
+│ ## Overview                             │
+│ rows / cols / missing% / duplicates / mem │
+├─────────────────────────────────────────┤
+│ ## Quality warnings (collapsed if empty)│
+├─────────────────────────────────────────┤
+│ ## Variables (grid of cards)            │
+│ [card1] [card2] [card3] [card4]         │
+│ [card5] [card6] ...                     │
+├─────────────────────────────────────────┤
+│ ## Pairwise associations                │
+│ <plotly heatmap of association_matrix>  │
+├─────────────────────────────────────────┤
+│ ## Top subsets (response=<r> only)      │
+│ <plotly bar of CATDAP-02 top-K>         │
+└─────────────────────────────────────────┘
+```
+
+### Impact
+
+- **公開 API の追加のみ**(1 関数 + 3 dataclass + 1 サブパッケージ `templates/`)
+- 既存 API への破壊的変更なし
+- 任意依存: **jinja2 を `[plotly]` extra に追加**(既に BLUEPRINT に計画あり)
+- 新規モジュール: `src/pycatdap/profile.py`, `src/pycatdap/templates/`
+- 既存モジュール変更: `src/pycatdap/__init__.py`(再 export)、`pyproject.toml`(jinja2 追加 + package-data に templates 同梱)
+- `BLUEPRINT.md §3.1`(モジュール構成)と `§5.9`(profile セクション)を改訂
+
+### Compatibility
+
+- **後方互換**: 完全
+- `jinja2` は新規 optional dep。`.to_html()` を呼ばないなら追加インストール不要
+- Plotly インラインは `pycatdap[plotly]` extras 必須(既存)
+
+### Alternatives Considered
+
+#### A1: CDN ロードを採用してファイルサイズを小さくする
+- **不採用理由**: ユーザー希望(オフライン優先)。エンタープライズ環境では CDN access が制限されることが多い。+3MB 程度は許容できる(mkdocs build や Confluence 添付でも問題ない)。
+
+#### A2: jinja2 を必須依存にする
+- **不採用理由**: pycatdap の core は numpy/pandas のみで動く設計を維持したい。`.to_html()` 呼んだ時点で `ImportError` メッセージで `pycatdap[plotly]` インストールを促すパターンが既存(plotly 同様)。
+
+#### A3: `ProfileResult` を mutable にしてユーザーがセクションを足せるようにする
+- **不採用理由**: `DescribeResult` / `TargetSummary` 等の既存 dataclass はすべて `frozen=True`。ユーザー拡張は `to_dict()` 経由で取り出して別途構築する設計に揃える。
+
+#### A4: HTML テンプレートを `src/pycatdap/profile.py` にハードコード
+- **不採用理由**: 多段組 HTML を Python 文字列で書くと改行 / インデント / エスケープが地獄。jinja2 を入れた方が変更容易性が高い。
+
+#### A5: `top_subsets` を `catdap2` 直接呼び出しではなく ユーザー側で渡す設計
+- **不採用理由**: 「1 コール」エルゴノミクスが崩れる。`profile(df, response=...)` だけで catdap2 が走る必要がある。
+
+#### A6: `Variables` セクションに連続変数の AIC 最適 binning ヒストグラムを **必ず** 含める
+- **採用検討**: BLUEPRINT §5.9 にも書かれている要素。**初期 PR では VariableCard.intervals 属性として境界値のみ保持**、HTML テンプレート側でその境界を histogram に重ねて描く方式とする。これにより VariableCard データ構造は plot-backend non-dependent を保てる。
+
+#### A7: `quality_warnings` を **HTML レポートの折り畳みアコーディオン** にする
+- **採用**(マイナー設計): 警告 0 件のとき空セクションが残ると見栄え悪い。jinja2 `{% if quality_warnings %}` で条件付き表示。
+
+### Acceptance Criteria
+
+#### API
+- [ ] `pycatdap.profile(df)` が `ProfileResult` を返す(response 省略可)
+- [ ] `pycatdap.profile(df, response="col")` で `top_subsets` 付き ProfileResult を返す
+- [ ] `ProfileResult` に `.show / .to_html / .to_dict / .to_plotly_json` の4メソッド
+- [ ] `to_html(path)` で **単一の self-contained HTML** ファイルを生成
+- [ ] Plotly figure はインライン同梱(オフライン閲覧可)、HTML は外部ファイル参照なし
+- [ ] `to_html()` (path=None) で HTML 文字列を返す
+- [ ] `to_html(path)` は `_io.atomic_write_text` 経由で原子的書き込み(H-0005 慣習)
+- [ ] `VariableCard` / `QualityWarning` が frozen dataclass、JSON シリアライズ可能
+
+#### 品質警告
+- [ ] デフォルト閾値で 4 種類の警告(`high_cardinality` / `constant` / `id_candidate` / `high_missing`)を発出
+- [ ] `quality_thresholds=` で各閾値を上書き可能
+
+#### パフォーマンス
+- [ ] 10k 行 × 20 列 のランダムデータで **`profile()` 実行が 5 秒以内** に完了(Issue #14 受入条件)
+- [ ] `to_html()` 自体は ≤ 2 秒(jinja2 レンダリング + plotly インライン化)
+
+#### コード品質
+- [ ] `tests/test_profile.py` に unit テスト 20 件以上(各セクション / 各 dataclass / 各メソッド / response あり/なし / 品質警告 4 種 / atomic write 検証)
+- [ ] `tests/test_profile_html.py` に HTML レポートテスト 8 件以上(自己完結性確認 / Plotly インライン確認 / 全セクション存在確認 / 警告 0 件時の表示確認)
+- [ ] coverage 80%+ 維持
+- [ ] `mypy --strict` pass(jinja2 stubs は `[[tool.mypy.overrides]]` で `ignore_missing_imports`)
+- [ ] 全公開 API に NumPy style docstring + `Examples` セクション
+
+#### ドキュメント
+- [ ] `BLUEPRINT.md §3.1` のモジュール構成に `profile.py` / `templates/` を追記
+- [ ] `BLUEPRINT.md §5.9` を実装後の確定 API に合わせて改訂
+- [ ] 新規 tutorial `docs/tutorials/08-profile-titanic.ipynb`(PR-C3、`profile()` をフル活用)
+- [ ] `docs/tutorials/index.md` + `mkdocs.yml` に Notebook 08 を追加
+- [ ] `README.md` の Quickstart に `profile()` 例を追加(v0.5.0 の「目玉機能」として)
+
+### PR 分割
+
+実装は **4 PR** に分割する(Phase B と同じケイデンス):
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-C0**(本 Proposal) | `docs(history): propose H-0007` | none |
+| **PR-C1** | `profile.py`(`profile()` + `ProfileResult` + `VariableCard` + `QualityWarning` + `show()` + `to_dict()` + `to_plotly_json()`)+ tests | PR-C0 merge |
+| **PR-C2** | `templates/profile.html.j2` + `to_html()` + jinja2 dep 追加 + HTML テスト | PR-C1 merge |
+| **PR-C3** | Tutorial Notebook 08 + BLUEPRINT 反映 + README 更新 + Issue #14 close | PR-C2 merge |
+
+各 PR は CI green を確認してから次に進む。`feedback_release_pr_dirty_squash_trap` 通り、これらは全て develop に **squash** で merge して OK(release 時の sync PR だけが `--merge` 必須)。
+
+### Decision
+
+- Date: `pending`
+- Result: `pending`
+- Notes:
+
+### Migration
+
+破壊的変更なし。新規 API のため移行不要。CHANGELOG `[Unreleased]` の `Added` に `profile()`, `ProfileResult`, `VariableCard`, `QualityWarning` を順次記載する(PR 毎)。
+
+`jinja2` を `pycatdap[plotly]` extras に追加 — 既存 `pycatdap[plotly]` ユーザーは `pip install -U "pycatdap[plotly]"` で自動取り込み。
+
+### Related References
+
+- ydata-profiling: <https://docs.profiling.ydata.ai/>
+- skrub TableReport: <https://skrub-data.org/stable/auto_examples/01_encodings.html>
+- dataprep `create_report`: <https://docs.dataprep.ai/>
+- sweetviz: <https://github.com/fbdesignpro/sweetviz>
+- jinja2: <https://jinja.palletsprojects.com/>
+- Plotly HTML embed options: <https://plotly.com/python/interactive-html-export/>
+- 親仕様: H-0001 §Phase C、H-0002 FR-1
