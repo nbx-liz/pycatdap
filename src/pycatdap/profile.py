@@ -14,7 +14,7 @@ to_plotly_json`` methods.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
@@ -150,7 +150,7 @@ class ProfileResult:
             f" (response={self.response!r})" if self.response else ""
         )
         try:
-            from IPython.display import HTML, display
+            from IPython.display import display
         except ImportError:
             print(header)
             print(self._overview_table().to_string())
@@ -161,7 +161,10 @@ class ProfileResult:
                 print(self._warnings_table().to_string())
             return
 
-        display(HTML(f"<h3>{header}</h3>"))
+        # Match the pattern in DescribeResult / TargetSummary: call display()
+        # on DataFrames only (whose stubs are typed) and emit the header as
+        # a plain print so we don't import IPython.display.HTML.
+        print(header)
         display(self._overview_table())
         display(self._variables_table())
         if self.quality_warnings:
@@ -269,7 +272,7 @@ class ProfileResult:
         if path is not None:
             from pycatdap._io import atomic_write_text
 
-            atomic_write_text(path, html)
+            atomic_write_text(path, html, encoding="utf-8")
 
         return html
 
@@ -367,7 +370,10 @@ def profile(
         raise KeyError(msg)
 
     thresholds = dict(_DEFAULT_QUALITY_THRESHOLDS)
-    if quality_thresholds:
+    # Explicit None check, not truthy-check: `quality_thresholds={}` is a
+    # legitimate "reset, use defaults" call and must not be confused with
+    # an unset parameter. (feedback_python_falsy_or_default_trap)
+    if quality_thresholds is not None:
         thresholds.update(quality_thresholds)
 
     n_rows, n_cols = df.shape
@@ -450,7 +456,10 @@ def _build_variables(df: pd.DataFrame, *, response: str | None) -> list[Variable
                 ),
                 stats=stats,
                 delta_aic_vs_response=delta_aic,
-                intervals=None,  # populated by PR-C2 HTML template if needed
+                # `intervals` is reserved for callers that want to attach
+                # AIC-optimal bin boundaries via dataclasses.replace; the
+                # built-in profile() flow leaves it None.
+                intervals=None,
             )
         )
     return cards
@@ -482,9 +491,8 @@ def _scan_quality(
     high_missing = thresholds["high_missing"]
 
     for card in cards:
-        if card.n_obs == 0:
-            continue
-
+        # n_obs == 0 would require a zero-row DataFrame, which fails earlier
+        # inside association_matrix; no defensive check needed here.
         missing_rate = card.n_missing / card.n_obs
 
         if missing_rate > high_missing:
@@ -622,21 +630,27 @@ def _association_heatmap_spec(association: pd.DataFrame) -> dict[str, Any]:
 # -- helpers for to_dict ---------------------------------------------------
 
 
+def _scalar_to_json(v: Any) -> Any:
+    """Convert a pandas/numpy scalar to a JSON-friendly value.
+
+    Returns ``None`` for NA, NaN, and +/-inf (the latter two are not valid
+    JSON per RFC 8259 and break strict JS parsers); preserves finite
+    numerics as ``float``; falls back to ``str`` for anything else.
+    """
+    if pd.isna(v):
+        return None
+    if isinstance(v, (int, float, np.floating, np.integer)):
+        f = float(v)
+        return f if np.isfinite(f) else None
+    return str(v)
+
+
 def _df_to_dict(df: pd.DataFrame) -> dict[str, Any]:
     return {
         "index": [str(i) for i in df.index],
         "columns": [str(c) for c in df.columns],
         "data": [
-            [
-                None
-                if pd.isna(v)
-                else (
-                    float(v)
-                    if isinstance(v, (int, float, np.floating, np.integer))
-                    else str(v)
-                )
-                for v in row
-            ]
+            [_scalar_to_json(v) for v in row]
             for row in df.itertuples(index=False, name=None)
         ],
     }
@@ -667,11 +681,9 @@ def _warning_to_dict(w: QualityWarning) -> dict[str, Any]:
     }
 
 
-# Re-export `replace` for downstream construction if needed.
 __all__ = [
     "ProfileResult",
     "QualityWarning",
     "VariableCard",
     "profile",
-    "replace",
 ]

@@ -284,11 +284,82 @@ class TestMethods:
         spec = result.to_plotly_json()
         assert isinstance(spec, dict)
 
+    def test_to_plotly_json_includes_top_subsets_when_response_given(
+        self, df_mixed: pd.DataFrame
+    ) -> None:
+        result = pycatdap.profile(df_mixed, response="target", top_k_subsets=2)
+        spec = result.to_plotly_json()
+        assert "association_heatmap" in spec
+        assert "top_subsets" in spec
+
+    def test_repr_summarizes_shape_and_response(self, df_mixed: pd.DataFrame) -> None:
+        result = pycatdap.profile(df_mixed, response="target")
+        text = repr(result)
+        assert f"rows={result.n_rows}" in text
+        assert f"cols={result.n_cols}" in text
+        assert "response='target'" in text
+        assert f"warnings={len(result.quality_warnings)}" in text
+
     def test_show_executes(self, df_mixed: pd.DataFrame, capsys: Any) -> None:
         result = pycatdap.profile(df_mixed)
         # show() should not raise; output content varies (Jupyter inline /
         # plain text fallback) so we don't assert on stdout shape.
         result.show()
+
+    def test_show_fallback_when_ipython_missing(
+        self,
+        df_mixed: pd.DataFrame,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Without IPython, show() falls back to stdout (covers L154-162)."""
+        import sys
+
+        monkeypatch.setitem(sys.modules, "IPython", None)
+        monkeypatch.setitem(sys.modules, "IPython.display", None)
+        result = pycatdap.profile(df_mixed)
+        result.show()
+        out = capsys.readouterr().out
+        assert "ProfileResult" in out
+        # The overview table header must reach stdout in fallback mode.
+        assert "metric" in out
+
+
+class TestHelpers:
+    """Cover edge-case branches in private helpers used by to_html / to_plotly_json."""
+
+    def test_association_heatmap_spec_handles_zero_matrix(self) -> None:
+        """All-zero association must not produce a degenerate colour scale."""
+        from pycatdap.profile import _association_heatmap_spec
+
+        zero_matrix = pd.DataFrame(
+            [[0.0, 0.0], [0.0, 0.0]], index=["a", "b"], columns=["a", "b"]
+        )
+        spec = _association_heatmap_spec(zero_matrix)
+        assert spec["data"][0]["zmax"] == 1.0
+        assert spec["data"][0]["zmin"] == -1.0
+
+    def test_scalar_to_json_rejects_infinities(self) -> None:
+        """+/-inf must become None to keep to_dict() JSON-RFC-8259-valid."""
+        from pycatdap.profile import _scalar_to_json
+
+        assert _scalar_to_json(float("inf")) is None
+        assert _scalar_to_json(float("-inf")) is None
+        assert _scalar_to_json(float("nan")) is None
+        assert _scalar_to_json(1.5) == 1.5
+        assert _scalar_to_json("abc") == "abc"
+
+    def test_quality_thresholds_empty_dict_is_not_falsy(
+        self, df_mixed: pd.DataFrame
+    ) -> None:
+        """Empty dict should be equivalent to passing None (not silently
+        dropped — guard against the `if dict:` falsy trap)."""
+        none_result = pycatdap.profile(df_mixed)
+        empty_result = pycatdap.profile(df_mixed, quality_thresholds={})
+        # Both should produce the same set of warning kinds.
+        assert {(w.kind, w.column) for w in none_result.quality_warnings} == {
+            (w.kind, w.column) for w in empty_result.quality_warnings
+        }
 
 
 class TestFrozenDataclasses:
