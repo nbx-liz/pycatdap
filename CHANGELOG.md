@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     で単一の self-contained HTML を生成。Plotly figure は `include_plotlyjs="inline"`
     で同梱（オフライン閲覧可）。`path` 指定時は `_io.atomic_write_text` 経由で原子的書き込み。
     `jinja2` が無い場合は `pycatdap[plotly]` extras を促す `ImportError`
+  - チュートリアル `docs/tutorials/08-profile-titanic.ipynb`
+    — Titanic データセットで `profile()` の全機能（quality thresholds の上書き、
+    `to_html` / `to_dict` / `to_plotly_json` 各シリアライズ）をデモ
+  - `BLUEPRINT.md` §3.1 / §5.9 — H-0007 で追加したモジュール（`profile.py` / `templates/`）と
+    `ProfileResult` / `VariableCard` / `QualityWarning` の確定 API を反映
+  - `README.md` Quickstart — v0.5+ One-call EDA report 節を `pycatdap.profile()` の
+    動く例に置き換え（v0.3+ プレースホルダから昇格）
 
 ## [0.4.0] — 2026-05-27
 
