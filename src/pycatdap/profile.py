@@ -235,12 +235,7 @@ class ProfileResult:
             )
             raise ImportError(msg) from exc
 
-        try:
-            from importlib.resources import files as _resource_files
-        except ImportError:  # pragma: no cover
-            from importlib_resources import (
-                files as _resource_files,  # type: ignore[no-redef]
-            )
+        from importlib.resources import files as _resource_files
 
         template_text = (
             _resource_files("pycatdap.templates")
