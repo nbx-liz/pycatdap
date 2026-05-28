@@ -14,10 +14,13 @@ serialization contract as :class:`pycatdap.ProfileResult`.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Literal
 
+import numpy as np
 import pandas as pd
 
 from pycatdap._target_pair import (
@@ -40,10 +43,13 @@ class TargetAnalysisResult:
     ranking : pd.DataFrame
         Columns ``variable / delta_aic / kind / n_obs`` for every
         non-response column, sorted ascending by ``delta_aic`` (most
-        informative first).
-    top_summaries : dict[str, TargetSummary | RegressionTargetSummary]
+        informative first). **Read-only** since v0.6.1 (H-0009): the
+        underlying numpy buffer is frozen via ``.flags.writeable``.
+        Call ``ranking.copy()`` before mutating.
+    top_summaries : Mapping[str, TargetSummary | RegressionTargetSummary]
         Full :func:`pycatdap.target_summary` objects for the top-K
-        most informative columns, keyed by column name.
+        most informative columns, keyed by column name. Immutable since
+        v0.6.1 (H-0009) — wrapped in ``types.MappingProxyType``.
     response_card : VariableCard
         :class:`pycatdap.VariableCard` describing the response column
         itself (kind, n_obs, n_missing, n_unique, top value, etc.).
@@ -53,10 +59,21 @@ class TargetAnalysisResult:
 
     response: str
     ranking: pd.DataFrame
-    top_summaries: dict[str, TargetSummary | RegressionTargetSummary]
+    top_summaries: Mapping[str, TargetSummary | RegressionTargetSummary]
     response_card: VariableCard
     n_rows: int
     n_cols: int
+
+    def __post_init__(self) -> None:
+        # H-0009: freeze the numpy buffer of every column to block
+        # element assignment via ``.values[i] = x``. DataFrame-level
+        # operations (drop, assign) still allocate new buffers, so this
+        # is a partial freeze documented as "read-only" in the field
+        # docstring above.
+        for col in self.ranking.columns:
+            values = self.ranking[col].values
+            if isinstance(values, np.ndarray):
+                values.flags.writeable = False
 
     def show(self) -> None:
         """Render a ranked summary suitable for Jupyter or plain stdout."""
@@ -339,7 +356,7 @@ def target_analysis(
     return TargetAnalysisResult(
         response=response,
         ranking=ranking,
-        top_summaries=top_summaries,
+        top_summaries=MappingProxyType(top_summaries),
         response_card=response_card,
         n_rows=n_rows,
         n_cols=n_cols,

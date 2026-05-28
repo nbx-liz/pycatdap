@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-05-28
+
+### Changed — API hardening (breaking for callers that mutated result objects)
+H-0009: 4 `@dataclass(frozen=True)` types shipped in v0.6.0 had mutable
+internal fields (`list` / `dict` / `pd.DataFrame`) despite `frozen=True`.
+This contradicted the "NEVER mutate" rule and allowed silent corruption
+of result objects. Fixed in v0.6.1 before Phase G (v0.7.0) inherits the
+same shallow-freeze pattern:
+
+- `SuiteResult.checks` is now `tuple[CheckResult, ...]` instead of
+  `list[CheckResult]`. Call `list(result.checks)` to get a mutable copy.
+- `CheckResult.affected_columns` is now `tuple[str, ...]` instead of
+  `list[str]`. Call `list(...)` to get a mutable copy.
+- `TargetAnalysisResult.top_summaries` is now a read-only
+  `Mapping[str, ...]` (`types.MappingProxyType`). Reads, iteration, and
+  `.items()` work as before; `__setitem__` / `__delitem__` raise
+  `TypeError`. Call `dict(...)` to get a mutable copy.
+- `TargetAnalysisResult.ranking` is documented read-only and the
+  underlying numpy buffer is frozen via `__post_init__` setting
+  `.flags.writeable = False`. Element assignment (`df.values[i] = x`)
+  raises; DataFrame-level operations (`drop`, `assign(inplace=False)`)
+  still allocate new buffers and remain available. Call `.copy()`
+  before mutating in place.
+
+Pre-v0.6.0 result objects with the same pattern
+(`QualityReport.warnings`, `ProfileResult.variables`,
+`EDADescribe.summary`, etc.) are deferred to a follow-up issue for
+staged migration before v1.0 — fixing them all together would inflate
+this patch beyond a focused release.
+
 ### CI / Release infrastructure
 - `auto-release.yml` now dispatches `release.yml` automatically via
   `workflow_dispatch` after creating the tag and GitHub Release.

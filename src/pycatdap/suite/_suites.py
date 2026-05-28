@@ -83,7 +83,7 @@ class AICIndependenceSuite:
         n_rows, n_cols = self._df.shape
         return SuiteResult(
             suite_name=self.name,
-            checks=results,
+            checks=tuple(results),
             n_rows=n_rows,
             n_cols=n_cols,
             response=self._response,
