@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Tutorial Notebook 09 — `docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb`
+  walks through every Phase D API on the Titanic dataset:
+  `quality_report` → `target_analysis` → `pycatdap.measures.*` →
+  `pycatdap.suite.AICIndependenceSuite` with the
+  `assert suite_result.passed, suite_result.summary()` CI idiom
+  (H-0008 PR-D6).
 - `pycatdap.suite` subpackage — deepchecks-style CI-integrable suite
   per Issue #15 (H-0008 PR-D5). Public API:
   - `pycatdap.suite.AICIndependenceSuite(df, response=...).run() ->
@@ -56,9 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Internal refactor: `_scan_quality` lifted from `pycatdap.profile`
-  into `pycatdap._quality` so `quality_report` / `profile` / (upcoming)
+  into `pycatdap._quality` so `quality_report` / `profile` /
   `pycatdap.suite` share one helper. Public surface unchanged
   (H-0008 PR-D1).
+- `BLUEPRINT.md` §3.1 / §5.10 / §5.11 updated to reflect the shipped
+  Phase D module structure and APIs (H-0008 PR-D6).
+- `README.md` Quickstart now shows the target-analysis / quality
+  report / suite / measures workflow (H-0008 PR-D6).
 
 ## [0.5.0] — 2026-05-28
 
