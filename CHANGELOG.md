@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `pycatdap.target_analysis(df, response)` — target-driven ΔAIC ranking
+  of every non-response column. Keeps the full `TargetSummary` /
+  `RegressionTargetSummary` for the top-K most informative columns
+  (`top_k=5` by default). Exposes `.show()`, `.to_html(path)`,
+  `.to_dict()`, and `.to_plotly_json()` matching the
+  `ProfileResult` 4-method contract; HTML report embeds each top-K
+  cross-tab inline via Plotly (H-0008 PR-D3).
+- `pycatdap.TargetAnalysisResult` re-export.
 - `pycatdap.quality_report(df)` — focused data-quality scan returning
   a `QualityReport` dataclass. Shares the warning logic of `profile()`
   via the new `src/pycatdap/_quality.py` helper but skips

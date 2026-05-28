@@ -42,6 +42,7 @@ from pycatdap.profile import (
     profile,
 )
 from pycatdap.quality_report import QualityReport, quality_report
+from pycatdap.target_analysis import TargetAnalysisResult, target_analysis
 
 __all__ = [
     "__version__",
@@ -53,6 +54,7 @@ __all__ = [
     "QualityReport",
     "QualityWarning",
     "RegressionTargetSummary",
+    "TargetAnalysisResult",
     "TargetSummary",
     "VariableCard",
     "aic_heatmap",
@@ -68,5 +70,6 @@ __all__ = [
     "plot_variable",
     "profile",
     "quality_report",
+    "target_analysis",
     "target_summary",
 ]
