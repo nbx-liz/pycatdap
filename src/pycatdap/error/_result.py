@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
 
@@ -253,6 +254,165 @@ class ErrorAnalysisResult:
             },
         }
 
+    # ------------------------------------------------------------------
+    # to_plotly_json()
+    # ------------------------------------------------------------------
+
+    def to_plotly_json(self) -> dict[str, Any]:
+        """Return per-section Plotly figure specs (DP-4).
+
+        Sections:
+        - ``feature_ranking``: horizontal bar of ΔAIC per variable
+        - ``confusion`` (classification only): bar of category counts
+        - ``top_summaries``: each entry's native ``to_plotly_json()``
+        """
+        spec: dict[str, Any] = {
+            "feature_ranking": _ranking_bar_spec(self.feature_ranking),
+            "top_summaries": {
+                col: summary.to_plotly_json()
+                for col, summary in self.top_summaries.items()
+            },
+        }
+        if self.confusion is not None:
+            spec["confusion"] = _confusion_bar_spec(self.confusion)
+        return spec
+
+    # ------------------------------------------------------------------
+    # to_html()
+    # ------------------------------------------------------------------
+
+    def to_html(self, path: str | Path | None = None) -> str:
+        """Render a single-file HTML report.
+
+        Plotly figures for the top-K cross-tabs are embedded inline
+        (``include_plotlyjs="inline"``) so the file is fully self-
+        contained and viewable offline.
+
+        Parameters
+        ----------
+        path : str, Path, or None
+            If given, the HTML is also written atomically via
+            :func:`pycatdap._io.atomic_write_text`. Returns the HTML
+            string in both modes.
+
+        Raises
+        ------
+        ImportError
+            If ``jinja2`` is not installed (ship as part of
+            ``pycatdap[plotly]`` extras).
+        """
+        try:
+            from jinja2 import Environment, select_autoescape
+        except ImportError as exc:
+            msg = (
+                "jinja2 is required for HTML reports. "
+                "Install it with: pip install 'pycatdap[plotly]'"
+            )
+            raise ImportError(msg) from exc
+
+        from importlib.resources import files as _resource_files
+
+        template_text = (
+            _resource_files("pycatdap.templates")
+            .joinpath("error_analysis.html.j2")
+            .read_text(encoding="utf-8")
+        )
+        env = Environment(autoescape=select_autoescape(default=True))
+        template = env.from_string(template_text)
+
+        from pycatdap._version import __version__
+
+        top_rendered: list[dict[str, str]] = []
+        for i, (col, summary) in enumerate(self.top_summaries.items()):
+            include_js: Literal["inline", False] = "inline" if i == 0 else False
+            top_rendered.append(
+                {
+                    "name": col,
+                    "delta_aic": f"{summary.delta_aic:.4f}",
+                    "html": _summary_to_html(summary, include_plotlyjs=include_js),
+                }
+            )
+
+        confusion_records: list[dict[str, Any]] | None
+        if self.confusion is not None:
+            confusion_records = [
+                {
+                    "category": str(idx),
+                    "count": int(self.confusion.loc[idx, "count"])
+                    if "count" in self.confusion.columns
+                    else int(self.confusion.loc[idx].sum()),
+                }
+                for idx in self.confusion.index
+            ]
+        else:
+            confusion_records = None
+
+        html = template.render(
+            task=self.task,
+            label_kind=self.label_kind,
+            response_name=self.response_name,
+            n_rows=self.n_rows,
+            n_correct=self.n_correct,
+            n_incorrect=self.n_incorrect,
+            mae=self.mae,
+            rmse=self.rmse,
+            ranking=_ranking_to_records(self.feature_ranking),
+            confusion=confusion_records,
+            top_slices=[_slice_to_dict(s) for s in self.top_slices],
+            top_summaries=top_rendered,
+            pycatdap_version=__version__,
+        )
+
+        if path is not None:
+            from pycatdap._io import atomic_write_text
+
+            atomic_write_text(path, html, encoding="utf-8")
+
+        return html
+
+    # ------------------------------------------------------------------
+    # to_divexplorer_format()
+    # ------------------------------------------------------------------
+
+    def to_divexplorer_format(self) -> pd.DataFrame:
+        """Return a DivExplorer-compatible flat DataFrame of slices.
+
+        Columns: ``description / size / error_rate / delta_aic /
+        pearson_residual``. One row per :class:`Slice`. Empty (but
+        well-typed) DataFrame when no slice cleared the
+        ``|pearson_residual| >= 2.0`` threshold.
+
+        See <https://github.com/divexplorer/divexplorer> for the
+        reference subgroup-DataFrame shape Phase L will fully integrate
+        with; PR-G3 ships the format compatibility only.
+        """
+        records = [
+            {
+                "description": f"{s.variable} = {s.category}",
+                "size": int(s.n_in_slice),
+                "error_rate": float(s.error_rate),
+                "delta_aic": float(s.delta_aic),
+                "pearson_residual": float(s.pearson_residual),
+                "error_category": s.error_category,
+                "variable": s.variable,
+                "category": s.category,
+            }
+            for s in self.top_slices
+        ]
+        return pd.DataFrame(
+            records,
+            columns=[
+                "description",
+                "size",
+                "error_rate",
+                "delta_aic",
+                "pearson_residual",
+                "error_category",
+                "variable",
+                "category",
+            ],
+        )
+
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -289,6 +449,72 @@ def _slice_to_dict(s: Slice) -> dict[str, Any]:
         "pearson_residual": float(s.pearson_residual),
         "delta_aic": float(s.delta_aic),
     }
+
+
+def _ranking_bar_spec(ranking: pd.DataFrame) -> dict[str, Any]:
+    variables = [str(v) for v in ranking["variable"].tolist()]
+    delta_aic = [float(v) for v in ranking["delta_aic"].tolist()]
+    return {
+        "data": [
+            {
+                "type": "bar",
+                "orientation": "h",
+                "x": delta_aic,
+                "y": variables,
+                "marker": {
+                    "color": ["#1a7f37" if v < 0 else "#cf222e" for v in delta_aic],
+                },
+            }
+        ],
+        "layout": {
+            "title": "Feature ranking by ΔAIC against error label",
+            "xaxis": {"title": "ΔAIC (lower = more informative)"},
+            "yaxis": {"title": "variable", "autorange": "reversed"},
+        },
+    }
+
+
+def _confusion_bar_spec(confusion: pd.DataFrame) -> dict[str, Any]:
+    """Render the confusion summary as a category-count bar."""
+    if "count" in confusion.columns:
+        labels = [str(idx) for idx in confusion.index]
+        counts = [int(confusion.loc[idx, "count"]) for idx in confusion.index]
+    else:
+        labels = [str(idx) for idx in confusion.index]
+        counts = [int(confusion.loc[idx].sum()) for idx in confusion.index]
+    return {
+        "data": [
+            {
+                "type": "bar",
+                "x": labels,
+                "y": counts,
+                "marker": {
+                    "color": [
+                        "#1a7f37" if lbl in {"TP", "TN"} else "#cf222e"
+                        for lbl in labels
+                    ],
+                },
+            }
+        ],
+        "layout": {
+            "title": "Confusion label counts",
+            "xaxis": {"title": "category"},
+            "yaxis": {"title": "count"},
+        },
+    }
+
+
+def _summary_to_html(
+    summary: TargetSummary | RegressionTargetSummary,
+    *,
+    include_plotlyjs: Literal["inline", False],
+) -> str:
+    """Render one TargetSummary as a Plotly Table HTML fragment."""
+    import plotly.graph_objects as go
+
+    spec = summary.to_plotly_json()
+    fig = go.Figure(spec)
+    return str(fig.to_html(include_plotlyjs=include_plotlyjs, full_html=False))
 
 
 __all__ = ["ErrorAnalysisResult", "Slice"]
