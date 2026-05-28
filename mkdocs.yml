@@ -60,6 +60,7 @@ nav:
       - Real-world EDA on seaborn Titanic: tutorials/05-real-world-eda.ipynb
       - Target-pair analysis: tutorials/06-target-pair-titanic.ipynb
       - Bivariate Phase B APIs: tutorials/07-bivariate-phase-b.ipynb
+      - One-call profile() report: tutorials/08-profile-titanic.ipynb
   - How-to Guides:
       - how-to/index.md
   - API Reference:

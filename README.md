@@ -62,14 +62,23 @@ for s in result2.subsets[:3]:
     print(f"AIC={s.aic:.2f}, vars={s.variables}")
 ```
 
-### EDA (planned, v0.3+)
+### One-call EDA report (v0.5+)
 
 ```python
-# Coming in v0.5
-profile = pycatdap.profile(df, response="symptoms")
-profile.to_html("report.html")
-profile.show()  # Jupyter inline
+report = pycatdap.profile(df, response="symptoms")
+report.show()                       # Jupyter inline
+report.to_html("report.html")       # self-contained HTML, inline Plotly
+report.to_dict()                    # JSON-friendly
+report.to_plotly_json()             # react-plotly.js / LizyStudio
 ```
+
+`ProfileResult` exposes `overview`, `variables` (one `VariableCard` per
+column, including ΔAIC vs the response), `association` (m × m ΔAIC
+matrix), `top_subsets` (CATDAP-02 result when `response` is given), and
+`quality_warnings` (`high_cardinality` / `constant` / `id_candidate` /
+`high_missing` with overridable thresholds). See
+[`docs/tutorials/08-profile-titanic.ipynb`](docs/tutorials/08-profile-titanic.ipynb)
+for an end-to-end walkthrough.
 
 ### ML error analysis (planned, v0.8+)
 

@@ -115,7 +115,9 @@ pycatdap/
 ├── plot/                   # v0.3+ 拡張可視化 API（H-0001）
 │   ├── matplotlib.py
 │   └── plotly.py
-├── profile.py              # ワンコール EDA レポート（§5.9, H-0001）
+├── profile.py              # ワンコール EDA レポート（§5.9, H-0001 / H-0007）
+├── templates/              # jinja2 HTML テンプレート（H-0007）
+│   └── profile.html.j2
 ├── error/                  # ML 誤差分析（§5.8, H-0002）
 │   ├── labels.py
 │   ├── analysis.py
@@ -658,32 +660,70 @@ class ErrorAnalysisResult:
     def to_divexplorer_format(self) -> pd.DataFrame: ...
 ```
 
-### 5.9 `profile.py` — ワンコール EDA レポート（H-0001/H-0002 で追加）
+### 5.9 `profile.py` — ワンコール EDA レポート（H-0001 / H-0007、v0.5.0 で実装）
 
 ```python
-pycatdap.profile(df, response=None) -> ProfileResult
+pycatdap.profile(
+    df: pd.DataFrame,
+    *,
+    response: str | None = None,
+    bins: int | None = None,
+    criterion: Literal["aic", "aicc", "bic"] = "bic",
+    top_k_subsets: int = 5,
+    quality_thresholds: dict[str, float] | None = None,
+) -> ProfileResult
 ```
 
 含まれる要素:
-- Overview セクション（行数 / 列数 / 欠損率 / 重複行 / メモリ）
-- Variable cards（型推定 / カーディナリティ / 欠損 / top カテゴリ / ΔAIC vs response）
-- AIC ヒートマップ（全変数ペア）
-- CATDAP-02 上位 K サブセット
-- 連続変数の AIC 最適 binning 可視化
-- データ品質警告（高カーディナリティ / 定数列 / ID 候補列）
+- **Overview** — 行数 / 列数 / 欠損率 / 重複行 / メモリ / dtype カウント
+- **Quality warnings** — `high_cardinality` / `constant` / `id_candidate` /
+  `high_missing` の 4 種類（`quality_thresholds=` で上書き可）
+- **Variables** — 列ごとの `VariableCard`（型推定 / カーディナリティ / 欠損 /
+  top カテゴリ / 連続統計量 / ΔAIC vs response / AIC binning 境界）
+- **Pairwise associations** — 全列ペアの ΔAIC ヒートマップ（H-0006 の
+  `association_matrix` 結果）
+- **Top subsets** — `response` 指定時のみ `catdap2(nvar=top_k_subsets)` を実行
+- **HTML レポート** — jinja2 テンプレート（`src/pycatdap/templates/profile.html.j2`）
+  で単一の self-contained HTML を生成、Plotly figure はインライン同梱
+  （オフライン閲覧可、Issue #14）
 
 ```python
-@dataclass
+@dataclass(frozen=True)
 class ProfileResult:
-    overview: dict
+    overview: dict[str, Any]
     variables: list[VariableCard]
-    aic_heatmap: pd.DataFrame
-    top_subsets: list[SubsetResult]
-    quality_warnings: list[Warning]
+    association: pd.DataFrame
+    top_subsets: Catdap2Result | None
+    quality_warnings: list[QualityWarning]
+    response: str | None
+    n_rows: int
+    n_cols: int
 
     def show(self) -> None: ...
-    def to_html(self, path) -> None: ...
-    def to_plotly_json(self) -> dict: ...
+    def to_html(self, path: str | Path | None = None) -> str: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_plotly_json(self) -> dict[str, Any]: ...
+
+@dataclass(frozen=True)
+class VariableCard:
+    name: str
+    kind: str
+    n_obs: int
+    n_missing: int
+    n_unique: int
+    top_value: Any
+    top_freq: int | None
+    stats: dict[str, float] | None
+    delta_aic_vs_response: float | None
+    intervals: list[float] | None
+
+@dataclass(frozen=True)
+class QualityWarning:
+    severity: Literal["info", "warning"]
+    kind: Literal["high_cardinality", "constant", "id_candidate", "high_missing"]
+    column: str
+    message: str
+    metric: float
 ```
 
 ### 5.10 `suite/` — CI 統合可能なテストスイート（H-0002 で追加）

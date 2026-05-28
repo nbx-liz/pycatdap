@@ -1362,7 +1362,7 @@ pycatdap.association_plot(
 ## 2026-05-27: Phase C ワンコール EDA — `profile()` + HTML レポート
 
 - ID: `H-0007`
-- Status: `proposed`
+- Status: `accepted`
 - Scope: `API | scope | dependencies`
 - Related: `H-0001 Phase C`, `H-0002 FR-1`, `H-0004`, `H-0005`, `H-0006`, `BLUEPRINT.md §3, §5.9`, Issue #14
 
@@ -1597,9 +1597,20 @@ HTML テンプレートの段組:
 
 ### Decision
 
-- Date: `pending`
-- Result: `pending`
-- Notes:
+- Date: `2026-05-27`
+- Result: `accepted`
+- Notes: PR-C0(#71)で Proposal 承認。実装は 4 PR に分けて develop へ:
+  - PR-C1(#72): `profile.py` core(`profile` + 3 dataclasses + `.show / .to_dict / .to_plotly_json`)
+    — committed `0c9b316`。CI で 2 周踏んだ教訓: (a) `# type: ignore[assignment]` を `display = None` に
+    付けると CI(IPython 未インストール)で unused-ignore → `feedback_mypy_ipython_display` 違反、
+    (b) `to_plotly_json` から plotly backend を import すると `Quality (lowest-direct deps)` で
+    ImportError、`Catdap1Result.to_plotly_json` と同じく dict 直接構築すべき
+  - PR-C2(#73): jinja2 HTML テンプレート + `.to_html()` — committed `83e47a2`。
+    `importlib_resources` fallback も CI で `[unused-ignore]` を踏んだ(Python 3.10+ は stdlib に
+    `importlib.resources.files` あり、fallback 不要)
+  - PR-C3: Tutorial Notebook 08 + BLUEPRINT / mkdocs / tutorials/index.md 反映 + Issue #14 close
+    (本 PR)
+  - 全テスト 392 + Notebook 08 1 件、coverage 83.32%
 
 ### Migration
 
