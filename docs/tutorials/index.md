@@ -11,6 +11,7 @@ Learning-oriented walkthroughs that guide you from zero to confident usage.
 - **[Real-world EDA on seaborn Titanic](05-real-world-eda.ipynb)** — End-to-end workflow on messy data: missingness inspection, cleanup, mixed-pooling CATDAP-02, and HTML/Plotly export. Requires `pycatdap[tutorial]`.
 - **[Target-pair analysis](06-target-pair-titanic.ipynb)** — Drill into a single (target, explanatory) pair with `target_summary` and `plot_target`: four-perspective tables, AIC-optimal binning for continuous explanatories, ΔAIC ranking, Plotly export, and **continuous-target regression mode** via `RegressionTargetSummary` (H-0005). Requires `pycatdap[tutorial]`.
 - **[Bivariate Phase B APIs](07-bivariate-phase-b.ipynb)** — Step beyond a single pair: `plot_pair` for symmetric two-column plots, `aic_heatmap` for one-glance ΔAIC matrices, `association_matrix` for the full m × m ΔAIC sweep, and `association_plot` for vcd-style Pearson residuals (H-0006). Requires `pycatdap[tutorial]`.
+- **[One-call profile() report](08-profile-titanic.ipynb)** — The v0.5.0 flagship API: `pycatdap.profile(df, response=...)` bundles overview, variable cards, ΔAIC association matrix, CATDAP-02 top subsets, and quality warnings into a single call, then renders a self-contained HTML report with inline Plotly figures (H-0007). Requires `pycatdap[plotly]` and `pycatdap[tutorial]`.
 
 ## Planned
 
