@@ -187,6 +187,7 @@ def test_show_falls_back_to_print(
 
 
 def test_to_html_returns_string(df_with_issues: pd.DataFrame) -> None:
+    pytest.importorskip("jinja2")
     qr = pycatdap.quality_report(df_with_issues)
     html = qr.to_html()
     assert isinstance(html, str)
@@ -197,6 +198,7 @@ def test_to_html_returns_string(df_with_issues: pd.DataFrame) -> None:
 
 
 def test_to_html_writes_atomic(df_with_issues: pd.DataFrame, tmp_path: Path) -> None:
+    pytest.importorskip("jinja2")
     out = tmp_path / "qr.html"
     qr = pycatdap.quality_report(df_with_issues)
     html = qr.to_html(path=out)
@@ -207,10 +209,23 @@ def test_to_html_writes_atomic(df_with_issues: pd.DataFrame, tmp_path: Path) -> 
 
 
 def test_to_html_empty_warnings(df_clean: pd.DataFrame) -> None:
+    pytest.importorskip("jinja2")
     qr = pycatdap.quality_report(df_clean)
     html = qr.to_html()
     # empty-state copy should make the report readable even with zero warnings
     assert "no quality warnings" in html.lower() or "passed" in html.lower()
+
+
+def test_to_html_raises_clean_import_error_without_jinja2(
+    df_clean: pd.DataFrame, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When jinja2 is missing, to_html raises ImportError with an install hint."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "jinja2", None)
+    qr = pycatdap.quality_report(df_clean)
+    with pytest.raises(ImportError, match="jinja2 is required"):
+        qr.to_html()
 
 
 def test_frozen_dataclass(df_clean: pd.DataFrame) -> None:

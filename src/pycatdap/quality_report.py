@@ -135,7 +135,7 @@ class QualityReport:
         """
         try:
             from jinja2 import Environment, select_autoescape
-        except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+        except ImportError as exc:
             msg = (
                 "jinja2 is required for HTML reports. "
                 "Install it with: pip install 'pycatdap[plotly]'"
