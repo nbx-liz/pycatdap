@@ -268,7 +268,7 @@ def _residual_label_aic_pool(
 
     from pycatdap._pooling import equal_pooling
 
-    response = initial.astype(str).to_numpy()
+    response = np.asarray(initial.astype(str))
     accuracy = (
         float(np.diff(np.sort(np.unique(residuals))).min())
         if len(np.unique(residuals)) > 1
