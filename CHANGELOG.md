@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `pycatdap.suite` subpackage — deepchecks-style CI-integrable suite
+  per Issue #15 (H-0008 PR-D5). Public API:
+  - `pycatdap.suite.AICIndependenceSuite(df, response=...).run() ->
+    SuiteResult` — default bundle of the 4 standard checks
+  - Individual checks: `ConstantColumnCheck`, `HighCardinalityCheck`,
+    `IndependenceCheck`, `PoolingSuggestionCheck` (all
+    `@dataclass(frozen=True)` so thresholds are immutable; no
+    `eval()` / string DSL anywhere — safe on untrusted DataFrames)
+  - `SuiteResult` with `.passed` boolean for `assert suite_result.passed`,
+    `.warnings`, `.summary()`, `.show()`, `.to_html(path)`,
+    `.to_dict()`, `.to_plotly_json()`
+- `association_matrix(df, measure=...)` extension — dispatch on any
+  registered :mod:`pycatdap.measures` measure. ``measure="aic"``
+  (default) keeps the existing :func:`target_summary`-based path;
+  ``"cramers_v"`` / ``"mutual_info"`` / custom measures use a generic
+  crosstab path with uniform ``pd.qcut`` binning of continuous columns
+  (H-0008 PR-D5).
 - `pycatdap.measures` subpackage with a pluggable interestingness-
   measure registry (BLUEPRINT §5.11, H-0008 PR-D4). Each measure has
   the uniform signature `Callable[[npt.NDArray[np.float64]], float]`.
