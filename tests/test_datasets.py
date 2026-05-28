@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pycatdap.datasets import (
+    load_german_credit,
     load_health_data,
+    load_heart_disease,
     load_hello_goodbye,
     load_iris,
+    load_penguins,
     load_titanic,
 )
 
@@ -143,3 +146,74 @@ class TestIris:
         df = load_iris()
         assert df["Sepal.Length"].min() == 4.3
         assert df["Sepal.Length"].max() == 7.9
+
+
+class TestGermanCredit:
+    """Tests for the Statlog German Credit dataset (D3, v0.7.0 H-0010)."""
+
+    def test_shape(self) -> None:
+        df = load_german_credit()
+        assert df.shape == (1000, 21)
+
+    def test_class_column(self) -> None:
+        df = load_german_credit()
+        assert "class" in df.columns
+        assert set(df["class"].unique()) == {"good", "bad"}
+
+    def test_class_balance(self) -> None:
+        df = load_german_credit()
+        counts = df["class"].value_counts().to_dict()
+        assert counts == {"good": 700, "bad": 300}
+
+    def test_mixed_dtypes(self) -> None:
+        import pandas as pd
+
+        df = load_german_credit()
+        n_str = sum(pd.api.types.is_string_dtype(df[c]) for c in df.columns)
+        n_num = sum(df[c].dtype.kind in ("i", "f") for c in df.columns)
+        assert n_str >= 10
+        assert n_num >= 4
+
+
+class TestHeartDisease:
+    """Tests for the Cleveland Heart Disease dataset (D3, v0.7.0 H-0010)."""
+
+    def test_shape(self) -> None:
+        df = load_heart_disease()
+        assert df.shape == (303, 14)
+
+    def test_target_column(self) -> None:
+        df = load_heart_disease()
+        assert "target" in df.columns
+        assert set(df["target"].dropna().unique()).issubset({0.0, 1.0})
+
+    def test_all_numeric_columns(self) -> None:
+        df = load_heart_disease()
+        for col in df.columns:
+            assert df[col].dtype.kind in ("i", "f"), f"{col} is not numeric"
+
+
+class TestPenguins:
+    """Tests for the Palmer Penguins dataset (D3, v0.7.0 H-0010)."""
+
+    def test_shape(self) -> None:
+        df = load_penguins()
+        assert df.shape == (344, 7)
+
+    def test_species_three_classes(self) -> None:
+        df = load_penguins()
+        assert set(df["species"].unique()) == {"Adelie", "Chinstrap", "Gentoo"}
+
+    def test_island_categorical(self) -> None:
+        df = load_penguins()
+        assert set(df["island"].unique()) == {"Torgersen", "Biscoe", "Dream"}
+
+    def test_morphological_columns_are_float(self) -> None:
+        df = load_penguins()
+        for col in (
+            "culmen_length_mm",
+            "culmen_depth_mm",
+            "flipper_length_mm",
+            "body_mass_g",
+        ):
+            assert df[col].dtype.kind == "f", f"{col} is not float"
