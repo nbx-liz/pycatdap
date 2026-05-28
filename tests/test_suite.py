@@ -70,7 +70,7 @@ class TestConstantColumnCheck:
         result = ConstantColumnCheck().run(df_clean)
         assert isinstance(result, CheckResult)
         assert result.passed is True
-        assert result.affected_columns == []
+        assert result.affected_columns == ()
 
     def test_flags_constant_columns(self, df_with_issues: pd.DataFrame) -> None:
         result = ConstantColumnCheck().run(df_with_issues)
@@ -86,7 +86,7 @@ class TestHighCardinalityCheck:
     def test_passes_on_clean_frame(self, df_clean: pd.DataFrame) -> None:
         result = HighCardinalityCheck().run(df_clean)
         assert result.passed is True
-        assert result.affected_columns == []
+        assert result.affected_columns == ()
 
     def test_flags_high_cardinality_columns(self, df_with_issues: pd.DataFrame) -> None:
         result = HighCardinalityCheck().run(df_with_issues)
@@ -149,7 +149,7 @@ class TestPoolingSuggestionCheck:
         # df_clean has no continuous columns; check should pass
         result = PoolingSuggestionCheck().run(df_clean, response="y")
         assert result.passed is True
-        assert result.affected_columns == []
+        assert result.affected_columns == ()
 
     def test_requires_response(self) -> None:
         df = pd.DataFrame({"y": [0, 1] * 50, "x": np.linspace(0, 1, 100)})

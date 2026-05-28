@@ -2035,3 +2035,129 @@ m = pycatdap.association_matrix(df, measure="cramers_v")
 - Cramér's V: <https://en.wikipedia.org/wiki/Cram%C3%A9r%27s_V>
 - 親仕様: H-0001 Phase D、H-0002 FR-10 / DP-6、Issue #15
 
+
+---
+
+## 2026-05-28: v0.6.0 で導入した frozen dataclass の shallow-freeze 修正
+
+- ID: `H-0009`
+- Status: `proposed`
+- Scope: `API contract | breaking-light`
+- Related: `H-0008`, `CLAUDE.md「NEVER mutate」`, `BLUEPRINT.md §5.10 / §5.11`
+
+### Context
+
+H-0008(v0.6.0)で 4 つの `@dataclass(frozen=True)` を出荷した:
+
+- `TargetAnalysisResult` (`src/pycatdap/target_analysis.py:32-59`)
+- `CheckResult` (`src/pycatdap/suite/_base.py:33-61`)
+- `SuiteResult` (`src/pycatdap/suite/_base.py:87-107`)
+
+`frozen=True` は **field への再代入** は禁ずるが、**field の中身**(`pd.DataFrame` / `dict` / `list`)の mutation は防がない。CLAUDE.md は明示的に「NEVER mutate」を要求しており、現状の API は契約と矛盾する:
+
+```python
+result = pycatdap.target_analysis(df, response="symptoms")
+result.ranking.drop(0, inplace=True)        # 静かに壊せる
+result.top_summaries["new_key"] = ...       # 静かに壊せる
+result.checks.pop(0)                        # SuiteResult: 静かに壊せる
+```
+
+問題のフィールド:
+
+| Class | Field | 現状 | 漏れる mutation |
+|---|---|---|---|
+| `TargetAnalysisResult` | `ranking: pd.DataFrame` | mutable | `.drop`/`.assign(inplace=True)` |
+| `TargetAnalysisResult` | `top_summaries: dict[str, ...]` | mutable | `result.top_summaries["k"] = v` |
+| `CheckResult` | `affected_columns: list[str]` | mutable | `result.affected_columns.append(...)` |
+| `SuiteResult` | `checks: list[CheckResult]` | mutable | `result.checks.pop()` |
+
+v0.6.0 PyPI ship 直後の architect レビュー(2026-05-28)で「**Phase G(v0.7.0)で新たな result dataclass が増える前** にパターンを正す」と助言された。Phase G は `ErrorLabelResult` 相当の新規 dataclass を導入する予定で、ここで間違ったパターンを伝播させると将来 breaking change で修正する羽目になる。
+
+### Scope 限定
+
+本 Proposal は **v0.6.0 で導入された 4 フィールドのみ** を対象とする。pre-v0.6.0 の同種パターン(`QualityReport.warnings: list` / `ProfileResult.variables: list` 等)は **別 Issue を起票して v1.0 までに対応**(本 Proposal でまとめてやると差分が肥大化し、レビュー困難になる)。
+
+### Proposal
+
+#### 修正方針
+
+| Field | 変更 | 理由 |
+|---|---|---|
+| `CheckResult.affected_columns: list[str]` | `tuple[str, ...]` | tuple は immutable、空集合は `()` |
+| `SuiteResult.checks: list[CheckResult]` | `tuple[CheckResult, ...]` | 同上。`Sequence` interface は維持される |
+| `TargetAnalysisResult.top_summaries: dict[str, ...]` | `Mapping[str, ...]`(`MappingProxyType` でラップ) | `dict` interface(`__getitem__` / `items()` 等)は維持、`__setitem__` は `TypeError` |
+| `TargetAnalysisResult.ranking: pd.DataFrame` | docstring に "**read-only — call `.copy()` before mutating**" を明記し、`__post_init__` で `ranking.flags.writeable = False`(numpy buffer の値のみ freeze。column add/drop までは防げないが、最も一般的な要素書き換えはブロック) | DataFrame の完全 freeze は実現困難。要素書き換えのみブロックし契約を docstring で明示する pandas-API 互換アプローチ |
+
+#### 互換性影響
+
+- **Strict semver では breaking**(`list` → `tuple` で `result.checks.append(...)` が `AttributeError`)
+- ただし `frozen=True` の宣言通り使っているコードには **無影響**
+- 攻撃面: ユーザーが mutation で内部状態を corrupt させる API ホールを塞ぐ → **正方向の breaking**
+- v0.6.0 は今日リリース(2026-05-28)で実運用ユーザーは事実上ゼロ。v0.6.1 patch として ship 可能
+
+#### テスト戦略
+
+- **新規 regression テスト** `tests/test_reg_h0009_shallow_freeze.py` 各 field について:
+  - `TypeError` 期待: `.append()` / `__setitem__` / `inplace` mutation
+  - golden: 既存 read-only consumer(`to_dict` / `to_html` / `to_plotly_json` / `show`)が動作継続
+- 既存テストスイート(516 passed)が全て green を維持
+
+### Alternatives Considered
+
+#### A1: pre-v0.6.0 の同種パターンも一緒に修正
+- **不採用理由**: 8 フィールド以上の breaking change を一度に出すと、レビュー困難で patch リリースの逸脱。v0.6.0 直後の今だからこそ v0.6.1 として narrow scope で出せる。pre-v0.6.0 は別 Issue で v1.0 までに段階対応。
+
+#### A2: docstring 警告のみ(現状の `frozen=True` を維持)
+- **不採用理由**: 「NEVER mutate」を docstring に書いても CLAUDE.md ルール違反のコードが静かに動く現状は変わらない。`assert` でも runtime 検出は実現可能だが、型システムレベルで保証する `tuple` / `MappingProxyType` の方が strict。
+
+#### A3: pydantic.BaseModel に置き換え
+- **不採用理由**: pydantic は必須依存に上がる。pandas DataFrame との相互作用に難あり。v0.6.1 patch の scope を超える。
+
+#### A4: 全 field を完全 immutable に(DataFrame も)
+- **不採用理由**: pandas は完全 freeze の標準 API を持たない。`flags.writeable = False` は要素書き換えのみブロックする部分対策。完全 immutable は別ライブラリ依存(`pyrsistent` 等)が必要で v0.6.1 patch の scope を超える。
+
+### Acceptance Criteria
+
+- [ ] `CheckResult.affected_columns` が `tuple[str, ...]`
+- [ ] `SuiteResult.checks` が `tuple[CheckResult, ...]`
+- [ ] `TargetAnalysisResult.top_summaries` が `Mapping[str, ...]`(`MappingProxyType` でラップ)
+- [ ] `TargetAnalysisResult.ranking` の docstring に "read-only" 明記、`__post_init__` で `.flags.writeable = False`
+- [ ] `tests/test_reg_h0009_shallow_freeze.py` 4+ 件の TypeError 期待テスト追加
+- [ ] 既存 516 テスト全て green を維持
+- [ ] CHANGELOG `## [0.6.1]` セクションに API hardening として明記
+- [ ] BLUEPRINT §5.10 / §5.11 の型表記を更新
+- [ ] pre-v0.6.0 の同種パターン(`QualityReport.warnings` / `ProfileResult.variables` 等)を v1.0 までに対応する **follow-up Issue を起票**
+
+### PR 分割
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-E0**(本 Proposal) | `docs(history): propose H-0009` | none |
+| **PR-E1** | 実装 + テスト + BLUEPRINT 更新 + CHANGELOG | PR-E0 merge |
+| **PR-E2**(別 issue 起票のみ) | follow-up issue: 残り frozen dataclass の同種修正 | PR-E1 と並行可 |
+| **PR-E3**(release) | `release: v0.6.1` | PR-E1 merge |
+
+### Decision
+
+- Date: `TBD`
+- Result: `pending`
+- Notes: PR-E0(本 PR)で Proposal 承認待ち。
+
+### Migration
+
+技術的には breaking。ただし v0.6.0 PyPI ship 直後で実運用ユーザーが事実上ゼロのため、`## [0.6.1]` patch で出荷可。
+
+CHANGELOG に明記する文言案:
+
+> ### Changed (API hardening — breaking for code that mutated result objects)
+> - `SuiteResult.checks` is now `tuple[CheckResult, ...]` instead of `list`. Code calling `.append()` etc. on it must copy to a list first.
+> - `CheckResult.affected_columns` is now `tuple[str, ...]`.
+> - `TargetAnalysisResult.top_summaries` is now a read-only `Mapping` (`MappingProxyType`).
+> - `TargetAnalysisResult.ranking` is documented as read-only and the underlying numpy buffer is frozen via `.flags.writeable = False`.
+
+### Related References
+
+- 親仕様: H-0008、CLAUDE.md「NEVER mutate」、BLUEPRINT.md §5.10 / §5.11
+- architect 助言(2026-05-28): Phase G 開始前に v0.6.1 patch で先行修正(Phase G result dataclass が間違ったパターンを継承するのを避ける)
+- Python types.MappingProxyType: <https://docs.python.org/3/library/types.html#types.MappingProxyType>
+- pandas DataFrame.flags: <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.flags.html>
