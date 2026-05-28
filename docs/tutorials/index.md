@@ -12,6 +12,7 @@ Learning-oriented walkthroughs that guide you from zero to confident usage.
 - **[Target-pair analysis](06-target-pair-titanic.ipynb)** — Drill into a single (target, explanatory) pair with `target_summary` and `plot_target`: four-perspective tables, AIC-optimal binning for continuous explanatories, ΔAIC ranking, Plotly export, and **continuous-target regression mode** via `RegressionTargetSummary` (H-0005). Requires `pycatdap[tutorial]`.
 - **[Bivariate Phase B APIs](07-bivariate-phase-b.ipynb)** — Step beyond a single pair: `plot_pair` for symmetric two-column plots, `aic_heatmap` for one-glance ΔAIC matrices, `association_matrix` for the full m × m ΔAIC sweep, and `association_plot` for vcd-style Pearson residuals (H-0006). Requires `pycatdap[tutorial]`.
 - **[One-call profile() report](08-profile-titanic.ipynb)** — The v0.5.0 flagship API: `pycatdap.profile(df, response=...)` bundles overview, variable cards, ΔAIC association matrix, CATDAP-02 top subsets, and quality warnings into a single call, then renders a self-contained HTML report with inline Plotly figures (H-0007). Requires `pycatdap[plotly]` and `pycatdap[tutorial]`.
+- **[Phase D APIs — target_analysis, quality_report, measures, suite](09-phase-d-target-analysis-and-suite.ipynb)** — The v0.6.0 target-driven additions: `quality_report(df)` for a fast CI-friendly quality scan, `target_analysis(df, response)` for ΔAIC ranking + top-K cross-tabs, `pycatdap.measures.*` (aic / cramers_v / mutual_info + register), `association_matrix(measure=...)` extension, and `pycatdap.suite.AICIndependenceSuite` for the `assert suite_result.passed, suite_result.summary()` CI idiom (H-0008). Requires `pycatdap[plotly]` and `pycatdap[tutorial]`.
 
 ## Planned
 
@@ -19,7 +20,6 @@ As Phases land on the [roadmap](../project/roadmap.md), additional tutorials wil
 
 | Tutorial | Phase | Status |
 |---|---|---|
-| Target analysis on Penguins | D | 🟡 v0.6 |
 | Classification error analysis on Titanic predictions | G/H/I | 🟡 v0.7-v0.9 |
 | Regression error analysis on California Housing | J | 🟡 v0.9 |
 | Calibration with AIC binning | K | 🟡 v0.10 |

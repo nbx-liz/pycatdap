@@ -116,9 +116,15 @@ pycatdap/
 │   ├── matplotlib.py
 │   └── plotly.py
 ├── profile.py              # ワンコール EDA レポート（§5.9, H-0001 / H-0007）
-├── templates/              # jinja2 HTML テンプレート（H-0007）
-│   └── profile.html.j2
-├── error/                  # ML 誤差分析（§5.8, H-0002）
+├── quality_report.py       # データ品質スキャン（§5.9, H-0008 PR-D2）
+├── target_analysis.py      # target 駆動 ΔAIC ランキング（§5.9, H-0008 PR-D3）
+├── _quality.py             # 品質警告ヘルパー（profile / quality_report 共有, H-0008 PR-D1）
+├── templates/              # jinja2 HTML テンプレート（H-0007 / H-0008）
+│   ├── profile.html.j2
+│   ├── quality_report.html.j2
+│   ├── target_analysis.html.j2
+│   └── suite_result.html.j2
+├── error/                  # ML 誤差分析（§5.8, H-0002、Phase G–L で実装予定）
 │   ├── labels.py
 │   ├── analysis.py
 │   ├── confusion.py
@@ -126,14 +132,17 @@ pycatdap/
 │   ├── calibration.py
 │   ├── slice_discovery.py
 │   └── drift.py
-├── suite/                  # CI 統合スイート（§5.10, H-0002）
-│   ├── independence.py
-│   ├── cardinality.py
-│   └── pooling.py
-└── measures/               # Pluggable な関連度指標（§5.11, H-0002）
-    ├── aic.py
-    ├── cramers_v.py
-    └── mutual_info.py
+├── suite/                  # CI 統合スイート（§5.10, H-0008 PR-D5、v0.6.0 で実装）
+│   ├── __init__.py
+│   ├── _base.py            # Check Protocol, CheckResult, SuiteResult
+│   ├── _checks.py          # 4 個別 check classes
+│   └── _suites.py          # AICIndependenceSuite preset
+└── measures/               # Pluggable な関連度指標（§5.11, H-0008 PR-D4、v0.6.0 で実装）
+    ├── __init__.py
+    ├── _registry.py        # register / get / list_measures
+    ├── _aic.py             # ΔAIC measure (compute_delta_aic wrapper)
+    ├── _cramers_v.py       # pure-numpy Cramér's V
+    └── _mutual_info.py     # pure-numpy mutual information (nats)
 ```
 
 ---
@@ -726,47 +735,87 @@ class QualityWarning:
     metric: float
 ```
 
-### 5.10 `suite/` — CI 統合可能なテストスイート（H-0002 で追加）
+### 5.10 `suite/` — CI 統合可能なテストスイート（H-0002 + H-0008 PR-D5、v0.6.0 で実装）
 
-deepchecks 風 API。CI/CD パイプラインに組込可能。
+deepchecks 風 API。CI/CD パイプラインに `assert` 1 行で組込可能。
+全 `Check` は `@dataclass(frozen=True)` で **`eval()` / `exec()` / 文字列 DSL を一切使わない** — 信頼できない DataFrame に対しても安全。
 
 ```python
 suite = pycatdap.suite.AICIndependenceSuite(df, response="symptoms")
 result = suite.run()
-assert result.passed, result.warnings
-
-# 個別チェック
-- IndependenceCheck       # ΔAIC で説明変数の独立性検定
-- HighCardinalityCheck    # >50 カテゴリで警告
-- ConstantColumnCheck     # 定数列・準定数列
-- PoolingSuggestionCheck  # AIC 最適 binning の推奨
-
-@dataclass
-class SuiteResult:
-    passed: bool
-    warnings: list[Warning]
-    checks: list[CheckResult]
-
-    def to_html(self, path) -> None: ...
+assert result.passed, result.summary()
 ```
 
-### 5.11 `measures/` — Pluggable な関連度指標（H-0002 で追加）
+含まれる checks:
 
-pysubgroup 互換の interestingness measure 設計（DP-6）。
+| Check | severity | response 必須 | デフォルト閾値 |
+|---|---|---|---|
+| `ConstantColumnCheck` | warning | no | n/a |
+| `HighCardinalityCheck` | info | no | `max_categories=50`, `max_ratio=0.5` |
+| `IndependenceCheck` | warning | **yes** | `delta_aic_max=0.0` |
+| `PoolingSuggestionCheck` | info | **yes** | `min_improvement=5.0`, `fixed_bins=4` |
 
 ```python
-# 標準提供
-pycatdap.measures.aic(cross_freq, marginal_e, marginal_f, n) -> float
-pycatdap.measures.cramers_v(cross_freq) -> float
-pycatdap.measures.mutual_info(cross_freq) -> float
+@dataclass(frozen=True)
+class CheckResult:
+    name: str
+    passed: bool
+    severity: Literal["info", "warning"]
+    message: str
+    metric: float | None
+    affected_columns: list[str]
 
-# ユーザー定義 measure の登録
-pycatdap.measures.register("my_measure", fn)
+@dataclass(frozen=True)
+class SuiteResult:
+    suite_name: str
+    checks: list[CheckResult]
+    n_rows: int
+    n_cols: int
+    response: str | None
 
-# 利用箇所
-pycatdap.error.discover_error_slices(df, y_true, y_pred, measure="aic")
-pycatdap.association_matrix(df, measure="cramers_v")
+    @property
+    def passed(self) -> bool: ...     # warning-severity 失敗時のみ False
+    @property
+    def failures(self) -> list[CheckResult]: ...   # info も含む全 fail check
+
+    def summary(self) -> str: ...
+    def show(self) -> None: ...
+    def to_html(self, path: str | Path | None = None) -> str: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_plotly_json(self) -> dict[str, Any]: ...
 ```
+
+`SuiteResult.passed` は `"warning"`-severity の check が落ちたときのみ `False`。`"info"`-severity の発見(例: 高カーディナリティ)は advisory にとどまり `passed` を維持する。
+
+### 5.11 `measures/` — Pluggable な関連度指標（H-0002 + H-0008 PR-D4、v0.6.0 で実装）
+
+pysubgroup 互換の interestingness measure 設計（DP-6）。
+全 measure は **uniform signature** `Callable[[npt.NDArray[np.float64]], float]` — 2D 分割表を受け取りスカラー association score を返す。
+
+```python
+import numpy as np
+
+# 標準提供 measure(分割表 → スカラー)
+pycatdap.measures.aic(cross_freq) -> float          # ΔAIC、負ほど informative
+pycatdap.measures.cramers_v(cross_freq) -> float    # 0..1、scipy 不要
+pycatdap.measures.mutual_info(cross_freq) -> float  # nats, ≥ 0、scipy 不要
+
+# Registry
+pycatdap.measures.register("my_measure", fn)
+pycatdap.measures.get("my_measure") -> Callable
+pycatdap.measures.list_measures() -> list[str]
+
+# association_matrix からの利用
+m = pycatdap.association_matrix(df, measure="cramers_v")
+m = pycatdap.association_matrix(df, measure="mutual_info")
+m = pycatdap.association_matrix(df, measure="my_measure")   # 登録済みなら何でも
+```
+
+3 つの標準 measure は import 時に self-register されるので `measures.get("aic")` は追加設定なしで動作する。`unregister` 関数は意図的に提供しない — 名前付き measure の hot-swap は `association_matrix` を非決定的にするため。
+
+`association_matrix` の dispatch:
+- `measure="aic"`: 既存の `target_summary` 経由 (continuous response も H-0005 regression AIC で動作)
+- それ以外: 両列を `pd.qcut` で binning(NaN は `_missing_` カテゴリに畳む)→ crosstab → measure callable
 
 ---
 

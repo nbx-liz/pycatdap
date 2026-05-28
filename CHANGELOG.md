@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Tutorial Notebook 09 — `docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb`
+  walks through every Phase D API on the Titanic dataset:
+  `quality_report` → `target_analysis` → `pycatdap.measures.*` →
+  `pycatdap.suite.AICIndependenceSuite` with the
+  `assert suite_result.passed, suite_result.summary()` CI idiom
+  (H-0008 PR-D6).
 - `pycatdap.suite` subpackage — deepchecks-style CI-integrable suite
   per Issue #15 (H-0008 PR-D5). Public API:
   - `pycatdap.suite.AICIndependenceSuite(df, response=...).run() ->
@@ -56,9 +62,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 - Internal refactor: `_scan_quality` lifted from `pycatdap.profile`
-  into `pycatdap._quality` so `quality_report` / `profile` / (upcoming)
+  into `pycatdap._quality` so `quality_report` / `profile` /
   `pycatdap.suite` share one helper. Public surface unchanged
   (H-0008 PR-D1).
+- `BLUEPRINT.md` §3.1 / §5.10 / §5.11 updated to reflect the shipped
+  Phase D module structure and APIs (H-0008 PR-D6).
+- `README.md` Quickstart now shows the target-analysis / quality
+  report / suite / measures workflow (H-0008 PR-D6).
+- `SuiteResult.warnings` → `SuiteResult.failures` (rename, H-0008
+  PR-D6 quality pass). The previous name was misleading because the
+  property returned ALL non-passing checks regardless of severity,
+  including `"info"`-severity findings that do not flip `.passed`
+  to `False`. The list semantics are unchanged. Pre-release rename;
+  no users yet depend on `.warnings` since v0.6.0 is not yet
+  published.
+
+### Fixed
+- `quality_report(df)` and `profile(df)` no longer raise
+  `ZeroDivisionError` on a 0-row DataFrame — `_scan_quality` skips
+  columns with `n_obs == 0` and returns an empty warnings list
+  (H-0008 PR-D6 quality pass; caught by python-reviewer).
+- `pycatdap.measures.cramers_v` no longer emits
+  `RuntimeWarning: invalid value encountered in divide` on tables
+  with an all-zero marginal row or column — switched to
+  `np.divide(..., where=...)` for side-effect-free masked division.
+  The returned numeric value is unchanged (H-0008 PR-D6 quality pass).
 
 ## [0.5.0] — 2026-05-28
 

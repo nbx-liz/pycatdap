@@ -257,6 +257,24 @@ def test_show_without_ipython_falls_back_to_stdout(
     assert "constant" in out
 
 
+def test_empty_dataframe_does_not_divide_by_zero() -> None:
+    """quality_report on a 0-row frame must return an empty report, not crash.
+
+    Regression for the H-0008 PR-D6 quality pass: _scan_quality used to
+    compute ``card.n_missing / card.n_obs`` unconditionally and raised
+    ZeroDivisionError for any column with no observations. quality_report
+    is documented as a CI gate, so an empty staging fixture must produce
+    a clean ``QualityReport(warnings=[], passed=True)`` rather than a
+    traceback.
+    """
+    df = pd.DataFrame({"a": pd.Series([], dtype=str), "b": pd.Series([], dtype=float)})
+    qr = pycatdap.quality_report(df)
+    assert qr.passed is True
+    assert qr.warnings == []
+    assert qr.n_rows == 0
+    assert qr.n_cols == 2
+
+
 def test_show_with_no_warnings_fallback(
     df_clean: pd.DataFrame,
     capsys: pytest.CaptureFixture[str],

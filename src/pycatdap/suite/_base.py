@@ -116,22 +116,30 @@ class SuiteResult:
         return not any((not c.passed) and c.severity == "warning" for c in self.checks)
 
     @property
-    def warnings(self) -> list[CheckResult]:
-        """Sub-list of checks that did NOT pass, in original order."""
+    def failures(self) -> list[CheckResult]:
+        """Sub-list of checks that did NOT pass, in original order.
+
+        Returns BOTH ``"warning"``- and ``"info"``-severity failures —
+        callers that only want the gating subset should filter on
+        ``severity``. (This is named ``failures`` rather than
+        ``warnings`` to avoid confusion with the severity label: a
+        suite can have ``failures`` while ``passed`` is still True
+        because the failures are info-only.)
+        """
         return [c for c in self.checks if not c.passed]
 
     def summary(self) -> str:
         """One-line summary suitable for an ``assert`` message."""
-        if not self.warnings:
+        if not self.failures:
             return (
                 f"{self.suite_name}: all {len(self.checks)} checks passed "
                 f"({self.n_rows} rows × {self.n_cols} cols)"
             )
-        by_sev: Counter[str] = Counter(c.severity for c in self.warnings)
+        by_sev: Counter[str] = Counter(c.severity for c in self.failures)
         sev_str = ", ".join(f"{n} {sev}" for sev, n in sorted(by_sev.items()))
-        failing = ", ".join(c.name for c in self.warnings)
+        failing = ", ".join(c.name for c in self.failures)
         return (
-            f"{self.suite_name}: {len(self.warnings)} of {len(self.checks)} "
+            f"{self.suite_name}: {len(self.failures)} of {len(self.checks)} "
             f"checks failed ({sev_str}) — {failing}"
         )
 

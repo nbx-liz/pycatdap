@@ -80,6 +80,30 @@ matrix), `top_subsets` (CATDAP-02 result when `response` is given), and
 [`docs/tutorials/08-profile-titanic.ipynb`](docs/tutorials/08-profile-titanic.ipynb)
 for an end-to-end walkthrough.
 
+### Target analysis and CI-integrable suite (v0.6+)
+
+```python
+# Target-driven: rank every column by ΔAIC vs `response`, keep top-K cross-tabs
+ta = pycatdap.target_analysis(df, response="symptoms", top_k=5)
+ta.ranking                         # variable / delta_aic / kind / n_obs
+ta.top_summaries["cholesterol"]    # full TargetSummary for drill-down
+
+# Quality scan only (fast — no catdap2 / association_matrix)
+qr = pycatdap.quality_report(df)
+assert qr.passed, qr.show()
+
+# CI gate: one-line data contract
+suite = pycatdap.suite.AICIndependenceSuite(df, response="symptoms")
+result = suite.run()
+assert result.passed, result.summary()
+
+# Non-AIC association measures (pure-numpy, no scipy)
+m = pycatdap.association_matrix(df, measure="cramers_v")
+pycatdap.measures.register("my_measure", my_fn)  # pluggable per pysubgroup convention
+```
+
+See [`docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb`](docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb).
+
 ### ML error analysis (planned, v0.8+)
 
 ```python
