@@ -13,7 +13,7 @@ Main functions:
 
 from __future__ import annotations
 
-from pycatdap import datasets, measures
+from pycatdap import datasets, measures, suite
 from pycatdap._association import association_matrix
 from pycatdap._target_pair import (
     RegressionTargetSummary,
@@ -71,6 +71,7 @@ __all__ = [
     "plot_variable",
     "profile",
     "quality_report",
+    "suite",
     "target_analysis",
     "target_summary",
 ]
