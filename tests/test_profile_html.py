@@ -183,9 +183,9 @@ class TestAtomicWrite:
         calls: list[Path] = []
         original = _io.atomic_write_text
 
-        def spy(path: str | Path, text: str) -> None:
+        def spy(path: str | Path, text: str, encoding: str = "utf-8") -> None:
             calls.append(Path(path))
-            original(path, text)
+            original(path, text, encoding=encoding)
 
         monkeypatch.setattr(_io, "atomic_write_text", spy)
         # ALSO patch the reference imported into profile module if any.
