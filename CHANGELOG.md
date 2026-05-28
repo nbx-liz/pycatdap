@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     top / continuous 統計量 / ΔAIC vs response / AIC binning 境界
   - `QualityWarning` frozen dataclass — 4 種類の警告（`high_cardinality` /
     `constant` / `id_candidate` / `high_missing`、`quality_thresholds=` で上書き可）
+  - `ProfileResult.to_html(path=None)` — jinja2 テンプレート（`src/pycatdap/templates/profile.html.j2`）
+    で単一の self-contained HTML を生成。Plotly figure は `include_plotlyjs="inline"`
+    で同梱（オフライン閲覧可）。`path` 指定時は `_io.atomic_write_text` 経由で原子的書き込み。
+    `jinja2` が無い場合は `pycatdap[plotly]` extras を促す `ImportError`
 
 ## [0.4.0] — 2026-05-27
 
