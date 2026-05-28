@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-05-28
+
+このリリースは **H-0010 Phase G** に対応し、ML 誤差分析 arc の基盤となる
+**誤差ラベリングユーティリティ** と、Phase G チュートリアル用に
+**D3 demo データセット** を同梱する。BLUEPRINT.md §3.1 / §5.8 を参照。
+
+主要な追加:
+- `pycatdap.error.error_label / confusion_label / residual_label / abs_residual_pool`
+  — 予測結果を categorical Series にラベル付け
+- `pycatdap.error._detect_task` — task auto-detection ヒューリスティック
+- `pycatdap.datasets.load_german_credit / load_heart_disease / load_penguins`
+  — D3 demo データセット(UCI / Palmer Penguins)
+
+### Added — Phase G error labeling (`pycatdap.error`)
+- `error_label(y_true, y_pred)` — 任意 task で予測の正誤を
+  `pd.Series("correct" | "incorrect")` で返す。
+- `confusion_label(y_true, y_pred, *, positive=None)` — 二値分類で
+  TP/FP/FN/TN を `pd.Series` で返す。`positive=None` の時は 2 ユニーク値の
+  片方(大きい方)を自動選択。**multiclass は `NotImplementedError`**(H-0010 §C
+  により one-vs-rest は v0.8.0+ 後続)。
+- `residual_label(y_true, y_pred, *, method="aic_pool", n_bins=4)` —
+  回帰残差を 3 つの method(`aic_pool` / `quantile` / `equal_width`)で
+  ビン化。`aic_pool` は `pycatdap._pooling.equal_pooling` を再利用。
+- `abs_residual_pool(y_true, y_pred, *, n_bins=4)` — `|y_true - y_pred|` を
+  AIC pooling で binned categorical に。
+- `_detect_task(y_true, y_pred)` — 文字列/object → classification、
+  両方 int で <= 20 ユニーク → classification、float in [0,1] vs binary
+  y_true → classification、それ以外 → regression。
+
+Phase G は **意図的に新規 dataclass を導入していない**。H-0009 で対処した
+shallow-freeze pattern の再発を防ぐため、すべて `pd.Series` で返す。
+`ErrorAnalysisResult` は Phase H(v0.8.0)で v0.6.1 immutable pattern を
+最初から適用して導入する。
+
+### Added — D3 demo datasets (`pycatdap.datasets`)
+- `load_german_credit()` — UCI Statlog German Credit(1000 × 21)。
+  Binary classification benchmark。`class` ラベルは `"good"` / `"bad"`、
+  700/300 split。Public domain via OpenML id `credit-g` v1。
+- `load_heart_disease()` — UCI Cleveland Heart Disease processed
+  subset(303 × 14)。Binary classification、`target` ラベルは 0/1。
+  全列 numeric。CC BY 4.0 via OpenML id `heart-disease` v1。
+- `load_penguins()` — Palmer Penguins(344 × 7)。3 クラス分類
+  `species ∈ {Adelie, Chinstrap, Gentoo}`。CC0 1.0 via OpenML id
+  `penguins` v1。
+
+データセット issue は **独立リリースとして扱わず、それを使う Phase に同梱**
+する方針(2026-05-28 architect レビュー、PLAN.md §3.3 で文書化)。D3 は
+v0.5.0 → v0.6.0 と 2 回スリップしたが、Phase G が demo データを必要とする
+ため自然な fold-in タイミングとして v0.7.0 にまとめた。
+
+### Added — Tutorial
+- `docs/tutorials/10-phase-g-error-labeling.ipynb` — German Credit と
+  合成回帰データで Phase G API を体系的にデモ。Phase H への接続を解説。
+
+### Changed
+- BLUEPRINT.md §3.1 の `error/` ツリーを更新(`_labels.py` 実装済を反映)。
+- BLUEPRINT.md §5.8 の Phase G セクションを「v0.7.0 で実装済」に格上げ。
+
+### References
+- HISTORY.md H-0010 (Phase G + D3 dataset folding decision)
+- Issue #16 (Phase G)、Issue #23 (D3 datasets)
+
 ## [0.6.1] — 2026-05-28
 
 ### Changed — API hardening (breaking for callers that mutated result objects)

@@ -124,14 +124,15 @@ pycatdap/
 │   ├── quality_report.html.j2
 │   ├── target_analysis.html.j2
 │   └── suite_result.html.j2
-├── error/                  # ML 誤差分析（§5.8, H-0002、Phase G–L で実装予定）
-│   ├── labels.py
-│   ├── analysis.py
-│   ├── confusion.py
-│   ├── residual.py
-│   ├── calibration.py
-│   ├── slice_discovery.py
-│   └── drift.py
+├── error/                  # ML 誤差分析（§5.8, H-0002、Phase G で `_labels.py` 実装済 v0.7.0、H〜L は今後）
+│   ├── __init__.py         # 公開 API
+│   ├── _labels.py          # error_label / confusion_label / residual_label / abs_residual_pool / _detect_task（v0.7.0）
+│   ├── analysis.py         # error_analysis() one-call（Phase H, v0.8.0）
+│   ├── confusion.py        # plot_confusion 等（Phase I, v0.9.0）
+│   ├── residual.py         # residual_plot 等（Phase J, v0.9.0）
+│   ├── calibration.py      # calibration_curve 等（Phase K, v0.10.0）
+│   ├── slice_discovery.py  # discover_error_slices（Phase L1, v0.11.0）
+│   └── drift.py            # compare_cohorts / detect_drift（Phase L2, v0.12.0）
 ├── suite/                  # CI 統合スイート（§5.10, H-0008 PR-D5、v0.6.0 で実装）
 │   ├── __init__.py
 │   ├── _base.py            # Check Protocol, CheckResult, SuiteResult
@@ -603,16 +604,20 @@ pycatdap.association_plot(table, *, threshold=2.0, backend=...)
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
 
-### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加）
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase G で部分実装 v0.7.0）
 
 ```python
-# 誤差ラベリング
-pycatdap.error.error_label(y_true, y_pred) -> pd.Series
-pycatdap.error.confusion_label(y_true, y_pred) -> pd.Series
-pycatdap.error.residual_label(y_true, y_pred, method="aic_pool") -> pd.Series
-pycatdap.error.abs_residual_pool(y_true, y_pred) -> pd.Series
+# 誤差ラベリング（Phase G、v0.7.0 で実装済）
+pycatdap.error.error_label(y_true, y_pred) -> pd.Series        # "correct"/"incorrect"
+pycatdap.error.confusion_label(y_true, y_pred, *, positive=None) -> pd.Series
+                                                                # "TP"/"FP"/"FN"/"TN"
+                                                                # multiclass は v0.8.0+ で対応(現在 NotImplementedError)
+pycatdap.error.residual_label(y_true, y_pred, *, method="aic_pool", n_bins=4) -> pd.Series
+                                                                # method = "aic_pool"|"quantile"|"equal_width"
+pycatdap.error.abs_residual_pool(y_true, y_pred, *, n_bins=4) -> pd.Series
+pycatdap.error._detect_task(y_true, y_pred) -> Literal["classification", "regression"]
 
-# 1コール誤差分析
+# 1コール誤差分析（Phase H、v0.8.0 で実装予定）
 pycatdap.error_analysis(
     df, y_true, y_pred,
     task="auto" | "classification" | "regression"
