@@ -2161,3 +2161,161 @@ CHANGELOG に明記する文言案:
 - architect 助言(2026-05-28): Phase G 開始前に v0.6.1 patch で先行修正(Phase G result dataclass が間違ったパターンを継承するのを避ける)
 - Python types.MappingProxyType: <https://docs.python.org/3/library/types.html#types.MappingProxyType>
 - pandas DataFrame.flags: <https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.flags.html>
+
+---
+
+## 2026-05-28: Phase G 誤差ラベリング + D3 デモデータセット同梱
+
+- ID: `H-0010`
+- Status: `proposed`
+- Scope: `API | datasets`
+- Related: `H-0001 Phase G`, `H-0002 FR-4`, `BLUEPRINT.md §5.8`, Issue #16, Issue #23
+
+### Context
+
+H-0008(v0.6.0)で EDA arc(Phase A〜D)が完了し、v0.7.0 以降は **ML 誤差分析 arc(Phase G〜L)** を進める。Phase G は誤差ラベリングの基盤を提供し、後続の Phase H(`error_analysis()` ワンコール)/ I+J(誤差可視化)/ K(キャリブレーション)/ L(スライス発見)が直接依存する。
+
+並行して、データセット拡張ロードマップ(H-0003)の D3(German Credit / Heart Disease / Penguins)は v0.5.0 → v0.6.0 と **2 回スリップ** している。原因は「独立リリースとして扱うとフィーチャー軸のリリースナラティブに勝てない」構造的問題で、2026-05-28 architect レビューで「Phase G にはラベル付き誤差例のデモデータが必要なので、D3 を Phase G に同梱する」方針が決まった(PLAN.md §3.3 反映済)。
+
+### Proposal
+
+#### A. Phase G 公開 API
+
+BLUEPRINT.md §5.8 に既に定義済み。本 Proposal で確定する:
+
+```python
+# 二値・多値分類: 予測の正誤を「correct/incorrect」ラベルに
+pycatdap.error.error_label(
+    y_true: pd.Series | np.ndarray | list,
+    y_pred: pd.Series | np.ndarray | list,
+) -> pd.Series   # categorical("correct" | "incorrect")
+
+# 二値分類: TP/FP/FN/TN ラベル
+pycatdap.error.confusion_label(
+    y_true: pd.Series | np.ndarray | list,
+    y_pred: pd.Series | np.ndarray | list,
+    *,
+    positive: Any = None,    # None → 自動推定(2 ユニーク値の片方)
+) -> pd.Series   # categorical("TP" | "FP" | "FN" | "TN")
+
+# 回帰: 残差を AIC binning でカテゴリ化
+pycatdap.error.residual_label(
+    y_true: pd.Series | np.ndarray | list,
+    y_pred: pd.Series | np.ndarray | list,
+    *,
+    method: Literal["aic_pool", "quantile", "equal_width"] = "aic_pool",
+    n_bins: int = 4,
+) -> pd.Series   # categorical(bin labels)
+
+# 回帰: |residual| を AIC pooling
+pycatdap.error.abs_residual_pool(
+    y_true: pd.Series | np.ndarray | list,
+    y_pred: pd.Series | np.ndarray | list,
+    *,
+    n_bins: int = 4,
+) -> pd.Series   # categorical(bin labels)
+
+# 内部 helper(公開)
+pycatdap.error._detect_task(
+    y_true: pd.Series | np.ndarray,
+    y_pred: pd.Series | np.ndarray,
+) -> Literal["classification", "regression"]
+```
+
+#### B. データクラス契約
+
+Phase G は label を `pd.Series` で返すだけで result dataclass を導入しない(H-0009 shallow-freeze 問題の再発を避ける)。Phase H(`error_analysis()`)で `ErrorAnalysisResult` を導入する際は v0.6.1 で確立した immutable pattern(`tuple` / `MappingProxyType` / `__post_init__` freeze)に従う。
+
+#### C. Multiclass 仕様
+
+`confusion_label` の multiclass サポートは **v0.7.0 では `NotImplementedError`**(明示エラー)。one-vs-rest 実装は v0.8.0 以降の別 PR で対応。理由:
+- v0.7.0 は binary をしっかり仕上げる focused release
+- one-vs-rest は per-class 出力か aggregate 出力か設計判断が必要(PLAN.md §4.3 で「v0.7 開始時 multiclass 仕様」が未確定とフラグ済)
+- error message に `"only binary classification supported in v0.7.0; see #16 follow-up for multiclass"` を含めて誘導
+
+#### D. Task auto-detection ヒューリスティック
+
+`_detect_task(y_true, y_pred)`:
+- 両方が integer dtype かつ unique 値が 20 以下 → `classification`
+- y_pred が float でレンジが [0, 1] かつ y_true が binary → `classification`(probability prediction)
+- それ以外 → `regression`
+- 明確化必要時は呼び出し側で `task=` を明示する API を後続 Phase H で導入する
+
+#### E. D3 データセット同梱
+
+3 データセットを `src/pycatdap/data/` に CSV(または gz)で同梱:
+
+| Dataset | Rows × Cols | Task | License |
+|---|---|---|---|
+| German Credit | 1000 × 21 | Binary classification (creditworthy/bad) | UCI public domain |
+| Heart Disease | 303 × 14 | Binary classification (heart disease presence) | UCI CC BY 4.0 |
+| Penguins | 344 × 8 | 3-class multiclass (species) | CC0 (palmerpenguins) |
+
+ローダー関数:
+
+```python
+pycatdap.datasets.load_german_credit() -> pd.DataFrame
+pycatdap.datasets.load_heart_disease() -> pd.DataFrame
+pycatdap.datasets.load_penguins() -> pd.DataFrame
+```
+
+Penguins は Phase G が **binary だけ** をサポートする v0.7.0 時点では `_detect_task` で classification と判定されるが `confusion_label` は `NotImplementedError`(項目 C 通り)。Tutorial では `error_label`(正誤 binary)で使用、multiclass 拡張は Phase H 以降。
+
+### Alternatives Considered
+
+#### A1: Phase G を multiclass フル対応で出荷
+- **不採用理由**: PLAN.md §4.3 で「one-vs-rest? 全 confusion 行列?」が未確定とフラグされている。v0.7.0 を focused release にし、binary を完全な品質で出してから v0.8.0 で multiclass 設計を別途行う方が API 設計事故が少ない。
+
+#### A2: D3 dataset を v0.8.0 (Phase H) に持ち越し
+- **不採用理由**: 既に v0.5.0 → v0.6.0 と 2 回スリップ済。Phase G が demo データを必要とするため自然な fold-in タイミング。architect 推奨。
+
+#### A3: Phase G に result dataclass を導入(`ErrorLabelResult` 等)
+- **不採用理由**: 4 関数とも `pd.Series` を返す単純な計算ユーティリティで dataclass 化のメリットが小さい。むしろ shallow-freeze 問題(H-0009 で対処したばかり)の再発リスクが高い。dataclass 導入は Phase H(複数ラベル + ranking + slice を bundle する `ErrorAnalysisResult`)で行う。
+
+#### A4: Phase G を `_pooling.py` の薄い wrapper にする
+- **不採用理由**: `residual_label(method="aic_pool")` は `_pooling.py` を呼ぶが、`error_label` / `confusion_label` は別ロジック。Phase G を `error/` サブパッケージとして独立させることで H/I+J/K/L が import しやすい構造になる。
+
+### Acceptance Criteria
+
+- [ ] `pycatdap.error` サブパッケージが存在
+- [ ] `error_label` / `confusion_label` / `residual_label` / `abs_residual_pool` / `_detect_task` が実装され公開
+- [ ] `confusion_label` は multiclass 入力で `NotImplementedError` を raise(明示メッセージ付き)
+- [ ] `residual_label` の 3 つの method(`aic_pool` / `quantile` / `equal_width`)全てテストされる
+- [ ] `pycatdap.datasets.load_german_credit` / `load_heart_disease` / `load_penguins` が動作
+- [ ] 各データセット CSV が `src/pycatdap/data/` に同梱され `pip install pycatdap` で使える
+- [ ] 各データセット LICENSE 出典が docstring に明記
+- [ ] 80% 以上の line coverage、TDD で test → impl
+- [ ] BLUEPRINT.md §5.8 が公開状態(現在 planned → released へ)
+- [ ] Tutorial Notebook 10 で `load_german_credit` + Phase G の流れを示す
+- [ ] Issue #16 + Issue #23 が close される
+
+### PR 分割
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-F0**(本 Proposal) | `docs(history): propose H-0010` | none |
+| **PR-F1** | Phase G error labeling utilities(`error_label` / `confusion_label` / `residual_label` / `abs_residual_pool` / `_detect_task`)+ テスト | PR-F0 merge |
+| **PR-F2** | D3 datasets(German Credit / Heart Disease / Penguins)CSV bundle + loader 関数 + 出典 docstring + テスト | PR-F0 merge(F1 と並行可) |
+| **PR-F3** | Tutorial Notebook 10 + BLUEPRINT 反映 + README quickstart 更新 + CHANGELOG cut to v0.7.0 + Issue #15 + Issue #23 close | PR-F1 + PR-F2 merge |
+| **PR-F4**(release) | `release: v0.7.0` | PR-F3 merge |
+
+各 PR は CI green を確認してから次に進む。全 PR は develop に **squash** で merge。release PR(v0.7.0)のみ `--merge`(release line 維持)。
+
+### Decision
+
+- Date: `TBD`
+- Result: `pending`
+- Notes: PR-F0(本 PR)で Proposal 承認待ち。
+
+### Migration
+
+破壊的変更なし。新規 API + 新規データセットのため移行不要。既存 `pycatdap.datasets.load_*` は無影響。
+
+### Related References
+
+- 親仕様: H-0001 Phase G、H-0002 FR-4、Issue #16、Issue #23
+- architect レビュー 2026-05-28: Phase G 直進 + D3 fold-in + multiclass deferred
+- UCI ML Repository German Credit: <https://archive.ics.uci.edu/ml/datasets/Statlog+(German+Credit+Data)>
+- UCI ML Repository Heart Disease: <https://archive.ics.uci.edu/ml/datasets/heart+disease>
+- palmerpenguins: <https://allisonhorst.github.io/palmerpenguins/>
+- H-0009 shallow-freeze pattern: Phase G は dataclass を導入せず `pd.Series` のみ返すことで再発を予防
