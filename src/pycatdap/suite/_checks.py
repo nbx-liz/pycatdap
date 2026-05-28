@@ -51,7 +51,7 @@ class ConstantColumnCheck:
                 else f"{len(affected)} constant column(s): {', '.join(affected)}"
             ),
             metric=float(len(affected)),
-            affected_columns=affected,
+            affected_columns=tuple(affected),
         )
 
 
@@ -96,7 +96,7 @@ class HighCardinalityCheck:
                 )
             ),
             metric=worst_ratio if affected else 0.0,
-            affected_columns=affected,
+            affected_columns=tuple(affected),
         )
 
 
@@ -143,7 +143,7 @@ class IndependenceCheck:
                 if affected and worst_delta_aic != float("-inf")
                 else 0.0
             ),
-            affected_columns=affected,
+            affected_columns=tuple(affected),
         )
 
 
@@ -205,7 +205,7 @@ class PoolingSuggestionCheck:
                 )
             ),
             metric=worst_improvement,
-            affected_columns=affected,
+            affected_columns=tuple(affected),
         )
 
 

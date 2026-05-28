@@ -49,8 +49,10 @@ class CheckResult:
     metric : float or None
         Aggregated numeric metric the check used (e.g. worst-column
         cardinality ratio). ``None`` when no single metric makes sense.
-    affected_columns : list[str]
-        Column names the check flagged. Empty when ``passed`` is True.
+    affected_columns : tuple[str, ...]
+        Column names the check flagged. Empty tuple when ``passed`` is
+        True. Immutable since v0.6.1 (H-0009) — call ``list(...)`` to
+        get a mutable copy.
     """
 
     name: str
@@ -58,7 +60,7 @@ class CheckResult:
     severity: Severity
     message: str
     metric: float | None
-    affected_columns: list[str]
+    affected_columns: tuple[str, ...]
 
 
 class Check(Protocol):
@@ -92,8 +94,9 @@ class SuiteResult:
     ----------
     suite_name : str
         Class name of the suite that produced this result.
-    checks : list[CheckResult]
-        Per-check outcomes in execution order.
+    checks : tuple[CheckResult, ...]
+        Per-check outcomes in execution order. Immutable since
+        v0.6.1 (H-0009) — call ``list(...)`` to get a mutable copy.
     n_rows, n_cols : int
         Shape of the inspected frame.
     response : str or None
@@ -101,7 +104,7 @@ class SuiteResult:
     """
 
     suite_name: str
-    checks: list[CheckResult]
+    checks: tuple[CheckResult, ...]
     n_rows: int
     n_cols: int
     response: str | None

@@ -763,12 +763,12 @@ class CheckResult:
     severity: Literal["info", "warning"]
     message: str
     metric: float | None
-    affected_columns: list[str]
+    affected_columns: tuple[str, ...]   # immutable since v0.6.1 (H-0009)
 
 @dataclass(frozen=True)
 class SuiteResult:
     suite_name: str
-    checks: list[CheckResult]
+    checks: tuple[CheckResult, ...]     # immutable since v0.6.1 (H-0009)
     n_rows: int
     n_cols: int
     response: str | None
