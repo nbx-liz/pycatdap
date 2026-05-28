@@ -2319,3 +2319,278 @@ Penguins は Phase G が **binary だけ** をサポートする v0.7.0 時点�
 - UCI ML Repository Heart Disease: <https://archive.ics.uci.edu/ml/datasets/heart+disease>
 - palmerpenguins: <https://allisonhorst.github.io/palmerpenguins/>
 - H-0009 shallow-freeze pattern: Phase G は dataclass を導入せず `pd.Series` のみ返すことで再発を予防
+
+## 2026-05-28: Phase H `error_analysis()` ワンコール + D4 fetch データセット
+
+- ID: `H-0011`
+- Status: `proposed`
+- Scope: `API | datasets`
+- Related: `H-0001 Phase H`, `H-0002 FR-2 / FR-8`, `H-0009 shallow-freeze pattern`, `H-0010 Phase G`, `BLUEPRINT.md §5.8`, Issue #17, Issue #24
+
+### Context
+
+H-0010(v0.7.0)で Phase G(`error_label` / `confusion_label` / `residual_label` / `abs_residual_pool` / `_detect_task`)が出荷され、誤差を `pd.Series` として返す基盤が整った。
+
+Phase H(`error_analysis()` ワンコール)は次の合成を行う:
+
+```
+_detect_task → 適切な labeling 関数 → target_analysis(labeled_response) → ErrorAnalysisResult
+```
+
+これは `pycatdap.profile()`(H-0007)が EDA arc のワンコール入口だったのと同じ位置づけを ML 誤差分析 arc に持ち込むもので、後続 Phase I+J(可視化)/ K(キャリブレーション)/ L(スライス発見)の共通入口となる。
+
+並行して、D4(Adult Income / COMPAS / California Housing)を Phase H デモ用に H-0010 の dataset-folding policy に従って同梱する。D3(German Credit)が binary classification を、Penguins が multiclass を提供したのに対し、D4 は **規模(Adult: 32K 行)** **fairness 文脈(COMPAS)** **回帰タスク(California Housing)** の 3 補完を担う。
+
+### Proposal
+
+#### A. `error_analysis()` 公開 API
+
+```python
+pycatdap.error_analysis(
+    df: pd.DataFrame,
+    y_true: str | pd.Series | npt.NDArray,
+    y_pred: str | pd.Series | npt.NDArray,
+    *,
+    task: Literal["auto", "classification", "regression"] = "auto",
+    top_k: int = 5,
+    positive: Any = None,                # binary classification の positive class
+    residual_method: Literal["aic_pool", "quantile", "equal_width"] = "aic_pool",
+    n_bins: int = 4,
+    bins: int | None = None,             # 説明変数の binning(target_analysis に forward)
+    criterion: Literal["aic", "aicc", "bic"] = "bic",
+) -> ErrorAnalysisResult
+```
+
+**`y_true` / `y_pred` の受け入れ形式**(2 通り):
+- 列名(`str`): `df[y_true]` / `df[y_pred]` を引く
+- 配列(`pd.Series` | `np.ndarray`): `len(df)` と一致必須、`df` に存在しない列を扱える
+
+**Task dispatch**(`_detect_task` を流用):
+- `task="auto"`: `_detect_task(y_true, y_pred)` で判定
+- `task="classification"` + binary → `confusion_label` を主、補助で `error_label`
+- `task="classification"` + multiclass(3+ unique 値) → `error_label` のみ(`confusion_label` は H-0010 §C に従い NotImplementedError なので使わない)
+- `task="regression"` → `residual_label(method=residual_method, n_bins=n_bins)` を response として `target_analysis`
+
+**説明変数 ranking**:
+- 内部で `target_analysis(df_with_labels, response="<label_col>", top_k=top_k, bins=bins, criterion=criterion)` を呼び出し、その `ranking` / `top_summaries` をそのまま転載
+- これにより既存の `target_analysis` 実装(H-0008)を再利用、Phase H 専用 ranking ロジックは持たない
+
+#### B. `ErrorAnalysisResult` データクラス契約(v0.6.1 immutable pattern 準拠)
+
+```python
+@dataclass(frozen=True)
+class Slice:
+    """単一説明変数 × 単一エラーカテゴリの集中スライス。"""
+    variable: str                     # 説明変数名
+    category: str                     # その変数の値 / bin label(例 "young" / "[45, 60]")
+    error_category: str               # 誤差ラベル("incorrect" / "FN" / "bin_3" 等)
+    n_in_slice: int                   # スライス内サンプル数
+    n_error_in_slice: int             # うち error_category のサンプル数
+    error_rate: float                 # n_error_in_slice / n_in_slice
+    pearson_residual: float           # 標準化残差(大きいほど集中)
+    delta_aic: float                  # 親変数の ΔAIC(同変数の Slice 間で共通)
+
+@dataclass(frozen=True)
+class ErrorAnalysisResult:
+    task: Literal["classification", "regression"]
+    label_kind: Literal["error_label", "confusion_label", "residual_label"]
+    response_name: str                # 内部で生成したラベル列名("__error_label__" 等)
+    feature_ranking: pd.DataFrame     # variable / delta_aic / kind / n_obs(target_analysis 由来)
+    top_summaries: Mapping[str, TargetSummary]   # MappingProxyType, top_k 件
+    top_slices: tuple[Slice, ...]     # 全 top_k 変数を横断して |residual| 降順、最大 3×top_k 件
+    confusion: pd.DataFrame | None    # binary classification のみ(`confusion_label` のクロス表)
+    residual_pooling: Mapping[str, Any] | None    # regression のみ、bin 境界等
+    n_rows: int
+    n_correct: int | None             # classification のみ
+    n_incorrect: int | None
+    mae: float | None                 # regression のみ
+    rmse: float | None
+
+    def __post_init__(self) -> None:
+        # numpy buffer freeze on feature_ranking + confusion (target_analysis と同じ)
+        ...
+
+    def show(self) -> None: ...
+    def to_html(self, path: str | Path | None = None) -> str: ...
+    def to_dict(self) -> dict[str, Any]: ...
+    def to_plotly_json(self) -> dict[str, Any]: ...
+    def to_divexplorer_format(self) -> pd.DataFrame: ...
+```
+
+**Immutable 規約**(v0.6.1 H-0009 教訓):
+- `feature_ranking` / `confusion`: `__post_init__` で numpy buffer を `flags.writeable = False`
+- `top_summaries`: `MappingProxyType` でラップ
+- `top_slices`: `tuple` のみ(`list` 禁止)
+- `residual_pooling`: 仮に `dict` を渡されても `MappingProxyType` でラップ
+
+#### C. Slice 抽出ロジック
+
+Phase H は **単変数スライス**のみ扱う(多変数スライスは Phase L で対応):
+
+1. `feature_ranking` 上位 `top_k` 件の各変数について `TargetSummary` を取得済(`top_summaries`)
+2. 各 `TargetSummary.pearson_residuals` から:
+   - error_category(`"incorrect"` / `"FN"` / `"bin_3"` 等、コンテキスト依存で 1 つ選択)行の中で
+   - `|residual|` が **2.0 以上** のセルを集中スライス候補とする(統計学慣習: standardized residual > 2 = 有意な集中)
+3. 全変数横断で `|residual|` 降順にソート、最大 **3 × top_k** 件まで保持
+4. 各セルから `Slice(variable, category, error_category, ...)` を構築
+
+error_category の選択ルール:
+- `error_label`: `"incorrect"`(モデルが間違えた行)
+- `confusion_label`: `"FP"` と `"FN"` の 2 つを別 Slice として候補に
+- `residual_label`: 最大値 bin と最小値 bin の 2 つ(over-prediction / under-prediction)
+
+#### D. 出力 helper(`.show` / `.to_html` / `.to_plotly_json` / `.to_dict` / `.to_divexplorer_format`)
+
+`TargetAnalysisResult` の 4-method 契約に **`to_divexplorer_format()` を追加した 5-method 契約**:
+
+- `.show()`: header 行 → confusion(分類)or residual stats(回帰)→ feature_ranking → top_slices テーブル → top_summaries 順
+- `.to_html(path)`: jinja2 テンプレート `src/pycatdap/templates/error_analysis.html.j2`、plotly inline、atomic_write_text(H-0009)
+- `.to_dict()`: JSON-safe
+- `.to_plotly_json()`: `confusion` / `feature_ranking` バー / 各 `top_summaries` を組み合わせた section dict
+- `.to_divexplorer_format()`: DivExplorer subgroup API 互換 DataFrame(列: `description` / `size` / `error_rate` / `delta_aic` / `pearson_residual`)
+
+#### E. D4 データセット — sklearn-backed fetch
+
+実装は **`scikit-learn` の `fetch_openml` / `fetch_california_housing` を薄くラップ**:
+
+| Loader | バックエンド | 規模 | タスク |
+|---|---|---|---|
+| `pycatdap.datasets.fetch_california_housing()` | `sklearn.datasets.fetch_california_housing(as_frame=True)` | 20,640 × 9 | regression |
+| `pycatdap.datasets.fetch_adult_income()` | `sklearn.datasets.fetch_openml("adult", version=2, as_frame=True)` | 48,842 × 15 | binary classification |
+| `pycatdap.datasets.fetch_compas()` | `sklearn.datasets.fetch_openml("compas-two-years", version=4, as_frame=True)` | 5,278 × 14 | binary classification(fairness 文脈) |
+
+**設計判断**:
+- HTTP / retry / checksum / cache は sklearn に委譲(`~/scikit_learn_data/` 配下、自前で再実装しない)
+- `scikit-learn>=1.3` を `pycatdap[data]` extras として追加(`pip install pycatdap[data]`)
+- ローダーは sklearn 未導入時に `ImportError` で明示誘導
+- COMPAS の倫理的注意点は docstring に記載(ProPublica の disclaimer / bias 用デモ用途)
+- ネットワーク要求テストは `@pytest.mark.slow` + `pytest.importorskip("sklearn")` で gate
+- 既存 D1〜D3(`load_*`)は bundled CSV のまま変更なし、新規は `fetch_*` 接頭辞で区別
+
+#### F. 実装 safeguards(cross-check 2026-05-28 で抽出)
+
+第三者エージェントレビューで以下 3 つの実装トラップが洗い出された。実装フェーズで必須:
+
+**F-1. 内部生成ラベル列の列名衝突ガード**
+
+`error_analysis()` は `target_analysis(df_with_label_column, response="<internal_name>")` を呼ぶため、`df` に同名列が存在すると silent overwrite または KeyError が起きる。
+
+実装方針:
+- 候補名: `"__pycatdap_error_label__"` / `"__pycatdap_confusion_label__"` / `"__pycatdap_residual_label__"`(`__pycatdap_` プレフィックスで衝突確率を下げる)
+- 呼び出し時に `if internal_name in df.columns: raise ValueError(...)` で明示エラー
+- error message に「列名を変更するか `df.drop(columns=...)` で除去」誘導を含める
+- Acceptance Criteria に「衝突時に明示エラー」テスト追加
+
+**F-2. `confusion_label` クロス表での FP/FN 行欠落ガード**
+
+`pd.crosstab(confusion_label, explanatory)` は **完璧なモデル(全 TP/TN)で `"FP"` / `"FN"` 行を省略する**。`pearson_residuals.loc["FP"]` を素直に書くと KeyError。
+
+実装方針:
+- `_extract_slices` で `if error_cat not in pearson_residuals.index: continue` でガード
+- `confusion_label` 自体は `pd.Categorical(..., categories=["TP", "FP", "FN", "TN"])` で固定カテゴリを宣言済 (`_labels.py:183`) だが、`crosstab` の `dropna=False` を意識的に指定しない限り 0 行は捨てられる
+- 代替案: `pearson_residuals.reindex(index=["TP","FP","FN","TN"]).fillna(0.0)` で固定行を担保(よりロバスト)
+
+**F-3. `residual_label(method="aic_pool")` の bin 順序単調性は保証されている**
+
+cross-check で確認済(`src/pycatdap/_pooling.py:220-221`):
+
+```python
+boundaries = sorted(float(e) for e in edges[1:-1])
+codes = _codes_from_boundaries(values, boundaries)  # np.digitize against ascending
+```
+
+したがって `bin_0` = 最小残差(under-prediction)、最大番号 bin = 最大残差(over-prediction)は単調に保たれる。Slice 抽出で「`bin_0` / max bin の 2 つを別 Slice として候補に」前提は安全。実装では `n_categories = len(top_summary.counts.index)` から動的に bin_0 と bin_{n-1} を抽出。
+
+#### G. Phase H が解決しないこと(明示スコープアウト)
+
+- **Multivariable subgroup discovery**: 2+ 変数の組み合わせスライス。Phase L(`discover_error_slices`)で対応
+- **可視化**: confusion matrix / residual scatter の Plotly Figure 構築。Phase I+J で対応(`.to_plotly_json()` の confusion セクションは bar chart 程度に留める)
+- **Calibration**: `calibration_curve` / `brier_score` / `expected_calibration_error`。Phase K で対応
+- **Multiclass confusion**: `confusion_label` の one-vs-rest 拡張。`error_label` で代替し本格対応は別 Issue
+- **`PYCATDAP_DATA_DIR` env var**: Issue #24 で要求あるが sklearn の cache dir(`SCIKIT_LEARN_DATA`)を流用するため pycatdap 独自の env var は追加しない。docstring に sklearn 流儀を記載
+
+### Alternatives Considered
+
+#### A1: Phase H が独自に AIC ranking を再実装
+
+- **不採用理由**: `target_analysis()` (H-0008) と完全に同じ動作。重複実装は H-0009 で得た「内部実装も DRY に」教訓に反する。`target_analysis` を内部呼び出しすることでロジック・テスト・ドキュメントを 1 か所に集約。
+
+#### A2: `ErrorAnalysisResult` を `dataclass`(frozen なし) で導入
+
+- **不採用理由**: H-0009 で `frozen=True` でも shallow-freeze 問題があると判明し、v0.6.1 で `tuple` / `MappingProxyType` / `__post_init__` パターンを確立した。Phase H は新規 dataclass の最初の機会で、ここで mutable に戻すと再び patch が必要になる。
+
+#### A3: D4 を独自 HTTP 実装(`requests` + checksum 直書き)
+
+- **不採用理由**: Issue #24 の原案はそうだったが、(1) `requests` を新規依存に加える(2) ETag/checksum 管理を自前で書く(3) 既存 D3 と loader 規約が分岐する、と複雑性が増す。sklearn は既に ML エコシステムの de-facto cache 機構を持ち、`fetch_openml` 一発で OpenML カタログ全体に到達できるためコスパが圧倒的に良い。
+
+#### A4: D4 を全て v0.9.0 以降に持ち越し、Phase H は D1〜D3 のみで demo
+
+- **不採用理由**: 回帰タスクの demo データが D1〜D3 に欠ける(全て分類)。Phase H は「分類 + 回帰の両刀」を売りにするため最低 1 つの回帰ベンチが必要。California Housing(sklearn 同梱でネットワーク不要)だけでも先行 fold-in する判断もあるが、せっかく sklearn extras を入れるなら 3 つまとめて出した方がユーザ体験が良い。
+
+#### A5: Phase H の Slice 抽出を Phase L(subgroup discovery)に統合
+
+- **不採用理由**: 単変数スライスは `pearson_residuals` から直接読めるためコストゼロ。一方 Phase L は多変数組み合わせ最適化を伴うため重い。Phase H で「目立つ単変数スライス」だけでもユーザに見せる方が ROI が高く、Phase L への動機付けにもなる。
+
+#### A6: `error_analysis()` を `pycatdap.error.analysis` ではなく `pycatdap.error_analysis` でトップレベル公開
+
+- **採用**: `pycatdap.profile` / `pycatdap.target_analysis` と同じワンコール入口の位置づけ。実装は `src/pycatdap/error/analysis.py` に置き、`pycatdap/__init__.py` から re-export。
+
+### Acceptance Criteria
+
+- [ ] `pycatdap.error_analysis(df, y_true, y_pred)` がトップレベルで呼べる
+- [ ] `task="auto" | "classification" | "regression"` の 3 経路すべてに unit test
+- [ ] `y_true` / `y_pred` を列名 / `pd.Series` / `np.ndarray` の 3 形式で受け入れ
+- [ ] `ErrorAnalysisResult` が `frozen=True` + immutable 規約に準拠(`feature_ranking` 書き換え不可テスト追加)
+- [ ] `Slice` dataclass 実装、`top_slices` が `|residual| >= 2.0` の集中セルのみ含む
+- [ ] **F-1 ガード**: `df` に `__pycatdap_error_label__` 等が既存する場合は明示 `ValueError`(回帰テスト追加)
+- [ ] **F-2 ガード**: 完璧なモデル(全 TP/TN、FP/FN 行が 0)で `error_analysis(task="classification")` が KeyError せず `confusion` フィールドが固定 4 行を保持
+- [ ] **multiclass guard**: `task="classification"` + 3+ unique 値 で `confusion_label` を呼ばず `error_label` のみで動作することのテスト
+- [ ] `.show` / `.to_html` / `.to_dict` / `.to_plotly_json` / `.to_divexplorer_format` 全て動作
+- [ ] `to_html` は `jinja2` 未導入時に明示 `ImportError`(`pycatdap[plotly]` 誘導)
+- [ ] `pycatdap.datasets.fetch_california_housing / fetch_adult_income / fetch_compas` が動作
+- [ ] D4 ローダーは sklearn 未導入時に明示 `ImportError`(`pycatdap[data]` 誘導)
+- [ ] D4 のネットワーク要求テストは `@pytest.mark.slow` で gate、デフォルト CI からは除外
+- [ ] 80% 以上の line coverage、TDD で test → impl
+- [ ] BLUEPRINT.md §5.8 を planned → released 更新(Phase H 部分)
+- [ ] Tutorial Notebook 11 で `error_analysis()` の binary classification(German Credit) + regression(California Housing)demo
+- [ ] Issue #17 + Issue #24 が close される
+- [ ] CHANGELOG.md の v0.8.0 セクション、Phase G→H 連結と D4 fold-in を明記
+
+### PR 分割
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-G0**(本 Proposal) | `docs(history): propose H-0011` | none |
+| **PR-G1** | `Slice` + `ErrorAnalysisResult` データクラス + `_extract_slices` helper + tests(impl は最小、API 表面のみ) | PR-G0 merge |
+| **PR-G2** | `error_analysis()` 本体 + `task` dispatch + `target_analysis` 合成 + classification / regression テスト | PR-G1 merge |
+| **PR-G3** | `to_html` / `to_plotly_json` / `to_divexplorer_format` + jinja2 テンプレート | PR-G2 merge |
+| **PR-G4** | D4 fetchers(`fetch_california_housing` / `fetch_adult_income` / `fetch_compas`)+ `[data]` extras + slow tests | PR-G0 merge(G1〜G3 と並行可) |
+| **PR-G5** | Tutorial Notebook 11 + BLUEPRINT §5.8 更新 + README quickstart + CHANGELOG cut to v0.8.0 + Issue #17/#24 close | PR-G3 + PR-G4 merge |
+| **PR-G6**(release) | `release: v0.8.0` | PR-G5 merge |
+
+各 PR は CI green 確認後に次へ進む。develop に **squash** で merge、release PR のみ `--merge`(release line 維持)。
+
+### Decision
+
+- Date: `TBD`
+- Result: `pending`
+- Notes: PR-G0(本 PR)で Proposal 承認待ち。
+
+### Migration
+
+破壊的変更なし。Phase G の `pycatdap.error.*` 既存関数はそのまま、新規追加のみ:
+- `pycatdap.error_analysis` (top-level)
+- `pycatdap.error.ErrorAnalysisResult` / `pycatdap.error.Slice`
+- `pycatdap.datasets.fetch_california_housing` / `fetch_adult_income` / `fetch_compas`
+- `pycatdap[data]` 新規 extras
+
+既存 user code への影響なし。
+
+### Related References
+
+- 親仕様: H-0001 Phase H、H-0002 FR-2 / FR-8、Issue #17、Issue #24
+- 前段: H-0010 Phase G(`pycatdap.error.*` ラベリング、v0.7.0 で出荷済)
+- Immutable pattern: H-0009(`TargetAnalysisResult` の `__post_init__` numpy freeze / `MappingProxyType` / `tuple`)
+- 合成元: `pycatdap.target_analysis`(`src/pycatdap/target_analysis.py`)
+- sklearn fetch_openml: <https://scikit-learn.org/stable/modules/generated/sklearn.datasets.fetch_openml.html>
+- DivExplorer 互換性参考: <https://github.com/divexplorer/divexplorer>(Phase L で完全対応、Phase H はフォーマット互換のみ)
