@@ -30,19 +30,25 @@ pycatdap は CATDAP (Sakamoto & Katsura, 1980) の Python 実装を起点に、
 
 | Version | テーマ | 主要 Issue | 状態 |
 |---|---|---|---|
-| v0.2.0 | CATDAP-01/02 コア実装(リリース済) | - | ✅ released |
-| v0.2.x | R 数値クロスバリデーション | [#10](https://github.com/nbx-liz/pycatdap/issues/10), [#30](https://github.com/nbx-liz/pycatdap/issues/30) | 🟡 planned |
-| v0.3.0 | Plotly backend + 単変量 EDA API | [#12](https://github.com/nbx-liz/pycatdap/issues/12), [#22](https://github.com/nbx-liz/pycatdap/issues/22) | 🟡 planned |
-| v0.4.0 | 二変量 EDA API (heatmap, association) | [#13](https://github.com/nbx-liz/pycatdap/issues/13) | 🟡 planned |
-| v0.5.0 | `profile()` + HTML レポート | [#14](https://github.com/nbx-liz/pycatdap/issues/14), [#23](https://github.com/nbx-liz/pycatdap/issues/23) | 🟡 planned |
-| v0.6.0 | `target_analysis()` + Suite API | [#15](https://github.com/nbx-liz/pycatdap/issues/15) | 🟡 planned |
-| v0.7.0 | Error labeling utilities | [#16](https://github.com/nbx-liz/pycatdap/issues/16) | 🟡 planned |
-| v0.8.0 | `error_analysis()` one-call | [#17](https://github.com/nbx-liz/pycatdap/issues/17), [#24](https://github.com/nbx-liz/pycatdap/issues/24) | 🟡 planned |
-| v0.9.0 | 分類・回帰の誤差可視化 | [#18](https://github.com/nbx-liz/pycatdap/issues/18) | 🟡 planned |
-| v0.10.0 | キャリブレーション (AIC binning) | [#19](https://github.com/nbx-liz/pycatdap/issues/19) | 🟡 planned |
-| v0.11.0 | スライス発見・コホート比較・ドリフト | [#20](https://github.com/nbx-liz/pycatdap/issues/20), [#25](https://github.com/nbx-liz/pycatdap/issues/25), [#31](https://github.com/nbx-liz/pycatdap/issues/31), [#32](https://github.com/nbx-liz/pycatdap/issues/32) | 🟡 planned |
-| v0.12.0 | LizyStudio 統合の安定化 | [#21](https://github.com/nbx-liz/pycatdap/issues/21) | 🟡 planned |
-| v1.0.0 | API 整理 (`plotting.*` → `plot.matplotlib.*`) | [#33](https://github.com/nbx-liz/pycatdap/issues/33) | 🟡 planned |
+| v0.2.0 | CATDAP-01/02 コア実装 | - | ✅ released 2026-05-25 |
+| v0.3.0 | Plotly backend + 単変量 EDA API (Phase A) | [#12](https://github.com/nbx-liz/pycatdap/issues/12), [#22](https://github.com/nbx-liz/pycatdap/issues/22) | ✅ released 2026-05-26 |
+| v0.4.0 | 二変量 EDA API (heatmap, association — Phase B) | [#13](https://github.com/nbx-liz/pycatdap/issues/13) | ✅ released 2026-05-27 |
+| v0.5.0 | `profile()` + HTML レポート (Phase C) | [#14](https://github.com/nbx-liz/pycatdap/issues/14) | ✅ released 2026-05-28 |
+| v0.6.0 | `target_analysis()` + `quality_report()` + `suite/` + `measures/` (Phase D) | [#15](https://github.com/nbx-liz/pycatdap/issues/15) | ✅ released 2026-05-28 |
+| v0.6.1 | API hardening: dataclass shallow-freeze 修正 | (新規 H-0009) | 🟢 in progress |
+| v0.7.0 | Error labeling utilities + D3 datasets (Phase G) | [#16](https://github.com/nbx-liz/pycatdap/issues/16), [#23](https://github.com/nbx-liz/pycatdap/issues/23) | 🟢 in progress |
+| v0.8.0 | `error_analysis()` one-call + D4 datasets (Phase H) | [#17](https://github.com/nbx-liz/pycatdap/issues/17), [#24](https://github.com/nbx-liz/pycatdap/issues/24) | 🟡 planned |
+| v0.9.0 | 分類・回帰の誤差可視化 (Phase I+J) | [#18](https://github.com/nbx-liz/pycatdap/issues/18) | 🟡 planned |
+| v0.10.0 | キャリブレーション (AIC binning — Phase K) | [#19](https://github.com/nbx-liz/pycatdap/issues/19) | 🟡 planned |
+| v0.11.0 | Slice discovery + pysubgroup interop (Phase L1) | [#20](https://github.com/nbx-liz/pycatdap/issues/20)(部分), [#31](https://github.com/nbx-liz/pycatdap/issues/31) | 🟡 planned |
+| v0.12.0 | Cohort + drift + DivExplorer interop + D5 (Phase L2) | [#20](https://github.com/nbx-liz/pycatdap/issues/20)(残), [#32](https://github.com/nbx-liz/pycatdap/issues/32), [#25](https://github.com/nbx-liz/pycatdap/issues/25) | 🟡 planned |
+| v0.13.0 | LizyStudio 統合の安定化 | [#21](https://github.com/nbx-liz/pycatdap/issues/21) | 🟡 planned |
+| v1.0.0 | API 整理 + R cross-validation (scoped) | [#33](https://github.com/nbx-liz/pycatdap/issues/33), [#10](https://github.com/nbx-liz/pycatdap/issues/10), [#30](https://github.com/nbx-liz/pycatdap/issues/30) | 🟡 planned |
+
+注:
+- v0.11.0 / v0.12.0 は 2026-05-28 のレビューで分割(Phase L が 3 機能束で過負荷だったため、L1=slice discovery、L2=cohort+drift に分離)
+- D3 datasets (#23) は元 v0.5 → v0.6 と 2 回スリップしたため、v0.7.0 で Phase G の demo データとして同梱(architect 助言)
+- v1.0 の R cross-validation は core AIC 計算のみを対象(Phase A-L surface は behavior + golden tests で代替、scope carve-out)
 
 凡例: ✅ released / 🟢 in progress / 🟡 planned / ⏸️ blocked / ❌ cancelled
 
@@ -50,34 +56,38 @@ pycatdap は CATDAP (Sakamoto & Katsura, 1980) の Python 実装を起点に、
 
 ## 3. テーマ別 Issue マップ
 
-### 3.1 EDA 機能(H-0001 Phase A〜D)
+### 3.1 EDA 機能(H-0001 Phase A〜D — 全 phase 出荷済)
 
-| Phase | Issue | バージョン | 主要 API |
-|---|---|---|---|
-| A | [#12](https://github.com/nbx-liz/pycatdap/issues/12) | v0.3.0 | Plotly backend, `describe`, `plot_variable`, `plot_missing` |
-| B | [#13](https://github.com/nbx-liz/pycatdap/issues/13) | v0.4.0 | `plot_pair`, `aic_heatmap`, `association_matrix`, `association_plot` |
-| C | [#14](https://github.com/nbx-liz/pycatdap/issues/14) | v0.5.0 | `profile()`, HTML レポート |
-| D | [#15](https://github.com/nbx-liz/pycatdap/issues/15) | v0.6.0 | `target_analysis()`, `quality_report()`, `suite/` |
+| Phase | Issue | バージョン | 主要 API | 状態 |
+|---|---|---|---|---|
+| A | [#12](https://github.com/nbx-liz/pycatdap/issues/12) | v0.3.0 | Plotly backend, `describe`, `plot_variable`, `plot_missing` | ✅ |
+| B | [#13](https://github.com/nbx-liz/pycatdap/issues/13) | v0.4.0 | `plot_pair`, `aic_heatmap`, `association_matrix`, `association_plot` | ✅ |
+| C | [#14](https://github.com/nbx-liz/pycatdap/issues/14) | v0.5.0 | `profile()`, HTML レポート | ✅ |
+| D | [#15](https://github.com/nbx-liz/pycatdap/issues/15) | v0.6.0 | `target_analysis()`, `quality_report()`, `suite/`, `measures/` | ✅ |
 
 ### 3.2 ML 誤差分析機能(H-0001 Phase G〜L, H-0002)
 
 | Phase | Issue | バージョン | 主要 API |
 |---|---|---|---|
-| G | [#16](https://github.com/nbx-liz/pycatdap/issues/16) | v0.7.0 | `error.error_label`, `confusion_label`, `residual_label` |
+| G | [#16](https://github.com/nbx-liz/pycatdap/issues/16) | v0.7.0 | `error.error_label`, `confusion_label`, `residual_label`, `abs_residual_pool` |
 | H | [#17](https://github.com/nbx-liz/pycatdap/issues/17) | v0.8.0 | `error_analysis()` one-call wrapper |
 | I+J | [#18](https://github.com/nbx-liz/pycatdap/issues/18) | v0.9.0 | `plot_confusion`, `residual_plot`, `residual_by_category` |
 | K | [#19](https://github.com/nbx-liz/pycatdap/issues/19) | v0.10.0 | `calibration_curve(n_bins="aic")`, Brier, ECE |
-| L | [#20](https://github.com/nbx-liz/pycatdap/issues/20) | v0.11.0 | `discover_error_slices`, `compare_cohorts`, `detect_drift` |
+| L1 | [#20](https://github.com/nbx-liz/pycatdap/issues/20)(部分) | v0.11.0 | `discover_error_slices` (+ #31 pysubgroup interop) |
+| L2 | [#20](https://github.com/nbx-liz/pycatdap/issues/20)(残) | v0.12.0 | `compare_cohorts`, `detect_drift` (+ #32 DivExplorer interop) |
 
 ### 3.3 データセット拡張(H-0003)
 
-| 段階 | Issue | バージョン | データセット |
-|---|---|---|---|
-| D1 | [#10](https://github.com/nbx-liz/pycatdap/issues/10) | v0.2.x | R reference CSV + 既存データ厳密一致テスト |
-| D2 | [#22](https://github.com/nbx-liz/pycatdap/issues/22) | v0.3.0 | Titanic, iris, JNcharacter |
-| D3 | [#23](https://github.com/nbx-liz/pycatdap/issues/23) | v0.5.0 | German Credit, Heart Disease, Penguins |
-| D4 | [#24](https://github.com/nbx-liz/pycatdap/issues/24) | v0.8.0 | Adult Income, COMPAS, California Housing |
-| D5 | [#25](https://github.com/nbx-liz/pycatdap/issues/25) | v0.11.0 | Wine Quality, Bank Marketing, Mushroom |
+ポリシー(2026-05-28 レビュー): データセット issue は **独立リリースとして扱わず、それを使う Phase のリリースに同梱** する。Phase G/H/L には demo データセットが必要なので自然に対応する。
+
+| 段階 | Issue | バージョン | データセット | 状態 |
+|---|---|---|---|---|
+| D1 | [#10](https://github.com/nbx-liz/pycatdap/issues/10), [#30](https://github.com/nbx-liz/pycatdap/issues/30) | v1.0.0 | R reference CSV + slow CI 昇格(scope carve-out: core AIC のみ) | 🟡 (テストコード実装済、CSV 同梱待ち) |
+| D2 | [#22](https://github.com/nbx-liz/pycatdap/issues/22) | v0.3.0 | Titanic, iris | ✅ released |
+| D3 | [#23](https://github.com/nbx-liz/pycatdap/issues/23) | v0.7.0(Phase G に折込) | German Credit, Heart Disease, Penguins | 🟢 in progress |
+| D4 | [#24](https://github.com/nbx-liz/pycatdap/issues/24) | v0.8.0(Phase H に折込) | Adult Income, COMPAS, California Housing | 🟡 planned |
+| D5 | [#25](https://github.com/nbx-liz/pycatdap/issues/25) | v0.12.0(Phase L2 に折込) | Wine Quality, Bank Marketing, Mushroom | 🟡 planned |
+| 追加 | [#47](https://github.com/nbx-liz/pycatdap/issues/47) | (関連 Phase に折込) | JNcharacter (CATDAP-01 復元) | 🟡 planned |
 
 ### 3.4 ドキュメント
 
