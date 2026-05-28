@@ -17,6 +17,7 @@ from __future__ import annotations
 import sys
 from unittest import mock
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -89,11 +90,12 @@ def test_fetch_california_housing_works_with_error_analysis() -> None:
     pytest.importorskip("sklearn")
     df = pycatdap.datasets.fetch_california_housing()
     # synthetic predictions: mean as a baseline regressor
-    y_pred = df["MedHouseVal"].mean()
+    y_true = df["MedHouseVal"].to_numpy()
+    y_pred = np.full_like(y_true, fill_value=float(df["MedHouseVal"].mean()))
     r = pycatdap.error_analysis(
-        df.drop(columns=["MedHouseVal"]).assign(__pred__=y_pred),
-        df["MedHouseVal"].to_numpy(),
-        df["__pred__"].to_numpy(),
+        df.drop(columns=["MedHouseVal"]),
+        y_true,
+        y_pred,
         top_k=3,
     )
     assert r.task == "regression"
