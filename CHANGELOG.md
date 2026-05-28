@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- ワンコール EDA レポート API（H-0007 Phase C、Issue #14）— 段階的に追加:
+  - `pycatdap.profile(df, *, response=None, bins=None, criterion="bic", top_k_subsets=5, quality_thresholds=None) -> ProfileResult`
+    — `describe` + `association_matrix` + `target_summary` + `catdap2` を 1 コールに統合
+  - `ProfileResult` frozen dataclass — `overview` / `variables` / `association` /
+    `top_subsets` / `quality_warnings` / `response` / `n_rows` / `n_cols` を保持。
+    `.show / .to_dict / .to_plotly_json` を提供（`.to_html` は H-0007 PR-C2 で追加予定）
+  - `VariableCard` frozen dataclass — 列ごとの type / cardinality / missing /
+    top / continuous 統計量 / ΔAIC vs response / AIC binning 境界
+  - `QualityWarning` frozen dataclass — 4 種類の警告（`high_cardinality` /
+    `constant` / `id_candidate` / `high_missing`、`quality_thresholds=` で上書き可）
+
 ## [0.4.0] — 2026-05-27
 
 このリリースは EDA レイヤを **ペア・全列ペア** まで広げる minor 拡張:
