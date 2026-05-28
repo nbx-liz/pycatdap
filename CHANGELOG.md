@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- `pycatdap.quality_report(df)` — focused data-quality scan returning
+  a `QualityReport` dataclass. Shares the warning logic of `profile()`
+  via the new `src/pycatdap/_quality.py` helper but skips
+  `association_matrix` / `catdap2`, so it stays fast on wide CI frames.
+  Exposes `.passed` (boolean for `assert qr.passed`), `.by_severity()`,
+  `.by_kind()`, `.show()`, `.to_html(path)`, `.to_dict()`, and
+  `.to_plotly_json()` (H-0008 PR-D2).
+- `pycatdap.QualityReport` re-export.
+
+### Changed
+- Internal refactor: `_scan_quality` lifted from `pycatdap.profile`
+  into `pycatdap._quality` so `quality_report` / `profile` / (upcoming)
+  `pycatdap.suite` share one helper. Public surface unchanged
+  (H-0008 PR-D1).
+
 ## [0.5.0] — 2026-05-28
 
 このリリースは EDA レイヤの **フラッグシップ API** `pycatdap.profile()` を導入:
