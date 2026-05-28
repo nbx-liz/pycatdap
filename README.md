@@ -104,6 +104,28 @@ pycatdap.measures.register("my_measure", my_fn)  # pluggable per pysubgroup conv
 
 See [`docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb`](docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb).
 
+### ML error analysis — Phase G (v0.7.0)
+
+```python
+from pycatdap.datasets import load_german_credit
+
+df = load_german_credit()
+y_true = df["class"]
+y_pred = my_model.predict(df.drop(columns=["class"]))
+
+# Label every prediction "correct" / "incorrect"
+labels = pycatdap.error.error_label(y_true, y_pred)
+
+# Or get fine-grained TP / FP / FN / TN (binary classification only)
+conf = pycatdap.error.confusion_label(y_true, y_pred, positive="bad")
+
+# Feed the error label back into Phase D to discover which columns
+# explain the errors — foundation for v0.8.0 `error_analysis()`
+ta = pycatdap.target_analysis(df.assign(was_correct=labels), response="was_correct")
+```
+
+See [`docs/tutorials/10-phase-g-error-labeling.ipynb`](docs/tutorials/10-phase-g-error-labeling.ipynb).
+
 ### ML error analysis (planned, v0.8+)
 
 ```python
