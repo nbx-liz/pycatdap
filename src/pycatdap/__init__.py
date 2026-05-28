@@ -13,7 +13,7 @@ Main functions:
 
 from __future__ import annotations
 
-from pycatdap import datasets
+from pycatdap import datasets, measures, suite
 from pycatdap._association import association_matrix
 from pycatdap._target_pair import (
     RegressionTargetSummary,
@@ -41,6 +41,8 @@ from pycatdap.profile import (
     VariableCard,
     profile,
 )
+from pycatdap.quality_report import QualityReport, quality_report
+from pycatdap.target_analysis import TargetAnalysisResult, target_analysis
 
 __all__ = [
     "__version__",
@@ -49,8 +51,10 @@ __all__ = [
     "Catdap2Result",
     "DescribeResult",
     "ProfileResult",
+    "QualityReport",
     "QualityWarning",
     "RegressionTargetSummary",
+    "TargetAnalysisResult",
     "TargetSummary",
     "VariableCard",
     "aic_heatmap",
@@ -60,10 +64,14 @@ __all__ = [
     "catdap2",
     "datasets",
     "describe",
+    "measures",
     "plot_missing",
     "plot_pair",
     "plot_target",
     "plot_variable",
     "profile",
+    "quality_report",
+    "suite",
+    "target_analysis",
     "target_summary",
 ]

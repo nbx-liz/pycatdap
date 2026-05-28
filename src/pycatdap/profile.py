@@ -22,45 +22,14 @@ import numpy as np
 import pandas as pd
 
 from pycatdap._association import association_matrix
+from pycatdap._quality import (
+    _DEFAULT_QUALITY_THRESHOLDS,
+    QualityWarning,
+    _scan_quality,
+)
 from pycatdap._target_pair import target_summary
 from pycatdap.catdap2 import Catdap2Result, catdap2
 from pycatdap.eda import _detect_kind, _summarize_column
-
-WarningKind = Literal["high_cardinality", "constant", "id_candidate", "high_missing"]
-WarningSeverity = Literal["info", "warning"]
-
-
-_DEFAULT_QUALITY_THRESHOLDS: dict[str, float] = {
-    "high_cardinality": 0.5,  # nunique / n_obs threshold
-    "high_cardinality_abs_min": 50.0,  # AND nunique > this
-    "high_missing": 0.5,
-}
-
-
-@dataclass(frozen=True)
-class QualityWarning:
-    """One quality finding from :func:`profile`.
-
-    Attributes
-    ----------
-    severity : {"info", "warning"}
-        Severity tag for UI rendering.
-    kind : {"high_cardinality", "constant", "id_candidate", "high_missing"}
-        The specific finding category.
-    column : str
-        Affected column name.
-    message : str
-        Human-readable description.
-    metric : float
-        The numeric value that triggered the warning (e.g. missing rate,
-        cardinality ratio).
-    """
-
-    severity: WarningSeverity
-    kind: WarningKind
-    column: str
-    message: str
-    metric: float
 
 
 @dataclass(frozen=True)
@@ -478,82 +447,6 @@ def _run_catdap2(
         # 1 = unequal pooling for continuous, 2 = categorical otherwise.
         pool.append(1 if kind == "continuous" else 2)
     return catdap2(df, pool=pool, response_name=response, nvar=top_k_subsets)
-
-
-def _scan_quality(
-    df: pd.DataFrame,
-    cards: list[VariableCard],
-    thresholds: dict[str, float],
-) -> list[QualityWarning]:
-    warnings: list[QualityWarning] = []
-    high_card_ratio = thresholds["high_cardinality"]
-    high_card_abs = thresholds["high_cardinality_abs_min"]
-    high_missing = thresholds["high_missing"]
-
-    for card in cards:
-        # n_obs == 0 would require a zero-row DataFrame, which fails earlier
-        # inside association_matrix; no defensive check needed here.
-        missing_rate = card.n_missing / card.n_obs
-
-        if missing_rate > high_missing:
-            warnings.append(
-                QualityWarning(
-                    severity="warning",
-                    kind="high_missing",
-                    column=card.name,
-                    message=(
-                        f"{missing_rate * 100:.1f}% of values are missing "
-                        f"(threshold {high_missing * 100:.0f}%)"
-                    ),
-                    metric=missing_rate,
-                )
-            )
-
-        if card.n_unique <= 1:
-            warnings.append(
-                QualityWarning(
-                    severity="warning",
-                    kind="constant",
-                    column=card.name,
-                    message="column has at most one distinct non-null value",
-                    metric=float(card.n_unique),
-                )
-            )
-            continue  # other warnings would double-trigger
-
-        if (
-            card.kind in {"categorical", "other"}
-            and card.n_unique == card.n_obs - card.n_missing
-        ):
-            warnings.append(
-                QualityWarning(
-                    severity="warning",
-                    kind="id_candidate",
-                    column=card.name,
-                    message="every non-null value is unique (identifier?)",
-                    metric=1.0,
-                )
-            )
-            continue
-
-        unique_ratio = card.n_unique / card.n_obs if card.n_obs else 0.0
-        if unique_ratio > high_card_ratio and card.n_unique > high_card_abs:
-            warnings.append(
-                QualityWarning(
-                    severity="info",
-                    kind="high_cardinality",
-                    column=card.name,
-                    message=(
-                        f"{card.n_unique} distinct values "
-                        f"({unique_ratio * 100:.1f}% of rows; threshold "
-                        f"{high_card_ratio * 100:.0f}% and > "
-                        f"{int(high_card_abs)})"
-                    ),
-                    metric=unique_ratio,
-                )
-            )
-
-    return warnings
 
 
 # -- helpers for to_html ---------------------------------------------------

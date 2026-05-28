@@ -174,8 +174,13 @@ class TestErrorPaths:
     """Clear errors for invalid input."""
 
     def test_unknown_measure_raises(self, df_mixed: pd.DataFrame) -> None:
-        with pytest.raises(ValueError, match="measure"):
-            pycatdap.association_matrix(df_mixed, measure="cramers_v")  # type: ignore[arg-type]
+        # H-0008 PR-D5: 'cramers_v' is now a valid registered measure;
+        # use a name that definitely isn't registered to exercise the
+        # error path. The measures registry raises KeyError (subclass
+        # of LookupError); the previous hardcoded check raised
+        # ValueError, so accept either for forward compatibility.
+        with pytest.raises((ValueError, KeyError), match="not registered|measure"):
+            pycatdap.association_matrix(df_mixed, measure="__never_registered__")
 
     def test_single_column_frame_returns_1x1_nan(self) -> None:
         df = pd.DataFrame({"only": [1, 2, 3, 4]})

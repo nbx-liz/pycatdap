@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-05-28
+
+このリリースは H-0008 Phase D に対応し、**target 駆動分析と CI 統合可能な
+品質スイート** を追加する。v0.5.0 の flagship `profile()` を補完する 4 つの
+新規公開 API（`quality_report` / `target_analysis` / `pycatdap.measures` /
+`pycatdap.suite`）と、`association_matrix(measure=...)` の non-AIC 拡張を
+含む。詳細は HISTORY.md H-0008 および以下の節を参照。
+
+主要な追加:
+- `pycatdap.quality_report(df).passed` — CI gate 用の高速データ品質スキャン
+- `pycatdap.target_analysis(df, response)` — ΔAIC ランキング + 上位 K の TargetSummary
+- `pycatdap.measures.{aic, cramers_v, mutual_info, register}` — pluggable interestingness 指標
+- `pycatdap.association_matrix(df, measure="cramers_v")` — 非 AIC 関連度行列
+- `pycatdap.suite.AICIndependenceSuite(df, response).run().passed` — deepchecks 風 CI スイート
+
+### Added
+- Tutorial Notebook 09 — `docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb`
+  walks through every Phase D API on the Titanic dataset:
+  `quality_report` → `target_analysis` → `pycatdap.measures.*` →
+  `pycatdap.suite.AICIndependenceSuite` with the
+  `assert suite_result.passed, suite_result.summary()` CI idiom
+  (H-0008 PR-D6).
+- `pycatdap.suite` subpackage — deepchecks-style CI-integrable suite
+  per Issue #15 (H-0008 PR-D5). Public API:
+  - `pycatdap.suite.AICIndependenceSuite(df, response=...).run() ->
+    SuiteResult` — default bundle of the 4 standard checks
+  - Individual checks: `ConstantColumnCheck`, `HighCardinalityCheck`,
+    `IndependenceCheck`, `PoolingSuggestionCheck` (all
+    `@dataclass(frozen=True)` so thresholds are immutable; no
+    `eval()` / string DSL anywhere — safe on untrusted DataFrames)
+  - `SuiteResult` with `.passed` boolean for `assert suite_result.passed`,
+    `.failures` (all non-passing checks including `"info"`-severity),
+    `.summary()`, `.show()`, `.to_html(path)`, `.to_dict()`,
+    `.to_plotly_json()`
+- `association_matrix(df, measure=...)` extension — dispatch on any
+  registered :mod:`pycatdap.measures` measure. ``measure="aic"``
+  (default) keeps the existing :func:`target_summary`-based path;
+  ``"cramers_v"`` / ``"mutual_info"`` / custom measures use a generic
+  crosstab path with uniform ``pd.qcut`` binning of continuous columns
+  (H-0008 PR-D5).
+- `pycatdap.measures` subpackage with a pluggable interestingness-
+  measure registry (BLUEPRINT §5.11, H-0008 PR-D4). Each measure has
+  the uniform signature `Callable[[npt.NDArray[np.float64]], float]`.
+  Standard measures shipped:
+  - `pycatdap.measures.aic(cross_freq)` — ΔAIC (negative = informative)
+  - `pycatdap.measures.cramers_v(cross_freq)` — Cramér's V (0..1,
+    pure-numpy, no scipy dependency)
+  - `pycatdap.measures.mutual_info(cross_freq)` — mutual information
+    in nats (pure-numpy)
+  - `pycatdap.measures.register(name, fn)` / `get(name)` /
+    `list_measures()` for custom measures (pysubgroup / DivExplorer
+    interop, Issues #31 / #32)
+- `pycatdap.target_analysis(df, response)` — target-driven ΔAIC ranking
+  of every non-response column. Keeps the full `TargetSummary` /
+  `RegressionTargetSummary` for the top-K most informative columns
+  (`top_k=5` by default). Exposes `.show()`, `.to_html(path)`,
+  `.to_dict()`, and `.to_plotly_json()` matching the
+  `ProfileResult` 4-method contract; HTML report embeds each top-K
+  cross-tab inline via Plotly (H-0008 PR-D3).
+- `pycatdap.TargetAnalysisResult` re-export.
+- `pycatdap.quality_report(df)` — focused data-quality scan returning
+  a `QualityReport` dataclass. Shares the warning logic of `profile()`
+  via the new `src/pycatdap/_quality.py` helper but skips
+  `association_matrix` / `catdap2`, so it stays fast on wide CI frames.
+  Exposes `.passed` (boolean for `assert qr.passed`), `.by_severity()`,
+  `.by_kind()`, `.show()`, `.to_html(path)`, `.to_dict()`, and
+  `.to_plotly_json()` (H-0008 PR-D2).
+- `pycatdap.QualityReport` re-export.
+
+### Changed
+- Internal refactor: `_scan_quality` lifted from `pycatdap.profile`
+  into `pycatdap._quality` so `quality_report` / `profile` /
+  `pycatdap.suite` share one helper. Public surface unchanged
+  (H-0008 PR-D1).
+- `BLUEPRINT.md` §3.1 / §5.10 / §5.11 updated to reflect the shipped
+  Phase D module structure and APIs (H-0008 PR-D6).
+- `README.md` Quickstart now shows the target-analysis / quality
+  report / suite / measures workflow (H-0008 PR-D6).
+- `SuiteResult.warnings` → `SuiteResult.failures` (rename, H-0008
+  PR-D6 quality pass). The previous name was misleading because the
+  property returned ALL non-passing checks regardless of severity,
+  including `"info"`-severity findings that do not flip `.passed`
+  to `False`. The list semantics are unchanged. Pre-release rename;
+  no users yet depend on `.warnings` since v0.6.0 is not yet
+  published.
+
+### Fixed
+- `quality_report(df)` and `profile(df)` no longer raise
+  `ZeroDivisionError` on a 0-row DataFrame — `_scan_quality` skips
+  columns with `n_obs == 0` and returns an empty warnings list
+  (H-0008 PR-D6 quality pass; caught by python-reviewer).
+- `pycatdap.measures.cramers_v` no longer emits
+  `RuntimeWarning: invalid value encountered in divide` on tables
+  with an all-zero marginal row or column — switched to
+  `np.divide(..., where=...)` for side-effect-free masked division.
+  The returned numeric value is unchanged (H-0008 PR-D6 quality pass).
+
 ## [0.5.0] — 2026-05-28
 
 このリリースは EDA レイヤの **フラッグシップ API** `pycatdap.profile()` を導入:
