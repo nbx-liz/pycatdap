@@ -145,23 +145,12 @@ class ProfileResult:
 
     def show(self) -> None:
         """Render an inline summary suitable for Jupyter or plain stdout."""
-        try:
-            from IPython.display import display
-        except ImportError:
-            display = None  # type: ignore[assignment]
-
         header = f"ProfileResult — {self.n_rows} rows × {self.n_cols} cols" + (
             f" (response={self.response!r})" if self.response else ""
         )
-        if display is not None:
-            from IPython.display import HTML
-
-            display(HTML(f"<h3>{header}</h3>"))
-            display(self._overview_table())
-            display(self._variables_table())
-            if self.quality_warnings:
-                display(self._warnings_table())
-        else:
+        try:
+            from IPython.display import HTML, display
+        except ImportError:
             print(header)
             print(self._overview_table().to_string())
             print()
@@ -169,6 +158,13 @@ class ProfileResult:
             if self.quality_warnings:
                 print()
                 print(self._warnings_table().to_string())
+            return
+
+        display(HTML(f"<h3>{header}</h3>"))
+        display(self._overview_table())
+        display(self._variables_table())
+        if self.quality_warnings:
+            display(self._warnings_table())
 
     def _overview_table(self) -> pd.DataFrame:
         return pd.DataFrame(
