@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### CI / Release infrastructure
+- `auto-release.yml` now dispatches `release.yml` automatically via
+  `workflow_dispatch` after creating the tag and GitHub Release.
+  Previously the default `GITHUB_TOKEN`-pushed tag did not fire
+  `release.yml`'s `push: tags: [v*]` trigger (recursive-trigger
+  suppression), forcing a manual `gh workflow run "Release to PyPI"`
+  step on every release from v0.3.0 through v0.6.0. The new step uses
+  `workflow_dispatch`, which is exempt from the recursive-trigger
+  restriction and works with `GITHUB_TOKEN` (no PAT required).
+  Requires `permissions: actions: write` on `auto-release.yml`.
+
 ## [0.6.0] — 2026-05-28
 
 このリリースは H-0008 Phase D に対応し、**target 駆動分析と CI 統合可能な
