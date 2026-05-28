@@ -15,6 +15,7 @@ to_plotly_json`` methods.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -199,6 +200,83 @@ class ProfileResult:
                 for w in self.quality_warnings
             ]
         )
+
+    def to_html(self, path: str | Path | None = None) -> str:
+        """Render a single-file HTML report (H-0007 PR-C2).
+
+        Plotly figures are embedded inline (``include_plotlyjs="inline"``)
+        so the file is fully self-contained and viewable offline.
+
+        Parameters
+        ----------
+        path : str, Path, or None
+            If given, the HTML is also written to this path using
+            :func:`pycatdap._io.atomic_write_text` (safe against
+            concurrent readers, e.g. ``mkdocs serve``). Returns the HTML
+            string in both modes.
+
+        Returns
+        -------
+        str
+            The rendered HTML.
+
+        Raises
+        ------
+        ImportError
+            If ``jinja2`` is not installed (ship as part of
+            ``pycatdap[plotly]`` extras).
+        """
+        try:
+            from jinja2 import Environment, select_autoescape
+        except ImportError as exc:  # pragma: no cover - exercised via monkeypatch
+            msg = (
+                "jinja2 is required for HTML reports. "
+                "Install it with: pip install 'pycatdap[plotly]'"
+            )
+            raise ImportError(msg) from exc
+
+        try:
+            from importlib.resources import files as _resource_files
+        except ImportError:  # pragma: no cover
+            from importlib_resources import (
+                files as _resource_files,  # type: ignore[no-redef]
+            )
+
+        template_text = (
+            _resource_files("pycatdap.templates")
+            .joinpath("profile.html.j2")
+            .read_text(encoding="utf-8")
+        )
+        env = Environment(autoescape=select_autoescape(default=True))
+        template = env.from_string(template_text)
+
+        from pycatdap._version import __version__
+
+        association_html = _render_association_html(self.association)
+        top_subsets_html = (
+            _render_top_subsets_html(self.top_subsets)
+            if self.top_subsets is not None
+            else ""
+        )
+
+        html = template.render(
+            response=self.response,
+            n_rows=self.n_rows,
+            n_cols=self.n_cols,
+            overview=self.overview,
+            variables=self.variables,
+            quality_warnings=self.quality_warnings,
+            association_heatmap_html=association_html,
+            top_subsets_html=top_subsets_html,
+            pycatdap_version=__version__,
+        )
+
+        if path is not None:
+            from pycatdap._io import atomic_write_text
+
+            atomic_write_text(path, html)
+
+        return html
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable dict (via ``json.dumps(..., default=str)``)."""
@@ -473,6 +551,38 @@ def _scan_quality(
             )
 
     return warnings
+
+
+# -- helpers for to_html ---------------------------------------------------
+
+
+def _render_association_html(association: pd.DataFrame) -> str:
+    """Render the association heatmap as inline Plotly HTML.
+
+    Uses ``include_plotlyjs="inline"`` so the bundled HTML is self-
+    contained / offline-viewable (Issue #14 acceptance criterion).
+    Inline mode adds ~3 MB per figure but is only paid once per call:
+    subsequent figures in the same HTML reuse the bundle (``"cdn"``
+    vs ``"inline"`` is per-Figure; we render only this one Figure inline
+    and the rest with ``include_plotlyjs=False``).
+    """
+    from pycatdap.plot.plotly import aic_heatmap as _aic_heatmap_plotly
+
+    fig = _aic_heatmap_plotly(association)
+    return str(fig.to_html(include_plotlyjs="inline", full_html=False))
+
+
+def _render_top_subsets_html(top_subsets: Catdap2Result) -> str:
+    """Render the CATDAP-02 single-variable bar as Plotly HTML.
+
+    Reuses the plotly.js bundle inlined by the association heatmap, so
+    we pass ``include_plotlyjs=False`` here.
+    """
+    import plotly.graph_objects as go
+
+    spec = top_subsets.to_plotly_json()
+    fig = go.Figure(spec)
+    return str(fig.to_html(include_plotlyjs=False, full_html=False))
 
 
 # -- helpers for to_plotly_json -------------------------------------------
