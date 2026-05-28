@@ -604,23 +604,30 @@ pycatdap.association_plot(table, *, threshold=2.0, backend=...)
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
 
-### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase G で部分実装 v0.7.0）
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase H まで実装 v0.8.0）
 
 ```python
 # 誤差ラベリング（Phase G、v0.7.0 で実装済）
 pycatdap.error.error_label(y_true, y_pred) -> pd.Series        # "correct"/"incorrect"
 pycatdap.error.confusion_label(y_true, y_pred, *, positive=None) -> pd.Series
                                                                 # "TP"/"FP"/"FN"/"TN"
-                                                                # multiclass は v0.8.0+ で対応(現在 NotImplementedError)
+                                                                # multiclass は Phase H wrapper が error_label にフォールバック
 pycatdap.error.residual_label(y_true, y_pred, *, method="aic_pool", n_bins=4) -> pd.Series
                                                                 # method = "aic_pool"|"quantile"|"equal_width"
 pycatdap.error.abs_residual_pool(y_true, y_pred, *, n_bins=4) -> pd.Series
 pycatdap.error._detect_task(y_true, y_pred) -> Literal["classification", "regression"]
 
-# 1コール誤差分析（Phase H、v0.8.0 で実装予定）
+# 1コール誤差分析（Phase H、H-0011、v0.8.0 で実装済）
 pycatdap.error_analysis(
     df, y_true, y_pred,
-    task="auto" | "classification" | "regression"
+    *,
+    task="auto" | "classification" | "regression",
+    top_k=5,
+    positive=None,                          # binary classification の positive class
+    residual_method="aic_pool",             # 回帰時の residual_label の method 指定
+    n_bins=4,
+    bins=None,                              # 説明変数の binning(target_analysis に forward)
+    criterion="bic",
 ) -> ErrorAnalysisResult
 
 # 分類可視化
@@ -648,31 +655,58 @@ pycatdap.error.compare_cohorts(df_a, df_b, response=None) -> CohortComparison
 pycatdap.error.detect_drift(df_train, df_prod, y_true=None, y_pred=None) -> DriftResult
 ```
 
-#### データクラス契約
+#### データクラス契約（v0.8.0 H-0011 で実装、v0.6.1 H-0009 immutable pattern を最初から適用）
 
 ```python
 @dataclass(frozen=True)
 class Slice:
-    description: str        # 自然言語: "age ∈ [45, 60] × cholesterol = high"
-    conditions: dict        # 機械可読: {"age": (45, 60), "cholesterol": "high"}
-    size: int               # スライス内サンプル数
-    error_metric: float     # 誤差指標（accuracy, MAE 等）
-    delta_aic: float        # ΔAIC スコア
+    """単変数(variable, category)スライス。Phase L で多変数版に拡張予定。"""
+    variable: str            # 説明変数名
+    category: str            # 値 / bin label
+    error_category: str      # "incorrect" / "FP" / "FN" / "bin_<i>" 等
+    n_in_slice: int          # スライス内サンプル数
+    n_error_in_slice: int    # うち error_category のサンプル数
+    error_rate: float        # n_error_in_slice / n_in_slice
+    pearson_residual: float  # 標準化残差(|2.0| がカットオフ)
+    delta_aic: float         # 親変数の ΔAIC
 
-@dataclass
+@dataclass(frozen=True)
 class ErrorAnalysisResult:
-    task: str               # "classification" | "regression"
-    feature_ranking: pd.DataFrame   # ΔAIC 降順
-    top_slices: list[Slice]
-    confusion: pd.DataFrame | None  # 分類のみ
-    residual_pooling: dict | None   # 回帰のみ
+    task: Literal["classification", "regression"]
+    label_kind: Literal["error_label", "confusion_label", "residual_label"]
+    response_name: str                                       # 内部生成ラベル列名
+    feature_ranking: pd.DataFrame                            # numpy buffer frozen
+    top_summaries: Mapping[str, TargetSummary]               # MappingProxyType
+    top_slices: tuple[Slice, ...]                            # tuple 必須(list 禁止)
+    confusion: pd.DataFrame | None                           # 分類のみ、frozen
+    residual_pooling: Mapping[str, Any] | None               # 回帰のみ、MappingProxyType
+    n_rows: int
+    n_correct: int | None
+    n_incorrect: int | None
+    mae: float | None
+    rmse: float | None
 
     def show(self) -> None: ...
-    def to_html(self, path) -> None: ...
+    def to_html(self, path: str | Path | None = None) -> str: ...
     def to_plotly_json(self) -> dict: ...
     def to_dict(self) -> dict: ...
     def to_divexplorer_format(self) -> pd.DataFrame: ...
 ```
+
+実装 safeguards(H-0011 §F、cross-check 2026-05-28 抽出):
+
+- **F-1**: `df` に `__pycatdap_*_label__` 列が既存する場合は明示 `ValueError`
+- **F-2**: `confusion` は canonical `["TP", "FP", "FN", "TN"]` 順に reindex
+  (`pd.crosstab` が空行を drop する完璧モデル下での KeyError 防止)
+- **F-3**: `equal_pooling` boundaries が ascending sort なので
+  `bin_0` = under-prediction、`bin_{n-1}` = over-prediction が保証
+
+Phase H スコープアウト(明示):
+- 多変数 subgroup discovery → Phase L(`discover_error_slices`)
+- 可視化(confusion matrix / residual scatter 等)→ Phase I+J
+- Calibration(`calibration_curve` / `brier_score` / ECE)→ Phase K
+- `confusion_label` multiclass(one-vs-rest)→ Phase H wrapper は
+  `error_label` にフォールバックして回避、本格対応は別 Issue
 
 ### 5.9 `profile.py` — ワンコール EDA レポート（H-0001 / H-0007、v0.5.0 で実装）
 
