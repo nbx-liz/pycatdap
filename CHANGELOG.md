@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- `pycatdap.measures` subpackage with a pluggable interestingness-
+  measure registry (BLUEPRINT §5.11, H-0008 PR-D4). Each measure has
+  the uniform signature `Callable[[npt.NDArray[np.float64]], float]`.
+  Standard measures shipped:
+  - `pycatdap.measures.aic(cross_freq)` — ΔAIC (negative = informative)
+  - `pycatdap.measures.cramers_v(cross_freq)` — Cramér's V (0..1,
+    pure-numpy, no scipy dependency)
+  - `pycatdap.measures.mutual_info(cross_freq)` — mutual information
+    in nats (pure-numpy)
+  - `pycatdap.measures.register(name, fn)` / `get(name)` /
+    `list_measures()` for custom measures (pysubgroup / DivExplorer
+    interop, Issues #31 / #32)
 - `pycatdap.target_analysis(df, response)` — target-driven ΔAIC ranking
   of every non-response column. Keeps the full `TargetSummary` /
   `RegressionTargetSummary` for the top-K most informative columns
