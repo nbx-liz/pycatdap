@@ -146,6 +146,133 @@ def load_iris() -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def load_german_credit() -> pd.DataFrame:
+    """Load the Statlog German Credit dataset (1000 observations, 21 variables).
+
+    Binary classification benchmark used across the fairness / ML
+    error analysis literature. Each row represents a credit applicant
+    with mixed categorical and continuous attributes; the ``class``
+    column is the label (``"good"`` / ``"bad"`` credit risk).
+
+    Variables
+    ---------
+    checking_status, savings_status, employment, ... : str
+        Categorical attributes describing the applicant's banking,
+        employment, housing, and demographic profile.
+    duration, credit_amount, age, installment_commitment, ... : int
+        Continuous attributes.
+    class : str ('good', 'bad')
+        Binary credit risk label.
+
+    Returns
+    -------
+    DataFrame
+        1000 rows, 21 columns. 17 categorical columns and 4 integer
+        columns including the binary ``class`` label.
+
+    References
+    ----------
+    Hofmann, H. (1994). Statlog (German Credit Data) Data Set.
+    UCI Machine Learning Repository.
+    https://archive.ics.uci.edu/ml/datasets/Statlog+%28German+Credit+Data%29
+    Bundled here via OpenML id ``credit-g`` v1. Public domain.
+
+    Examples
+    --------
+    >>> from pycatdap.datasets import load_german_credit
+    >>> df = load_german_credit()
+    >>> df.shape
+    (1000, 21)
+    >>> df["class"].value_counts().to_dict()
+    {'good': 700, 'bad': 300}
+    """
+    path = _data_path("german_credit.csv")
+    return pd.read_csv(path)
+
+
+def load_heart_disease() -> pd.DataFrame:
+    """Load the Cleveland Heart Disease dataset (303 observations, 14 variables).
+
+    Binary classification benchmark from the UCI Machine Learning
+    Repository (the processed Cleveland subset). Used widely in
+    fairness and interpretability research.
+
+    Variables
+    ---------
+    age, trestbps, chol, thalach, oldpeak : float
+        Continuous clinical measurements.
+    sex, cp, fbs, restecg, exang, slope, ca, thal : float
+        Encoded categorical clinical attributes.
+    target : float (0, 1)
+        Binary indicator of heart disease presence.
+
+    Returns
+    -------
+    DataFrame
+        303 rows, 14 columns. All numeric columns; ``target`` is the
+        binary label.
+
+    References
+    ----------
+    Detrano, R., et al. (1989). Heart Disease Data Set.
+    UCI Machine Learning Repository.
+    https://archive.ics.uci.edu/ml/datasets/heart+disease
+    Bundled here via OpenML id ``heart-disease`` v1. CC BY 4.0.
+
+    Examples
+    --------
+    >>> from pycatdap.datasets import load_heart_disease
+    >>> df = load_heart_disease()
+    >>> df.shape
+    (303, 14)
+    """
+    path = _data_path("heart_disease.csv")
+    return pd.read_csv(path)
+
+
+def load_penguins() -> pd.DataFrame:
+    """Load the Palmer Penguins dataset (344 observations, 7 variables).
+
+    Three-class classification dataset based on observations of
+    Adelie, Chinstrap, and Gentoo penguins from the Palmer Station
+    Long Term Ecological Research program. Popular replacement for
+    iris in classification tutorials.
+
+    Variables
+    ---------
+    species : str ('Adelie', 'Chinstrap', 'Gentoo')
+        Three-class species label.
+    island : str ('Torgersen', 'Biscoe', 'Dream')
+        Island on which the penguin was observed.
+    culmen_length_mm, culmen_depth_mm, flipper_length_mm, body_mass_g : float
+        Morphological measurements (may contain NaN).
+    sex : str ('MALE', 'FEMALE')
+        Reported sex (may contain NaN).
+
+    Returns
+    -------
+    DataFrame
+        344 rows, 7 columns. 3 string columns and 4 float columns.
+
+    References
+    ----------
+    Horst, A. M., Hill, A. P., & Gorman, K. B. (2020). palmerpenguins.
+    https://allisonhorst.github.io/palmerpenguins/
+    Bundled here via OpenML id ``penguins`` v1. CC0 1.0 Universal.
+
+    Examples
+    --------
+    >>> from pycatdap.datasets import load_penguins
+    >>> df = load_penguins()
+    >>> df.shape
+    (344, 7)
+    >>> sorted(df["species"].unique().tolist())
+    ['Adelie', 'Chinstrap', 'Gentoo']
+    """
+    path = _data_path("penguins.csv")
+    return pd.read_csv(path)
+
+
 def load_hello_goodbye() -> pd.DataFrame:
     """Load the HelloGoodbye dataset (13954 observations, 56 binary variables).
 
