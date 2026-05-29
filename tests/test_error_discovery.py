@@ -218,14 +218,19 @@ def test_all_nan_continuous_column_no_crash() -> None:
     assert isinstance(result, SliceDiscoveryResult)
 
 
-def test_regression_task_raises() -> None:
+def test_regression_task_now_supported() -> None:
+    """H-0015 (design D1): regression no longer raises -- it discovers
+    high-residual subgroups. See tests/test_error_discovery_regression.py for
+    the invariant suite; here we only assert the guard is gone and the path
+    returns the regression labeller's result."""
     rng = np.random.default_rng(0)
     n = 100
     df = pd.DataFrame({"a": rng.choice(["x", "y"], size=n)})
     yt = rng.normal(size=n)
     yp = yt + rng.normal(scale=0.5, size=n)
-    with pytest.raises(NotImplementedError, match="classification only"):
-        discover_error_slices(df, yt, yp)
+    result = discover_error_slices(df, yt, yp, min_support=20)
+    assert isinstance(result, SliceDiscoveryResult)
+    assert result.label_kind == "abs_residual_pool"
 
 
 def test_to_divexplorer_and_dict_roundtrip() -> None:
