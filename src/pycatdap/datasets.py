@@ -273,6 +273,148 @@ def load_penguins() -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def fetch_california_housing() -> pd.DataFrame:
+    """Fetch the California Housing regression dataset (H-0011 D4).
+
+    Thin wrapper over :func:`sklearn.datasets.fetch_california_housing`
+    with ``as_frame=True``. The target column ``MedHouseVal`` is
+    concatenated into the returned DataFrame so it can be passed
+    straight to :func:`pycatdap.error_analysis` as the regression
+    response.
+
+    Returns
+    -------
+    DataFrame
+        20,640 rows × 9 columns (8 features + ``MedHouseVal`` target).
+
+    Raises
+    ------
+    ImportError
+        When ``scikit-learn`` is not installed. Install via
+        ``pip install pycatdap[data]``.
+
+    Notes
+    -----
+    - First call downloads the dataset to the sklearn cache
+      (``~/scikit_learn_data/`` by default; override with
+      ``SCIKIT_LEARN_DATA`` env var).
+    - Subsequent calls are offline.
+
+    Examples
+    --------
+    >>> import pycatdap                                # doctest: +SKIP
+    >>> df = pycatdap.datasets.fetch_california_housing()  # doctest: +SKIP
+    >>> df.shape                                       # doctest: +SKIP
+    (20640, 9)
+    """
+    try:
+        from sklearn.datasets import fetch_california_housing as _fetch
+    except ImportError as exc:
+        msg = (
+            "scikit-learn is required for fetch_california_housing. "
+            "Install with: pip install 'pycatdap[data]'"
+        )
+        raise ImportError(msg) from exc
+
+    bundle = _fetch(as_frame=True)
+    df: pd.DataFrame = bundle.frame
+    return df
+
+
+def fetch_adult_income() -> pd.DataFrame:
+    """Fetch the Adult Income (Census) classification dataset (H-0011 D4).
+
+    Wrapper over :func:`sklearn.datasets.fetch_openml` with
+    ``name="adult"``, ``version=2``, ``as_frame=True``. Binary target
+    ``class`` (``<=50K`` / ``>50K``) is concatenated into the
+    DataFrame.
+
+    Returns
+    -------
+    DataFrame
+        ~48,842 rows × 15 columns (14 features + ``class`` target).
+
+    Raises
+    ------
+    ImportError
+        When ``scikit-learn`` is not installed. Install via
+        ``pip install pycatdap[data]``.
+
+    Notes
+    -----
+    - First call downloads from OpenML to the sklearn cache.
+    - Useful for demonstrating fairness-aware error analysis (the
+      dataset has known protected-attribute associations on
+      ``sex`` / ``race``).
+
+    Examples
+    --------
+    >>> import pycatdap                              # doctest: +SKIP
+    >>> df = pycatdap.datasets.fetch_adult_income()  # doctest: +SKIP
+    >>> "class" in df.columns                        # doctest: +SKIP
+    True
+    """
+    try:
+        from sklearn.datasets import fetch_openml
+    except ImportError as exc:
+        msg = (
+            "scikit-learn is required for fetch_adult_income. "
+            "Install with: pip install 'pycatdap[data]'"
+        )
+        raise ImportError(msg) from exc
+
+    bundle = fetch_openml(name="adult", version=2, as_frame=True)
+    df: pd.DataFrame = bundle.frame
+    return df
+
+
+def fetch_compas() -> pd.DataFrame:
+    """Fetch the COMPAS Two-Year Recidivism dataset (H-0011 D4).
+
+    Wrapper over :func:`sklearn.datasets.fetch_openml` with
+    ``name="compas-two-years"`` (ProPublica re-release on OpenML).
+    Target ``two_year_recid`` predicts whether a defendant was rearrested
+    within two years.
+
+    .. warning::
+        COMPAS is a **fairness-critical** dataset originally analysed
+        by ProPublica to expose racial bias in pre-trial risk scoring.
+        It is included here as a *demonstration dataset for fairness
+        analysis*, NOT as a model-evaluation benchmark for
+        recidivism-prediction systems intended for real-world use.
+        See ProPublica's original methodology and discussion:
+        <https://www.propublica.org/article/how-we-analyzed-the-compas-recidivism-algorithm>.
+
+    Returns
+    -------
+    DataFrame
+        ~5,278 rows × 14 columns (features + target).
+
+    Raises
+    ------
+    ImportError
+        When ``scikit-learn`` is not installed. Install via
+        ``pip install pycatdap[data]``.
+
+    Examples
+    --------
+    >>> import pycatdap                          # doctest: +SKIP
+    >>> df = pycatdap.datasets.fetch_compas()    # doctest: +SKIP
+    """
+    try:
+        from sklearn.datasets import fetch_openml
+    except ImportError as exc:
+        msg = (
+            "scikit-learn is required for fetch_compas. "
+            "Install with: pip install 'pycatdap[data]'"
+        )
+        raise ImportError(msg) from exc
+
+    bundle = fetch_openml(name="compas-two-years", version=4, as_frame=True)
+    df: pd.DataFrame = bundle.frame
+    return df
+
+
 def load_hello_goodbye() -> pd.DataFrame:
     """Load the HelloGoodbye dataset (13954 observations, 56 binary variables).
 

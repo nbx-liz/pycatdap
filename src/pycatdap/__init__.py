@@ -27,6 +27,7 @@ from pycatdap._version import (
 from pycatdap.catdap1 import Catdap1Result, catdap1
 from pycatdap.catdap2 import Catdap2Result, catdap2
 from pycatdap.eda import DescribeResult, describe
+from pycatdap.error import ErrorAnalysisResult, Slice, error_analysis
 from pycatdap.plot import (
     aic_heatmap,
     association_plot,
@@ -50,10 +51,12 @@ __all__ = [
     "Catdap1Result",
     "Catdap2Result",
     "DescribeResult",
+    "ErrorAnalysisResult",
     "ProfileResult",
     "QualityReport",
     "QualityWarning",
     "RegressionTargetSummary",
+    "Slice",
     "TargetAnalysisResult",
     "TargetSummary",
     "VariableCard",
@@ -65,6 +68,7 @@ __all__ = [
     "datasets",
     "describe",
     "error",
+    "error_analysis",
     "measures",
     "plot_missing",
     "plot_pair",

@@ -7,6 +7,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-05-29
+
+このリリースは **H-0011 Phase H** に対応し、ML 誤差分析 arc の
+ワンコール入口となる **`error_analysis()`** と、Phase H デモ用に
+**D4 fetch データセット**(scikit-learn 経由)を同梱する。
+BLUEPRINT.md §5.8 / Issue #17 / Issue #24 を参照。
+
+主要な追加:
+- `pycatdap.error_analysis(df, y_true, y_pred)` — task auto-detect +
+  Phase G ラベリング + `target_analysis` の合成によるワンコール ML
+  誤差分析。`ErrorAnalysisResult` を返す。
+- `pycatdap.ErrorAnalysisResult` / `pycatdap.Slice` — v0.6.1 H-0009
+  immutable pattern(`tuple` / `MappingProxyType` / `__post_init__`
+  numpy freeze)を最初から適用した frozen dataclass。
+- `pycatdap.datasets.fetch_california_housing / fetch_adult_income /
+  fetch_compas` — D4 ベンチマークデータセット。新規 `pycatdap[data]`
+  extras(`scikit-learn>=1.3`)。
+
+### Added — Phase H one-call wrapper (`pycatdap.error_analysis`)
+- `error_analysis(df, y_true, y_pred, *, task="auto", top_k=5,
+  positive=None, residual_method="aic_pool", n_bins=4, bins=None,
+  criterion="bic")` — Phase G の `error_label` / `confusion_label` /
+  `residual_label` と `target_analysis` を合成し、`feature_ranking`
+  + `top_slices` + (binary 時)`confusion` を 1 つの結果に bundle。
+- `y_true` / `y_pred` は列名(`str`)/`pd.Series`/`np.ndarray` の 3
+  形式を受け入れ。
+- Task dispatch: `auto` は `_detect_task` 経由、classification + binary
+  → `confusion_label`、classification + 3+ unique → `error_label`
+  (multiclass guard、H-0010 §C の `NotImplementedError` を回避)、
+  regression → `residual_label`。
+- Slice extraction: `top_k` 変数のみ走査、`|pearson_residual| >= 2.0`
+  のセルを `Slice` として surfacing、`|residual|` 降順で `3 * top_k`
+  までキャップ。多変数 subgroup discovery は Phase L(v0.11.0)で対応。
+- 実装 safeguards(cross-check 2026-05-28 で抽出):
+  - **F-1**: `__pycatdap_*_label__` 列が既存する場合に明示 `ValueError`
+  - **F-2**: 完璧な分類器(`pd.crosstab` が FP/FN 行を drop する)で
+    KeyError しないよう `confusion` を canonical TP/FP/FN/TN 順に
+    reindex
+  - **F-3**: `equal_pooling` boundaries が ascending sort であること
+    を確認、residual-label slice 抽出で `bin_0` = under、最大番号 bin
+    = over の前提を保証
+
+### Added — `ErrorAnalysisResult` / `Slice` データクラス
+- `ErrorAnalysisResult` フィールド:
+  `task` / `label_kind` / `response_name` / `feature_ranking`(numpy
+  buffer frozen)/ `top_summaries`(`MappingProxyType`)/ `top_slices`
+  (`tuple[Slice, ...]`)/ `confusion`(`pd.DataFrame | None`、frozen)
+  / `residual_pooling`(`MappingProxyType | None`、`dict` 入力は
+  `__post_init__` で defensive copy)/ `n_rows` / `n_correct` /
+  `n_incorrect` / `mae` / `rmse`。
+- `Slice` フィールド:
+  `variable` / `category` / `error_category` / `n_in_slice` /
+  `n_error_in_slice` / `error_rate` / `pearson_residual` / `delta_aic`。
+- 5-method serialisation contract:
+  - `show()` — Jupyter / stdout 両対応サマリ
+  - `to_dict()` — JSON-safe Python dict
+  - `to_html(path=None)` — self-contained jinja2 + Plotly inline
+    HTML(atomic write、`pycatdap[plotly]` 未導入時は明示 `ImportError`)
+  - `to_plotly_json()` — `feature_ranking` / `confusion` / 各
+    `top_summaries` を section dict として返す(DP-4、LizyStudio
+    直接消費可)
+  - `to_divexplorer_format()` — DivExplorer subgroup API 互換 flat
+    DataFrame(Phase L で完全統合、Phase H はフォーマット互換のみ)
+
+### Added — D4 fetch demo datasets (`pycatdap.datasets`)
+- `fetch_california_housing()` — sklearn 同梱の California Housing
+  (20,640 × 9)。回帰タスク、`MedHouseVal` がターゲット。
+- `fetch_adult_income()` — OpenML id `adult` v2(~48,842 × 15)。
+  binary classification、`class` がターゲット(`<=50K` / `>50K`)。
+  Fairness 解析の文脈で広く利用。
+- `fetch_compas()` — OpenML id `compas-two-years` v4(~5,278 × 14)。
+  ProPublica COMPAS 二年再犯予測、fairness-critical な demo データ。
+  docstring に ProPublica 経由のバイアス出典 disclaimer 明記。
+- 共通: scikit-learn 未導入時は明示 `ImportError`(`pycatdap[data]`
+  extras を案内)。HTTP/retry/checksum/cache は sklearn に委譲
+  (`~/scikit_learn_data/`、`SCIKIT_LEARN_DATA` env で上書き可)。
+
+### Added — Dependencies / extras
+- 新規 `pycatdap[data]` extras: `scikit-learn>=1.3`。
+- `pycatdap[all]` extras に `scikit-learn>=1.3` を統合。
+- `[tool.mypy.overrides]` に `sklearn.*` を追加(stubs 未提供)。
+
+### Added — Documentation
+- Tutorial **Notebook 11** (`docs/tutorials/11-phase-h-error-analysis.ipynb`)
+  — binary classification / multiclass / regression の 3 経路 +
+  5-method serialisation + F-1 / F-2 / F-3 safeguards デモ。
+- BLUEPRINT.md §5.8 を「Phase H 実装済 v0.8.0」に更新、データクラス
+  契約を実装と一致させる(immutable パターンを正式記載)。
+- README.md quickstart に `error_analysis()` セクション追加、Phase G
+  セクションも v0.7.0 → v0.8.0 のブリッジ説明を加筆。
+
+### Fixed — Issues closed
+- Closes #17 (Phase H `error_analysis()` one-call wrapper)
+- Closes #24 (Data D4: Adult Income / COMPAS / California Housing)
+
+### Breaking changes
+- なし。既存 v0.7.0 API は全て後方互換。
+
 ## [0.7.0] — 2026-05-28
 
 このリリースは **H-0010 Phase G** に対応し、ML 誤差分析 arc の基盤となる

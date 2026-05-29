@@ -126,28 +126,41 @@ ta = pycatdap.target_analysis(df.assign(was_correct=labels), response="was_corre
 
 See [`docs/tutorials/10-phase-g-error-labeling.ipynb`](docs/tutorials/10-phase-g-error-labeling.ipynb).
 
-### ML error analysis (planned, v0.8+)
+### ML error analysis — Phase H one-call (v0.8.0)
 
 ```python
-# Coming in v0.8
+# task auto-detected from y_true / y_pred dtypes
 result = pycatdap.error_analysis(
     df=test_df,
-    y_true=y_test,
-    y_pred=model.predict(X_test),
+    y_true=y_test,                                  # str column name or array
+    y_pred=model.predict(X_test),                   # str column name or array
+    top_k=5,
 )
-result.show()                       # Jupyter
-result.to_html("errors.html")       # standalone report
-result.top_slices                   # natural-language cohort descriptions
+result.show()                                       # Jupyter / stdout summary
+result.to_html("errors.html")                       # self-contained Plotly report
+result.feature_ranking                              # ΔAIC ranking of explanatories
+result.top_slices                                   # single-variable cohort slices
+result.confusion                                    # canonical TP/FP/FN/TN (binary)
+result.to_divexplorer_format()                      # DivExplorer-compatible DataFrame
+
+# Larger fairness-relevant benchmarks (needs `pip install 'pycatdap[data]'`)
+df = pycatdap.datasets.fetch_california_housing()   # regression
+df = pycatdap.datasets.fetch_adult_income()         # fairness demo
+df = pycatdap.datasets.fetch_compas()               # fairness demo
 ```
+
+See [`docs/tutorials/11-phase-h-error-analysis.ipynb`](docs/tutorials/11-phase-h-error-analysis.ipynb).
 
 ## Status & Roadmap
 
 | Version | Theme |
 |---|---|
 | v0.2.0 ✅ | Core CATDAP-01/02 (released) |
-| v0.3.0 — v0.6.0 | EDA workflow (Plotly backend, profile, target analysis) |
-| v0.7.0 — v0.11.0 | ML error analysis (slice discovery, calibration, drift) |
-| v0.12.0 | LizyStudio integration |
+| v0.3.0 — v0.6.0 ✅ | EDA workflow (Plotly backend, profile, target analysis) |
+| v0.7.0 ✅ | Phase G error labelling building blocks |
+| v0.8.0 ✅ | Phase H `error_analysis()` one-call + D4 benchmarks |
+| v0.9.0 — v0.10.0 | Phase I+J error visualisation, Phase K calibration |
+| v0.11.0 — v0.12.0 | Phase L slice discovery + LizyStudio integration |
 | v1.0.0 | API stabilization |
 
 Full roadmap: [PLAN.md](PLAN.md) · [Meta Issue #11](https://github.com/nbx-liz/pycatdap/issues/11)

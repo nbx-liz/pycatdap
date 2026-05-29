@@ -33,11 +33,16 @@ from pycatdap.error._labels import (
     error_label,
     residual_label,
 )
+from pycatdap.error._result import ErrorAnalysisResult, Slice
+from pycatdap.error.analysis import error_analysis
 
 __all__ = [
+    "ErrorAnalysisResult",
+    "Slice",
     "_detect_task",
     "abs_residual_pool",
     "confusion_label",
+    "error_analysis",
     "error_label",
     "residual_label",
 ]
