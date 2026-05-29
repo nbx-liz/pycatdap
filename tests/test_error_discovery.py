@@ -265,9 +265,11 @@ def test_adult_income_surfaces_cohorts_and_prunes() -> None:
     features = [c for c in df.columns if c != target]
 
     enc = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
-    # Adult Income has missing values; stringify (incl. NaN -> "nan") so the
-    # encoder + LogisticRegression never see a float NaN.
-    x = enc.fit_transform(df[features].fillna("?").astype(str))
+    # Adult Income has missing values; fill them with "?" then stringify so the
+    # encoder + LogisticRegression never see a float NaN. astype(object) first
+    # so .fillna() works on category-dtype columns (pandas rejects setitem of a
+    # new category directly on a Categorical).
+    x = enc.fit_transform(df[features].astype(object).fillna("?").astype(str))
     y = (df[target].astype(str).str.contains(">50K")).to_numpy().astype(int)
     model = LogisticRegression(max_iter=200)
     model.fit(x, y)
