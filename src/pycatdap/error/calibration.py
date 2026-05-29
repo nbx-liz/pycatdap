@@ -411,8 +411,10 @@ def calibration_curve(
     backend : {"matplotlib", "plotly"}
         Plotting backend.
     **kwargs
-        Forwarded to the matplotlib ``Axes.errorbar`` call (e.g. ``ax=``,
-        ``color=``, ``markersize=``). The plotly backend ignores ``**kwargs``.
+        Forwarded to the matplotlib backend. ``ax=`` selects the Axes to draw
+        on (a new figure is created if omitted); the remaining kwargs (e.g.
+        ``color=``, ``markersize=``) reach ``Axes.errorbar``. The plotly
+        backend ignores ``**kwargs``.
 
     Returns
     -------
@@ -565,6 +567,45 @@ def regression_calibration_error(
     return float(np.sum(weights * gaps))
 
 
+def regression_calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    n_quantiles: int = 10,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Regression calibration diagram: ``pred_mean`` vs ``actual_mean``.
+
+    Plots the per-band mean prediction against the mean outcome (from
+    :func:`regression_calibration_table`) with a ``y = x`` reference and a
+    normal CI on the outcome mean. Unlike the binary reliability diagram the
+    axes follow the data range — they are **not** clamped to ``[0, 1]``.
+    Returns a *figure*; use :func:`regression_calibration_table` for the data.
+
+    Parameters
+    ----------
+    y_true, y_pred : array-like
+        Aligned numeric outcomes and predictions.
+    n_quantiles : int, default 10
+        Number of equal-frequency prediction bands.
+    backend : {"matplotlib", "plotly"}
+        Plotting backend.
+    **kwargs
+        Forwarded to the matplotlib backend. ``ax=`` selects the Axes to draw
+        on (a new figure is created if omitted); the remaining kwargs (e.g.
+        ``color=``) reach ``Axes.errorbar``. The plotly backend ignores
+        ``**kwargs``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes | plotly.graph_objects.Figure
+    """
+    return _get_backend_module(backend).regression_calibration_curve(
+        y_true, y_pred, n_quantiles=n_quantiles, **kwargs
+    )
+
+
 # ---------------------------------------------------------------------------
 # Multi-class calibration (one-vs-rest) (H-0014 Phase L, PR-L5)
 #
@@ -695,14 +736,61 @@ def multiclass_expected_calibration_error(
     return float(np.mean(per_class)) if per_class else 0.0
 
 
+def multiclass_calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    *,
+    classes: list[Any] | None = None,
+    strategy: Strategy = "aic",
+    n_bins: int = 10,
+    backend: Backend = "matplotlib",
+    **kwargs: Any,
+) -> Any:
+    """Per-class one-vs-rest reliability diagram (multi-class calibration).
+
+    Overlays one reliability curve per class (from
+    :func:`multiclass_calibration_table`) on a shared ``[0, 1] x [0, 1]`` axis
+    with a single ``y = x`` reference. Returns a *figure*; use
+    :func:`multiclass_calibration_table` for the per-class data.
+
+    Parameters
+    ----------
+    y_true : array-like
+        Integer / label ground truth, length ``n_samples``.
+    y_proba : array-like, shape (n_samples, n_classes)
+        Per-class probabilities; column ``j`` corresponds to ``classes[j]``.
+    classes : list or None
+        Class label order matching the probability columns (see
+        :func:`multiclass_calibration_table`).
+    strategy : {"aic", "equal_width", "quantile"}
+        Probability-axis binning.
+    n_bins : int
+        Bin count for ``equal_width`` / ``quantile``.
+    backend : {"matplotlib", "plotly"}
+        Plotting backend.
+    **kwargs
+        Forwarded to the matplotlib per-class line plot. The plotly backend
+        ignores ``**kwargs``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes | plotly.graph_objects.Figure
+    """
+    return _get_backend_module(backend).multiclass_calibration_curve(
+        y_true, y_proba, classes=classes, strategy=strategy, n_bins=n_bins, **kwargs
+    )
+
+
 __all__ = [
     "brier_score",
     "calibration_curve",
     "calibration_table",
     "expected_calibration_error",
     "maximum_calibration_error",
+    "multiclass_calibration_curve",
     "multiclass_calibration_table",
     "multiclass_expected_calibration_error",
+    "regression_calibration_curve",
     "regression_calibration_error",
     "regression_calibration_table",
 ]

@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+このリリースは **H-0015 Phase M** に対応し、v0.12.0 の LizyStudio 統合
+イネーブルメントと、誤差分析 arc の積み残しを解消する。BLUEPRINT.md §5.7 / §5.8、
+HISTORY.md H-0015、Issue #21 を参照。
+
+### Added
+
+- **回帰スライス探索**: `pycatdap.error.discover_error_slices` が回帰タスクに対応
+  (設計 D1)。`|y_true - y_pred|` を `abs_residual_pool` で AIC binning し、
+  最大平均 |residual| のビンを binary `high_residual` 誤差カテゴリとして
+  既存の 2 カテゴリ機構(support 枝刈り・measures・ΔAIC scoring)を共有再利用する。
+  新パラメータ `n_bins`(回帰のみ)。従来の `NotImplementedError` を解消。
+- **回帰 / 多クラス calibration reliability plot**:
+  `pycatdap.error.regression_calibration_curve`(`pred_mean × actual_mean`、
+  軸は `[0,1]` 非クランプ)/ `pycatdap.error.multiclass_calibration_curve`
+  (one-vs-rest をクラスごとに `[0,1]` 正方形へオーバーレイ)。matplotlib / plotly
+  両 backend。既存の二値 `calibration_curve` は無変更。
+- **多クラス confusion ラベル**: `pycatdap.error.multiclass_confusion_label`
+  — クラスごとの one-vs-rest TP/FP/FN/TN を `Mapping[class, pd.Series]` で返す
+  (二値 `confusion_label` コアを再利用、二値 API は無変更)。
+- **`.to_plotly_json()` 契約テスト**: 全結果型の FLAT / SECTIONED 形状・安定キー・
+  JSON 安全性(`allow_nan=False`)・`plotly.graph_objects.Figure(spec)` 互換を
+  検証する契約スイート(`tests/contract/`)。契約は BLUEPRINT §5.7.1 に明文化。
+
+### Fixed
+
+- `DescribeResult.to_plotly_json()` が NaN セル(カテゴリ列の mean/std)を含み
+  `json.dumps(allow_nan=False)` を壊していたのを修正。非有限値を `None` に置換する
+  共有ヘルパ `pycatdap._jsonsafe.scalar_to_json` を抽出(`profile.py` も再利用)。
+
 ## [0.11.0] — 2026-05-29
 
 このリリースは **H-0014 Phase L** に対応し、ML 誤差分析 arc を完成させる。
