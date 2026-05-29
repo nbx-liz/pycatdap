@@ -48,6 +48,7 @@ from pycatdap.error.confusion import (
     plot_confusion,
     plot_confusion_by_slice,
 )
+from pycatdap.error.discovery import discover_error_slices
 from pycatdap.error.residual import (
     residual_by_category,
     residual_plot,
@@ -66,6 +67,7 @@ __all__ = [
     "calibration_table",
     "confusion_aic",
     "confusion_label",
+    "discover_error_slices",
     "error_analysis",
     "error_label",
     "expected_calibration_error",
