@@ -151,6 +151,28 @@ df = pycatdap.datasets.fetch_compas()               # fairness demo
 
 See [`docs/tutorials/11-phase-h-error-analysis.ipynb`](docs/tutorials/11-phase-h-error-analysis.ipynb).
 
+### ML error visualisation — Phase I+J (v0.9.0)
+
+```python
+r = pycatdap.error_analysis(df, y_true, y_pred)
+
+# Result delegation — visualise straight off the result
+r.plot_confusion()                                  # binary OR multi-class
+r.plot_confusion(backend="plotly", normalize="true")
+r.residual_plot()                                   # regression
+
+# Or call the standalone functions
+pycatdap.error.plot_confusion(y_true, y_pred, labels=[0, 1], normalize="true")
+pycatdap.error.plot_confusion_by_slice(df, y_true, y_pred, var="age_group")
+pycatdap.error.confusion_aic(y_true, y_pred)        # ΔAIC, negative = informative
+
+pycatdap.error.residual_plot(y_true, y_pred, kind="histogram")
+pycatdap.error.residual_by_category(df, y_true, y_pred, "feature")
+pycatdap.error.residual_pool_plot(y_true, y_pred, n_bins=4)
+```
+
+See [`docs/tutorials/12-phase-i-j-error-visualization.ipynb`](docs/tutorials/12-phase-i-j-error-visualization.ipynb).
+
 ## Status & Roadmap
 
 | Version | Theme |
@@ -159,7 +181,8 @@ See [`docs/tutorials/11-phase-h-error-analysis.ipynb`](docs/tutorials/11-phase-h
 | v0.3.0 — v0.6.0 ✅ | EDA workflow (Plotly backend, profile, target analysis) |
 | v0.7.0 ✅ | Phase G error labelling building blocks |
 | v0.8.0 ✅ | Phase H `error_analysis()` one-call + D4 benchmarks |
-| v0.9.0 — v0.10.0 | Phase I+J error visualisation, Phase K calibration |
+| v0.9.0 ✅ | Phase I+J error visualisation (confusion + residual) |
+| v0.10.0 | Phase K calibration |
 | v0.11.0 — v0.12.0 | Phase L slice discovery + LizyStudio integration |
 | v1.0.0 | API stabilization |
 
