@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 
 from pycatdap._association import association_matrix
+from pycatdap._jsonsafe import scalar_to_json
 from pycatdap._quality import (
     _DEFAULT_QUALITY_THRESHOLDS,
     QualityWarning,
@@ -523,27 +524,12 @@ def _association_heatmap_spec(association: pd.DataFrame) -> dict[str, Any]:
 # -- helpers for to_dict ---------------------------------------------------
 
 
-def _scalar_to_json(v: Any) -> Any:
-    """Convert a pandas/numpy scalar to a JSON-friendly value.
-
-    Returns ``None`` for NA, NaN, and +/-inf (the latter two are not valid
-    JSON per RFC 8259 and break strict JS parsers); preserves finite
-    numerics as ``float``; falls back to ``str`` for anything else.
-    """
-    if pd.isna(v):
-        return None
-    if isinstance(v, (int, float, np.floating, np.integer)):
-        f = float(v)
-        return f if np.isfinite(f) else None
-    return str(v)
-
-
 def _df_to_dict(df: pd.DataFrame) -> dict[str, Any]:
     return {
         "index": [str(i) for i in df.index],
         "columns": [str(c) for c in df.columns],
         "data": [
-            [_scalar_to_json(v) for v in row]
+            [scalar_to_json(v) for v in row]
             for row in df.itertuples(index=False, name=None)
         ],
     }
