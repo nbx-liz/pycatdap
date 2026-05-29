@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-05-29
+
+このリリースは **H-0013 Phase K** に対応し、ML 誤差分析 arc に
+**キャリブレーション診断**(二値分類)を追加する。pycatdap 固有の
+**AIC 最適 binning** を確率軸に適用し、reliability diagram・Brier
+score・ECE/MCE を提供する。`error_analysis()` に `y_proba=` を渡せば
+`ErrorAnalysisResult.calibration_curve()` で 1 メソッド可視化できる。
+BLUEPRINT.md §5.8 / Issue #19 を参照。
+
+主要な追加:
+- `pycatdap.error.calibration_curve / calibration_table` — reliability
+  diagram(Wilson 95% CI)と背後の per-bin テーブル。
+- `pycatdap.error.brier_score / expected_calibration_error /
+  maximum_calibration_error` — スカラーメトリクス。
+- `ErrorAnalysisResult.y_proba` フィールド + `calibration_curve()`
+  delegation メソッド。`error_analysis(..., y_proba=)` で populate。
+
+### Added — Phase K calibration (`pycatdap.error`)
+
+- `calibration_curve(y_true, y_proba, *, strategy="aic"|"equal_width"|"quantile",
+  n_bins=10, backend="matplotlib"|"plotly", **kwargs) -> Axes | Figure` —
+  reliability diagram。`y = x` 完全校正線 + Wilson 95% 二項信頼区間。
+  matplotlib は `ax=` 受け入れ `Axes`、plotly は `Figure` を返す。
+  `strategy="aic"`(既定)は確率軸を `_pooling.optimal_binning` で AIC 最適
+  binning(初期グリッドは有界化、連続確率でもビン爆発しない)。
+- `calibration_table(y_true, y_proba, *, strategy="aic", n_bins=10) -> pd.DataFrame`
+  — `bin_low/bin_high/n/prob_pred/prob_true/ci_low/ci_high`。占有ビンのみ。
+  メトリクスと diagram の single source of truth。
+- `brier_score(y_true, y_proba) -> float` — `mean((y_proba - y_true)**2)`。
+  sklearn `brier_score_loss`(二値)と一致。
+- `expected_calibration_error(...) / maximum_calibration_error(...) -> float`
+  — ビン重み付き平均ギャップ / 最悪ビンギャップ。空ビンは除外。
+- `ErrorAnalysisResult.y_proba`(既定 `None`、`__post_init__` freeze)+
+  `ErrorAnalysisResult.calibration_curve(*, strategy, n_bins, backend, **kwargs)`
+  delegation。`error_analysis(..., y_proba=)` で保持。
+
+### Notes
+
+- Wilson 信頼区間は pure-numpy(scipy 非依存)。
+- スコープは**二値分類のみ**。回帰 calibration(predicted-vs-actual quantiles)と
+  multi-class(one-vs-rest)は v0.11.0 へ defer。
+- 破壊的変更なし。`y_proba` 追加は既存コンストラクタ・`error_analysis()` 呼び出しに
+  無影響(`to_dict()` / `to_plotly_json()` スキーマ不変)。
+
 ## [0.9.0] — 2026-05-29
 
 このリリースは **H-0012 Phase I+J** に対応し、ML 誤差分析 arc の

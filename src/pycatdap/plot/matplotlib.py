@@ -1380,3 +1380,71 @@ def residual_pool_plot(
     ax.set_ylabel("Count")
     ax.set_title(f"AIC-pooled |residual| bins ({len(bin_counts)} bins)")
     return ax
+
+
+# ---------------------------------------------------------------------------
+# Phase K (H-0013): calibration reliability diagram
+# ---------------------------------------------------------------------------
+
+
+def calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    *,
+    strategy: str = "aic",
+    n_bins: int = 10,
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Reliability diagram (H-0013 Phase K, matplotlib backend).
+
+    Plots observed positive-rate vs mean predicted probability per bin, with a
+    ``y = x`` perfect-calibration reference and Wilson 95% CI error bars. See
+    :func:`pycatdap.error.calibration_curve` for the parameter contract and
+    binning strategies.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+    from pycatdap.error.calibration import _calibration_table
+
+    table = _calibration_table(y_true, y_proba, strategy=strategy, n_bins=n_bins)
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    ax.plot(
+        [0.0, 1.0],
+        [0.0, 1.0],
+        linestyle="--",
+        color="black",
+        linewidth=1,
+        label="perfect",
+    )
+
+    if not table.empty:
+        pred = table["prob_pred"].to_numpy(dtype=np.float64)
+        obs = table["prob_true"].to_numpy(dtype=np.float64)
+        lower = np.clip(obs - table["ci_low"].to_numpy(dtype=np.float64), 0.0, None)
+        upper = np.clip(table["ci_high"].to_numpy(dtype=np.float64) - obs, 0.0, None)
+        # Defaults are overridable by caller kwargs (merge, not collide) so
+        # passing e.g. color= / label= / markersize= does not raise TypeError.
+        errorbar_kwargs: dict[str, Any] = {
+            "fmt": "o-",
+            "capsize": 3,
+            "color": "#1f77b4",
+            "label": "model",
+        }
+        errorbar_kwargs.update(kwargs)
+        ax.errorbar(pred, obs, yerr=np.vstack([lower, upper]), **errorbar_kwargs)
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("Mean predicted probability")
+    ax.set_ylabel("Observed frequency")
+    ax.set_title(f"Reliability diagram ({strategy})")
+    ax.legend(loc="best")
+    return ax

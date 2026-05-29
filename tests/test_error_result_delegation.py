@@ -276,3 +276,112 @@ def test_legacy_construction_plot_confusion_raises_helpful_message() -> None:
     )
     with pytest.raises(ValueError, match="constructed without them"):
         result.plot_confusion()
+
+
+# ---------- calibration_curve delegation (H-0013 PR-K2) ----------
+
+
+@pytest.fixture()
+def binary_proba_setup() -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(202)
+    n = 200
+    df = pd.DataFrame({"age": rng.choice(["young", "old"], size=n)})
+    y_proba = rng.uniform(0.0, 1.0, size=n)
+    y_true = (rng.random(n) < y_proba).astype(int)
+    y_pred = (y_proba >= 0.5).astype(int)
+    return df, y_true, y_pred, y_proba
+
+
+def test_error_analysis_stores_y_proba(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    df, y_true, y_pred, y_proba = binary_proba_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred, y_proba=y_proba)
+    assert r.y_proba is not None
+    assert np.array_equal(r.y_proba, y_proba)
+
+
+def test_error_analysis_y_proba_defaults_none(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    df, y_true, y_pred, _ = binary_proba_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred)
+    assert r.y_proba is None
+
+
+def test_stored_y_proba_is_frozen(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    df, y_true, y_pred, y_proba = binary_proba_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred, y_proba=y_proba)
+    assert r.y_proba is not None
+    with pytest.raises(ValueError, match="read-only|assignment"):
+        r.y_proba[0] = 0.123
+
+
+def test_caller_y_proba_array_not_frozen(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Defensive copy: the caller's y_proba stays mutable after the call."""
+    df, y_true, y_pred, y_proba = binary_proba_setup
+    pycatdap.error_analysis(df, y_true, y_pred, y_proba=y_proba)
+    y_proba[0] = 0.5  # must not raise
+
+
+def test_result_calibration_curve_matplotlib(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    pytest.importorskip("matplotlib")
+    from matplotlib.axes import Axes
+
+    df, y_true, y_pred, y_proba = binary_proba_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred, y_proba=y_proba)
+    ax = r.calibration_curve(backend="matplotlib")
+    assert isinstance(ax, Axes)
+
+
+def test_result_calibration_curve_plotly(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    pytest.importorskip("plotly")
+    import plotly.graph_objects as go
+
+    df, y_true, y_pred, y_proba = binary_proba_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred, y_proba=y_proba)
+    fig = r.calibration_curve(backend="plotly", strategy="equal_width", n_bins=8)
+    assert isinstance(fig, go.Figure)
+
+
+def test_result_calibration_curve_regression_raises(
+    regression_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray],
+) -> None:
+    df, y_true, y_pred = regression_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred)
+    with pytest.raises(ValueError, match="classification-only"):
+        r.calibration_curve()
+
+
+def test_result_calibration_curve_without_proba_raises(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    """Binary classification but no y_proba supplied → helpful error."""
+    df, y_true, y_pred, _ = binary_proba_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred)  # no y_proba=
+    with pytest.raises(ValueError, match="without probabilities"):
+        r.calibration_curve()
+
+
+def test_to_dict_excludes_y_proba(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    df, y_true, y_pred, y_proba = binary_proba_setup
+    r = pycatdap.error_analysis(df, y_true, y_pred, y_proba=y_proba)
+    assert "y_proba" not in r.to_dict()
+
+
+def test_error_analysis_y_proba_length_mismatch_raises(
+    binary_proba_setup: tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray],
+) -> None:
+    df, y_true, y_pred, y_proba = binary_proba_setup
+    with pytest.raises(ValueError, match="y_proba length"):
+        pycatdap.error_analysis(df, y_true, y_pred, y_proba=y_proba[:-5])

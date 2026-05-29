@@ -35,6 +35,13 @@ from pycatdap.error._labels import (
 )
 from pycatdap.error._result import ErrorAnalysisResult, Slice
 from pycatdap.error.analysis import error_analysis
+from pycatdap.error.calibration import (
+    brier_score,
+    calibration_curve,
+    calibration_table,
+    expected_calibration_error,
+    maximum_calibration_error,
+)
 from pycatdap.error.confusion import (
     confusion_aic,
     plot_confusion,
@@ -51,10 +58,15 @@ __all__ = [
     "Slice",
     "_detect_task",
     "abs_residual_pool",
+    "brier_score",
+    "calibration_curve",
+    "calibration_table",
     "confusion_aic",
     "confusion_label",
     "error_analysis",
     "error_label",
+    "expected_calibration_error",
+    "maximum_calibration_error",
     "plot_confusion",
     "plot_confusion_by_slice",
     "residual_by_category",
