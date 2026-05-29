@@ -102,11 +102,17 @@ def _validate_binary_proba(
         msg = "calibration requires at least one observation"
         raise ValueError(msg)
 
+    # Drop rows where either y_proba or (float) y_true is non-finite. Masking
+    # y_true too avoids a NaN label leaking into the binary check below and
+    # producing a confusing "got classes [0.0, 1.0, nan]" error. Non-float
+    # y_true (int / bool / object) cannot hold NaN, so guard the isfinite call.
     finite = np.isfinite(yp)
+    if np.issubdtype(yt.dtype, np.floating):
+        finite = finite & np.isfinite(yt)
     yt = yt[finite]
     yp = yp[finite]
     if yp.size == 0:
-        msg = "calibration requires at least one finite y_proba value"
+        msg = "calibration requires at least one finite (y_true, y_proba) pair"
         raise ValueError(msg)
 
     if float(yp.min()) < 0.0 or float(yp.max()) > 1.0:
@@ -182,9 +188,12 @@ def _bin_codes(
 
     if strategy == "equal_width":
         edges = np.linspace(0.0, 1.0, n_bins + 1)
-    else:  # "quantile"
+    else:
+        # Strategy is validated in _calibration_table, so this is "quantile".
+        assert strategy == "quantile", f"unexpected strategy {strategy!r}"
         edges = np.unique(np.quantile(y_proba, np.linspace(0.0, 1.0, n_bins + 1)))
         if edges.size < 2:
+            # Degenerate (near-constant) probabilities collapse to one bin.
             edges = np.array([float(y_proba.min()), float(y_proba.max()) + 1e-12])
 
     codes = np.clip(np.digitize(y_proba, edges[1:-1]), 0, len(edges) - 2)
@@ -237,7 +246,8 @@ def _calibration_table(
     table = pd.DataFrame(
         rows, columns=["bin_low", "bin_high", "n", "prob_pred", "prob_true"]
     )
-    if table.empty:
+    if table.empty:  # pragma: no cover - unreachable: _validate_binary_proba
+        # guarantees >= 1 finite row, so np.unique(codes) yields >= 1 bin.
         table["ci_low"] = pd.Series(dtype=np.float64)
         table["ci_high"] = pd.Series(dtype=np.float64)
         return table
@@ -340,7 +350,7 @@ def expected_calibration_error(
     float
     """
     table = _calibration_table(y_true, y_proba, strategy=strategy, n_bins=n_bins)
-    if table.empty:
+    if table.empty:  # pragma: no cover - unreachable post-validation
         return 0.0
     n_total = float(table["n"].sum())
     gaps = (table["prob_true"] - table["prob_pred"]).abs().to_numpy(dtype=np.float64)
@@ -379,7 +389,7 @@ def maximum_calibration_error(
     float
     """
     table = _calibration_table(y_true, y_proba, strategy=strategy, n_bins=n_bins)
-    if table.empty:
+    if table.empty:  # pragma: no cover - unreachable post-validation
         return 0.0
     gaps = (table["prob_true"] - table["prob_pred"]).abs()
     return float(gaps.max())
@@ -411,7 +421,8 @@ def calibration_curve(
     backend : {"matplotlib", "plotly"}
         Plotting backend.
     **kwargs
-        Backend-specific keyword arguments (e.g. ``ax=`` for matplotlib).
+        Forwarded to the matplotlib ``Axes.errorbar`` call (e.g. ``ax=``,
+        ``color=``, ``markersize=``). The plotly backend ignores ``**kwargs``.
 
     Returns
     -------
