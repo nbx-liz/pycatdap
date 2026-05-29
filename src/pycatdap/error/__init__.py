@@ -42,6 +42,10 @@ from pycatdap.error.calibration import (
     calibration_table,
     expected_calibration_error,
     maximum_calibration_error,
+    multiclass_calibration_table,
+    multiclass_expected_calibration_error,
+    regression_calibration_error,
+    regression_calibration_table,
 )
 from pycatdap.error.cohorts import (
     CohortComparison,
@@ -82,8 +86,12 @@ __all__ = [
     "error_label",
     "expected_calibration_error",
     "maximum_calibration_error",
+    "multiclass_calibration_table",
+    "multiclass_expected_calibration_error",
     "plot_confusion",
     "plot_confusion_by_slice",
+    "regression_calibration_error",
+    "regression_calibration_table",
     "residual_by_category",
     "residual_label",
     "residual_plot",
