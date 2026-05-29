@@ -34,6 +34,7 @@ from pycatdap.error._labels import (
     residual_label,
 )
 from pycatdap.error._result import ErrorAnalysisResult, Slice
+from pycatdap.error._slice import ErrorSlice, SliceDiscoveryResult
 from pycatdap.error.analysis import error_analysis
 from pycatdap.error.calibration import (
     brier_score,
@@ -41,12 +42,23 @@ from pycatdap.error.calibration import (
     calibration_table,
     expected_calibration_error,
     maximum_calibration_error,
+    multiclass_calibration_table,
+    multiclass_expected_calibration_error,
+    regression_calibration_error,
+    regression_calibration_table,
+)
+from pycatdap.error.cohorts import (
+    CohortComparison,
+    DriftReport,
+    compare_cohorts,
+    detect_drift,
 )
 from pycatdap.error.confusion import (
     confusion_aic,
     plot_confusion,
     plot_confusion_by_slice,
 )
+from pycatdap.error.discovery import discover_error_slices
 from pycatdap.error.residual import (
     residual_by_category,
     residual_plot,
@@ -54,21 +66,32 @@ from pycatdap.error.residual import (
 )
 
 __all__ = [
+    "CohortComparison",
+    "DriftReport",
     "ErrorAnalysisResult",
+    "ErrorSlice",
     "Slice",
+    "SliceDiscoveryResult",
     "_detect_task",
     "abs_residual_pool",
     "brier_score",
     "calibration_curve",
     "calibration_table",
+    "compare_cohorts",
     "confusion_aic",
     "confusion_label",
+    "detect_drift",
+    "discover_error_slices",
     "error_analysis",
     "error_label",
     "expected_calibration_error",
     "maximum_calibration_error",
+    "multiclass_calibration_table",
+    "multiclass_expected_calibration_error",
     "plot_confusion",
     "plot_confusion_by_slice",
+    "regression_calibration_error",
+    "regression_calibration_table",
     "residual_by_category",
     "residual_label",
     "residual_plot",

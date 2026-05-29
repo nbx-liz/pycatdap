@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.11.0] — 2026-05-29
+
+このリリースは **H-0014 Phase L** に対応し、ML 誤差分析 arc を完成させる。
+**多変数サブグループの自動発見**(`discover_error_slices`)・**コホート比較**
+(`compare_cohorts`)・**ドリフト検出**(`detect_drift`)を追加し、さらに
+Phase K で先送りした **回帰 / multi-class calibration** を同梱する。
+BLUEPRINT.md §5.8 / Issue #20 を参照。
+
+主要な追加:
+- `pycatdap.error.discover_error_slices` — 予測誤差が集中する多変数コホートを
+  AIC で自動発見。**support(Apriori, anti-monotone)ベースの健全な枝刈り**
+  (ΔAIC は健全な上界を持たないため不採用 — HISTORY H-0014 §C)。pluggable
+  measure(`"aic"`/`"cramers_v"`/`"mutual_info"`/callable, FR-9)。
+- `pycatdap.error.compare_cohorts` / `detect_drift` — コホート間の分布差・関係性
+  シフトを ΔAIC で定量化。Sweetviz 風 `to_html` レポート。
+- `pycatdap.error.regression_calibration_table` / `regression_calibration_error`
+  — 回帰の predicted-vs-actual 分位 calibration。
+- `pycatdap.error.multiclass_calibration_table` /
+  `multiclass_expected_calibration_error` — one-vs-rest の多クラス calibration。
+
+### Added — Phase L slice discovery & drift (`pycatdap.error`)
+
+- `discover_error_slices(df, y_true, y_pred, *, max_vars=3, measure="aic",
+  top_k=10, min_support=30, columns=None) -> SliceDiscoveryResult` —
+  多変数サブグループ発見(分類のみ)。連続列は誤差ラベルに対して AIC binning。
+  `SliceDiscoveryResult` は `to_divexplorer_format()` / `to_dict()` を提供。
+- `ErrorSlice` / `SliceDiscoveryResult` — 多変数スライスの不変コンテナ
+  (単変数 `Slice` とは別型、後方互換)。
+- `compare_cohorts(df_a, df_b, *, response=None) -> CohortComparison` —
+  `summary`(特徴別 ΔAIC + 最大分布差)・`distributions`・任意の
+  `response_delta`。`to_html(path=)` / `to_dict()`。
+- `detect_drift(df_train, df_prod, *, y_true=None, y_pred=None) -> DriftReport`
+  — 特徴を |ΔAIC| 降順でランク。`y_true`/`y_pred` 指定時は prod 誤差率を併記。
+
+### Added — calibration follow-up (`pycatdap.error`)
+
+- `regression_calibration_table(y_true, y_pred, *, n_quantiles=10)` /
+  `regression_calibration_error(...)` — 回帰 calibration(純 numpy)。
+- `multiclass_calibration_table(y_true, y_proba, *, classes=None,
+  strategy="aic", n_bins=10)` / `multiclass_expected_calibration_error(...)`
+  — one-vs-rest。既存の二値 calibration コアを再利用(二値パスは無変更)。
+
+### Changed
+
+- `error/_backend.py` を新設し、`confusion.py` / `residual.py` /
+  `calibration.py` に重複していた plot backend dispatch を集約(挙動不変)。
+
+### Docs
+
+- Notebook 14(Phase L)を追加し、mkdocs nav に登録。
+
 ## [0.10.0] — 2026-05-29
 
 このリリースは **H-0013 Phase K** に対応し、ML 誤差分析 arc に

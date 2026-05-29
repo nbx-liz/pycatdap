@@ -130,9 +130,13 @@ pycatdap/
 │   ├── analysis.py         # error_analysis() one-call（Phase H, v0.8.0）
 │   ├── confusion.py        # plot_confusion 等（Phase I, v0.9.0）
 │   ├── residual.py         # residual_plot 等（Phase J, v0.9.0）
-│   ├── calibration.py      # calibration_curve 等（Phase K, v0.10.0）
-│   ├── slice_discovery.py  # discover_error_slices（Phase L1, v0.11.0）
-│   └── drift.py            # compare_cohorts / detect_drift（Phase L2, v0.12.0）
+│   ├── calibration.py      # calibration_curve 等 + 回帰/multi-class（Phase K v0.10.0 / Phase L v0.11.0）
+│   ├── _backend.py         # plot backend dispatch 集約（Phase L, v0.11.0）
+│   ├── _slice.py           # ErrorSlice / SliceDiscoveryResult（Phase L, v0.11.0）
+│   ├── _describe.py        # slice description ビルダ（Phase L, v0.11.0）
+│   ├── _enumerate.py       # support 枝刈り列挙（Apriori）（Phase L, v0.11.0）
+│   ├── discovery.py        # discover_error_slices（Phase L, v0.11.0）
+│   └── cohorts.py          # compare_cohorts / detect_drift（Phase L, v0.11.0）
 ├── suite/                  # CI 統合スイート（§5.10, H-0008 PR-D5、v0.6.0 で実装）
 │   ├── __init__.py
 │   ├── _base.py            # Check Protocol, CheckResult, SuiteResult
@@ -604,7 +608,7 @@ pycatdap.association_plot(table, *, threshold=2.0, backend=...)
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
 
-### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase K まで実装 v0.10.0）
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase L まで実装 v0.11.0）
 
 ```python
 # 誤差ラベリング（Phase G、v0.7.0 で実装済）
@@ -672,7 +676,7 @@ pycatdap.error.residual_pool_plot(
 result.plot_confusion(*, backend=..., **kwargs)     # binary OR multi-class
 result.residual_plot(*, backend=..., **kwargs)      # regression 専用
 
-# キャリブレーション（Phase K、H-0013、v0.10.0 で実装済 — 二値分類のみ。回帰/multi-class は v0.11.0）
+# キャリブレーション（Phase K、H-0013、v0.10.0 — 二値。回帰/multi-class は Phase L v0.11.0）
 pycatdap.error.calibration_curve(
     y_true, y_proba,
     *,
@@ -687,22 +691,44 @@ pycatdap.error.expected_calibration_error(y_true, y_proba, *, strategy="aic", n_
 pycatdap.error.maximum_calibration_error(y_true, y_proba, *, strategy="aic", n_bins=10) -> float
 result.calibration_curve(*, strategy="aic", n_bins=10, backend=..., **kwargs)  # delegation（二値分類）
 
-# スライス発見・コホート比較・ドリフト
+# 回帰 / multi-class calibration（Phase L、H-0014、v0.11.0 で実装）
+pycatdap.error.regression_calibration_table(y_true, y_pred, *, n_quantiles=10) -> pd.DataFrame
+                                                    # cols: bin_low/bin_high/n/pred_mean/actual_mean/ci_low/ci_high
+pycatdap.error.regression_calibration_error(y_true, y_pred, *, n_quantiles=10) -> float
+pycatdap.error.multiclass_calibration_table(
+    y_true, y_proba, *, classes=None, strategy="aic", n_bins=10,
+) -> Mapping[Any, pd.DataFrame]                      # one-vs-rest（二値コアを再利用）
+pycatdap.error.multiclass_expected_calibration_error(
+    y_true, y_proba, *, classes=None, strategy="aic", n_bins=10,
+) -> float                                          # macro 平均 OvR ECE
+
+# スライス発見・コホート比較・ドリフト（Phase L、H-0014、v0.11.0 で実装）
 pycatdap.error.discover_error_slices(
     df, y_true, y_pred,
+    *,
     max_vars=3,
-    measure="aic" | "cramers_v" | "mutual_info" | callable,
-) -> list[Slice]
-pycatdap.error.compare_cohorts(df_a, df_b, response=None) -> CohortComparison
-pycatdap.error.detect_drift(df_train, df_prod, y_true=None, y_pred=None) -> DriftResult
+    measure="aic" | "cramers_v" | "mutual_info" | callable,  # FR-9 plug-in（measures registry）
+    top_k=10,
+    min_support=30,                                 # support(Apriori)枝刈り床。ΔAIC ではない
+    columns=None,
+) -> SliceDiscoveryResult                           # 分類のみ。回帰は NotImplementedError
+pycatdap.error.compare_cohorts(df_a, df_b, *, response=None) -> CohortComparison
+pycatdap.error.detect_drift(df_train, df_prod, *, y_true=None, y_pred=None) -> DriftReport
 ```
+
+**Phase L 枝刈りの設計判断（H-0014 §C、cross-check 済）**: ΔAIC は
+`2*(C_E-1)*C_F` のモデル複雑度ペナルティが合成カーディナリティで増えるため
+健全な上界を持たない → ΔAIC 枝刈りは真の top-k を取りこぼす。代わりに
+**support(スライスサイズ)= anti-monotone(Apriori)** で枝刈りし、
+`min_support` 床未満の枝を健全に切る。正当性は
+`pruned == exhaustive ∩ {size≥min_support}` の不変条件テストで担保。
 
 #### データクラス契約（v0.8.0 H-0011 で実装、v0.6.1 H-0009 immutable pattern を最初から適用）
 
 ```python
 @dataclass(frozen=True)
 class Slice:
-    """単変数(variable, category)スライス。Phase L で多変数版に拡張予定。"""
+    """単変数(variable, category)スライス。多変数版は ErrorSlice（Phase L）。"""
     variable: str            # 説明変数名
     category: str            # 値 / bin label
     error_category: str      # "incorrect" / "FP" / "FN" / "bin_<i>" 等
@@ -711,6 +737,48 @@ class Slice:
     error_rate: float        # n_error_in_slice / n_in_slice
     pearson_residual: float  # 標準化残差(|2.0| がカットオフ)
     delta_aic: float         # 親変数の ΔAIC
+
+# Phase L（H-0014, v0.11.0）— 多変数スライスと探索結果コンテナ。Slice は無変更で併存
+@dataclass(frozen=True)
+class ErrorSlice:
+    """多変数サブグループ。description は __post_init__ で conditions から導出。"""
+    conditions: tuple[tuple[str, str], ...]  # (("age","[60, 78]"),("plan","basic"))
+    size: int                # スライス内行数(support)
+    error_metric: float      # スライス内 error rate
+    delta_aic: float         # 変数 subset の ΔAIC
+    measure_value: float     # 選択 measure 値(高いほど interesting、aic は -ΔAIC に正規化)
+    n_error_in_slice: int
+    description: str          # init=False、conditions から導出（"a ∈ [..] × b = .."）
+
+@dataclass(frozen=True)
+class SliceDiscoveryResult:
+    slices: tuple[ErrorSlice, ...]   # measure_value 降順
+    measure: str
+    max_vars: int
+    base_aic: float
+    n_evaluated: int                 # support 計算した組合せ数
+    n_pruned: int                    # 枝刈りで省いた数（>50% 削減の測定可能化）
+    label_kind: str
+    def to_divexplorer_format(self) -> pd.DataFrame: ...
+    def to_dict(self) -> dict: ...
+
+@dataclass(frozen=True)
+class CohortComparison:
+    summary: pd.DataFrame            # variable / delta_aic / max_abs_diff（delta_aic 昇順）
+    distributions: Mapping[str, pd.DataFrame]  # col -> value/prop_a/prop_b/diff
+    n_a: int
+    n_b: int
+    response_delta: pd.DataFrame | None        # response 指定かつ両 cohort に存在時のみ
+    def to_html(self, path=None) -> str: ...
+    def to_dict(self) -> dict: ...
+
+@dataclass(frozen=True)
+class DriftReport:
+    drift_ranking: pd.DataFrame      # variable / delta_aic（|delta_aic| 降順）
+    n_train: int
+    n_prod: int
+    error_rate_prod: float | None    # y_true/y_pred 指定時のみ
+    def to_dict(self) -> dict: ...
 
 @dataclass(frozen=True)
 class ErrorAnalysisResult:
@@ -753,12 +821,13 @@ class ErrorAnalysisResult:
 - **F-3**: `equal_pooling` boundaries が ascending sort なので
   `bin_0` = under-prediction、`bin_{n-1}` = over-prediction が保証
 
-Phase H スコープアウト(明示):
-- 多変数 subgroup discovery → Phase L(`discover_error_slices`)
-- 可視化(confusion matrix / residual scatter 等)→ Phase I+J
-- Calibration(`calibration_curve` / `brier_score` / ECE)→ Phase K
+Phase H スコープアウト → 後続フェーズで解決済:
+- 多変数 subgroup discovery → **Phase L `discover_error_slices`（v0.11.0 実装済）**
+- 可視化(confusion matrix / residual scatter 等)→ Phase I+J（v0.9.0）
+- Calibration(`calibration_curve` / `brier_score` / ECE)→ Phase K（v0.10.0）
+- 回帰 / multi-class calibration → **Phase L（v0.11.0 実装済）**
 - `confusion_label` multiclass(one-vs-rest)→ Phase H wrapper は
-  `error_label` にフォールバックして回避、本格対応は別 Issue
+  `error_label` にフォールバックして回避、本格対応は別 Issue（未対応）
 
 ### 5.9 `profile.py` — ワンコール EDA レポート（H-0001 / H-0007、v0.5.0 で実装）
 

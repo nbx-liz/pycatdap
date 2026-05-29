@@ -3148,3 +3148,196 @@ sklearn には ECE/MCE の直接関数が無い(netcal にある)。テストは
 - Wilson score interval: <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Wilson_score_interval>
 - sklearn calibration_curve(データ返却の対比): <https://scikit-learn.org/stable/modules/generated/sklearn.calibration.calibration_curve.html>
 - netcal(ECE/MCE / 回帰 calibration の参考): <https://github.com/EFS-OpenSource/calibration-framework>
+
+## 2026-05-29: Phase L slice discovery + cohort comparison + drift detection(誤差サブグループの自動発見)
+
+- ID: `H-0014`
+- Status: `accepted`
+- Scope: `API | data-contract | types`
+- Related: `H-0001 Phase L`, `H-0002 FR-5/FR-7/FR-9`, `H-0013 Phase K`, `BLUEPRINT.md §5.8`, Issue #20 / #11
+
+### Context
+
+H-0013(v0.10.0)で Phase K(binary calibration)が出荷され、確率予測の信頼性診断が可能になった。誤差分析アーク(Phase G→H→I+J→K)は「ラベル化 → ワンコール分析 → 可視化 → calibration」を揃えたが、最後に残るのが **「モデルはどの部分集団で失敗しているのか」** という問い。
+
+Phase L は AIC ベースで以下を自動化する:
+1. **slice discovery**(`discover_error_slices`)— 多変数サブグループの誤差集中を自動発見(DivExplorer / SliceLine analog)。Phase H の単変数 `Slice` を多変数に拡張する。
+2. **cohort comparison**(`compare_cohorts`)— 2 コホート間の分布差・関係性シフトを ΔAIC で定量化(Sweetviz analog)。
+3. **drift detection**(`detect_drift`)— train/prod 間のデータ・誤差ドリフト検出。
+
+加えて、H-0013 §G でスコープアウトした **calibration follow-up**(回帰 calibration の quantile 版 + multi-class one-vs-rest)を本リリースに同梱する(v0.10.0 で「v0.11.0 へ」と明記した分の回収)。
+
+公開 API・data contract(新コンテナ型)を追加するため Change Gate 対象。本 Proposal を先行 merge(PR-L0)し、merge 前に cross-check で設計トラップを検証する(H-0011 / H-0012 / H-0013 と同じ運用 — 3 期連続で実トラップを事前検出した)。
+
+### Proposal
+
+#### A. Phase L 公開 API(`pycatdap.error.*`)
+
+```python
+# スライス発見(多変数サブグループの誤差集中)
+pycatdap.error.discover_error_slices(
+    df, y_true, y_pred,
+    *,
+    max_vars: int = 3,
+    measure: str | Callable = "aic",   # "aic" | "cramers_v" | "mutual_info" | callable
+    top_k: int = 10,
+    min_support: int | float = 30,     # 枝刈り床(int=行数、float=割合)。§C 参照
+) -> SliceDiscoveryResult
+
+# コホート比較(分布差 + ΔAIC delta、Sweetviz 風レポート)
+pycatdap.error.compare_cohorts(
+    df_a, df_b,
+    *,
+    response: str | None = None,
+) -> CohortComparison           # .to_html(path=) / .to_dict()
+
+# ドリフト検出(train→prod の ΔAIC 変化)
+pycatdap.error.detect_drift(
+    df_train, df_prod,
+    *,
+    y_true=None, y_pred=None,
+) -> DriftReport                # .to_dict()
+```
+
+新コンテナ型(いずれも frozen、H-0009 immutability discipline 準拠):
+
+```python
+@dataclass(frozen=True)
+class ErrorSlice:
+    conditions: tuple[tuple[str, str], ...]   # (("age","[45, 60)"),("marital_status","Never-married"))
+    description: str                          # "age ∈ [45, 60] × marital_status = Never-married"
+    size: int
+    error_metric: float                       # スライス内 error rate
+    delta_aic: float
+    measure_value: float
+    n_error_in_slice: int
+
+@dataclass(frozen=True)
+class SliceDiscoveryResult:
+    slices: tuple[ErrorSlice, ...]
+    measure: str
+    max_vars: int
+    base_aic: float
+    n_evaluated: int                          # 実際にスコアした組合せ数
+    n_pruned: int                             # 枝刈りで省いた組合せ数(>50% 削減の測定可能化)
+    label_kind: str
+    def to_divexplorer_format(self) -> pd.DataFrame: ...
+    def to_dict(self) -> dict[str, Any]: ...
+```
+
+**既存の単変数 `Slice`(`_result.py`)は破壊しない**。Issue #20 本文は `list[Slice]` を返すと書くが、現行 `Slice` の `variable`/`category` はスカラー(単変数)であり、多変数化は破壊的変更になる。新規 `ErrorSlice` を導入する(Alternatives A1)。
+
+#### B. アルゴリズム(discover_error_slices)
+
+1. `error_label(y_true, y_pred)`(Phase G、既存)で合成 response E を生成(再利用)。
+2. `df` をコピー(入力非破壊)、連続列を `optimal_binning(..., accuracy=<有界グリッド>)` で離散化。`boundaries` を区間整形用に保持。
+3. 候補変数部分集合(最大 `max_vars`)ごとに合成分割表を構築 → `(cross, marg_e, marg_f, n)`。
+4. スコアリング:ΔAIC は `compute_delta_aic`(`build_multidim_crosstab` の 4-tuple を消費)、`cramers_v`/`mutual_info`/custom は **既存の `pycatdap.measures` レジストリ**(`Measure = Callable[[NDArray], float]`、2D 分割表を消費、`register`/`get`)を再利用。これが FR-9 plug-in API そのもの — 新レジストリは作らない。**この 2 経路(`measure="aic"` の直接 ΔAIC vs registry measure)は別 call path のため、`discovery.py` で dispatch を明示する**(cross-check 可読性メモ)。
+5. セル単位で `ErrorSlice` を生成(具体的サブグループ)。
+6. measure 降順で `top_k`。
+7. 枝刈り:`min_support` 未満の枝を切る(§C)。
+
+description ビルダ:categorical → `"col = value"`、連続 → `boundaries` 参照で `"col ∈ [low, high]"`(整数境界の `.0` 除去)、複数条件を `" × "` 連結。出力は機械パース可能(受入文字列を逐語生成)。
+
+#### C. 枝刈りは ΔAIC ではなく support で行う(load-bearing 設計判断)
+
+Issue #20 は「AIC 単調性を利用した SliceLine 風 upper-bound pruning」を要求するが、**ΔAIC は健全な上界を持たない**:
+
+```
+AIC(E;F) = −2·loglik + 2·(C_E − 1)·C_F      # ペナルティ項が合成カーディナリティ C_F に線形
+```
+
+変数を追加すると `C_F`(`build_multidim_crosstab` が数える**観測済み合成タプル数**。各変数カーディナリティの積で上界されるが、観測のない組合せは数えないので積より小さくなりうる)が増えてペナルティが膨らむ一方、loglik は改善しうる。よって親スライスの ΔAIC は子スライスの ΔAIC を上界も下界もしない → **ナイーブな ΔAIC 枝刈りは真の top-k を黙って取りこぼす(正当性バグ)**。`src/pycatdap/_aic.py:107`(`penalty = 2.0 * (c_e - 1) * c_f`)で確認済(cross-check で検証済み)。
+
+→ **support(スライスサイズ)ベースの枝刈りを採用**。support は anti-monotone(Apriori):子スライスの size ≤ 親の size。`min_support` 床と併用すれば「親が `min_support` 未満なら全子孫も未満」で枝を健全に切れる。20 変数データで >50% 探索空間削減を満たし、`min_support` を満たす top-k は決して落とさない(床未満はそもそもスコープ外:小セルは統計的に不安定で ΔAIC ペナルティノイズに支配される)。
+
+**正当性担保**:exhaustive 列挙(`enumerate_exhaustive`)を正解 oracle として先に実装し、pruned 列挙(`enumerate_pruned`)は「`size >= min_support` の exhaustive 結果と完全一致」を RED フェーズの invariant テストで保証する(等価テストの定式化は `pruned == exhaustive(size≥min_support 限定)`。ナイーブな `pruned == exhaustive` ではない)。
+
+#### D. compare_cohorts / detect_drift
+
+- `compare_cohorts(df_a, df_b, response=None)` → `CohortComparison`(frozen):
+  - 列ごとの分布差(categorical 直接、連続は両コホート union 由来の同一 bin)
+  - 「コホート所属(a/b)」を合成二値 response として `compute_delta_aic` → コホートを最も判別する変数
+  - `response` 指定時:各特徴の対 response ΔAIC のコホート間差(関係性シフト)
+  - `.to_html()` は既存 jinja2 + atomic write + `pycatdap.templates` を再利用(新 template `cohort_comparison.html.j2`)
+- `detect_drift(df_train, df_prod, y_true=None, y_pred=None)` → `DriftReport`(frozen):`compare_cohorts` の特化。特徴ごとの train→prod ΔAIC 変化を magnitude 順。y_true/y_pred 指定時は error_label 分布のドリフト(モデル劣化シグナル)も report。
+
+#### E. calibration follow-up(binary 非破壊)
+
+`calibration.py` の binary 関数・`_validate_binary_proba` は **一切触らない**。並置で追加:
+
+- `regression_calibration_table(y_true, y_pred, *, n_quantiles=10)`:予測を分位ビン化し、ビンごとの mean predicted vs mean actual(純 numpy `np.quantile`)。`regression_calibration_curve` は backend dispatch。
+- `multiclass_calibration_table(y_true, y_proba_matrix, *, classes=None, strategy="aic", n_bins=10)`:クラス k ごとに OvR 二値化(`y_true==k`, `y_proba[:,k]`)し **既存 `_calibration_table` をそのまま呼ぶ** → `class → table` の MappingProxyType。binary コア再利用が非破壊の最強保証。
+- 新 validator は別関数(`_validate_regression` / `_validate_multiclass_proba`)。
+
+#### F. backend dispatch 抽出(負債解消)
+
+`error/confusion.py` / `residual.py` / `calibration.py` に重複する `_get_backend_module` + `Backend` Literal を `src/pycatdap/error/_backend.py` に抽出(v0.10.0 レビュー合意済みの「次モジュール追加時に実施」)。`compare_cohorts.to_html` が 4 番目の消費者になる前に実施し、消費者追加(L4)前に refactor(L1)を入れて conflict storm を回避。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/error/_backend.py`(新) | backend dispatch 抽出 |
+| `src/pycatdap/error/_slice.py`(新) | `ErrorSlice` + `SliceDiscoveryResult` |
+| `src/pycatdap/error/_describe.py`(新) | description ビルダ + 区間整形 |
+| `src/pycatdap/error/_enumerate.py`(新) | exhaustive + support-pruned 列挙 |
+| `src/pycatdap/error/discovery.py`(新) | `discover_error_slices` |
+| `src/pycatdap/error/cohorts.py`(新) | `compare_cohorts` + `detect_drift` + 結果コンテナ |
+| `src/pycatdap/error/calibration.py`(拡張) | regression + multiclass OvR(binary 無修正) |
+| `src/pycatdap/error/__init__.py` / `pycatdap/__init__.py` | 新公開シンボル re-export |
+| `src/pycatdap/templates/` | `cohort_comparison.html.j2` |
+| `src/pycatdap/error/{confusion,residual,calibration}.py` | `_get_backend_module` を `_backend` import に置換 |
+
+### Compatibility
+
+**破壊的変更なし**。すべて純粋な追加。
+
+- 新公開関数 3 + 新コンテナ型 3。既存シンボル(`Slice` / `ErrorAnalysisResult` / calibration binary 群)は無変更。
+- `measures` レジストリ・`error_label`・`optimal_binning`・`compute_delta_aic` は既存のまま再利用。
+- scipy / sklearn 非依存(純 numpy)。lowest-direct-deps CI matrix 安全。Adult Income 系テストは `@pytest.mark.slow` + `pytest.importorskip("sklearn")`。
+- backend 抽出(§F)は内部 refactor で公開挙動不変。
+
+### Alternatives Considered
+
+- **A1: 既存 `Slice` を多変数化して再利用** — 却下。`variable`/`category` スカラーを tuple 化するのは v0.9.0+ 公開型の破壊的変更。新規 `ErrorSlice` で非破壊。
+- **A2: ΔAIC の保守的上界で枝刈り** — 却下。乗算ペナルティ項のため、健全な上界は緩すぎて何も刈れず、刈れる上界は不健全。support(Apriori)が唯一の健全 surrogate(§C)。
+- **A3: 枝刈りを heuristic と明記して ΔAIC で刈る** — 却下。「真の top-k を取りこぼしうる」診断ツールは誤差分析の信頼性を損なう。正当性を担保できる support を採用。
+- **A4: calibration follow-up を v0.12.0 に分離** — 却下(ユーザー判断)。v0.10.0 で「v0.11.0 へ」と明記済み、OvR は binary コア再利用で低リスク。
+
+### Acceptance Criteria
+
+- [ ] `discover_error_slices` が Adult Income(32k×14)で既知の disparate cohort(gender / race)を surface。
+- [ ] slice description が逐語パース可能:`"age ∈ [45, 60] × marital_status = Never-married"`。
+- [ ] **exhaustive vs pruned 等価テスト**:`set(pruned_topk) == set(exhaustive_topk ∩ {size≥min_support})`(RED フェーズ)。
+- [ ] 20 変数データで `n_pruned / (n_evaluated + n_pruned) > 0.5`(>50% 削減)。
+- [ ] measure plug-in:`measures.register` で custom 登録 → `measure=<name>` / `measure=<callable>` 双方が経路。
+- [ ] perf:Adult Income で <30s(`@pytest.mark.slow`)。
+- [ ] 入力非破壊:全公開呼出後に入力 `df` 不変(`assert_frame_equal`)、frozen 再代入で raise。
+- [ ] `compare_cohorts` / `detect_drift`:合成 shift で ΔAIC delta / drift ranking が期待順。`.to_html` が jinja2 欠如パスで適切に振る舞う。
+- [ ] calibration:既存 `test_error_calibration.py` 無変更通過(回帰ガード)+ 2クラス OvR == binary。regression quantile calibration の数値検証(no-scipy)。
+- [ ] R 比較:合成分割表 ΔAIC を R CATDAP-02 多変数結果と 1e-4 照合。
+- [ ] `make ci` 全 green、coverage 80%+。
+
+### Decision
+
+- Date: `2026-05-29`
+- Result: `accepted`
+- Notes: PR-L0(#123)merge 前に cross-check 実施。6 件の load-bearing claim すべて TRUE/PARTIALLY-TRUE(FALSE なし)。§C(support 枝刈りの健全性)・等価テスト定式化・perf 予算(max_vars=3 × 14 列 = 469 評価で tractable)・OvR の binary 非破壊(`calibration.py:126` の bool 分岐)をコードで検証済み。実装は PR-L1〜L8 で段階的に進行。
+
+### Migration
+
+なし(純粋な追加、破壊的変更なし)。`Slice`(単変数)と `ErrorSlice`(多変数)は併存。既存ユーザーコードは無修正で動作。
+
+### Related References
+
+- 親仕様: H-0001 Phase L、H-0002 FR-5/FR-7/FR-9、Issue #20 / #11
+- 前段: H-0013 Phase K §G(回帰 / multi-class calibration の defer 元)
+- subset search エンジン: `src/pycatdap/catdap2.py`、`compute_delta_aic`(`src/pycatdap/_aic.py`)
+- ペナルティ項(§C の根拠): `src/pycatdap/_aic.py` `compute_aic_twoway`
+- measure レジストリ(FR-9): `src/pycatdap/measures/_registry.py`
+- error_label: `src/pycatdap/error/_labels.py`
+- immutability discipline: `src/pycatdap/error/_result.py`(H-0009 / `ErrorAnalysisResult`)
+- 有界 accuracy binning の教訓: H-0013 §B-bis、`src/pycatdap/_pooling.py` `optimal_binning`
+- SliceLine: <https://dl.acm.org/doi/10.1145/3448016.3457323>
+- DivExplorer: <https://github.com/elianap/divexplorer>
