@@ -24,7 +24,14 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: uv sync --frozen --dev --extra all
+        # Intentionally NOT --extra all: that would pull scikit-learn (added
+        # in v0.8.0 [data] extras and rolled into [all]) into the Quality
+        # matrix. The D4 fetchers use ``pytest.importorskip("sklearn")`` to
+        # skip their network-bound smoke tests; with sklearn installed those
+        # tests would proceed to OpenML and hang on GitHub runners (~6h
+        # timeout observed on PR #106). The release-PR pytest path runs
+        # ``-m ""`` which would otherwise execute the slow + network tests.
+        run: uv sync --frozen --dev --extra plot --extra plotly
 
       - name: Lint (ruff check)
         run: uv run ruff check .
