@@ -13,6 +13,10 @@ Learning-oriented walkthroughs that guide you from zero to confident usage.
 - **[Bivariate Phase B APIs](07-bivariate-phase-b.ipynb)** — Step beyond a single pair: `plot_pair` for symmetric two-column plots, `aic_heatmap` for one-glance ΔAIC matrices, `association_matrix` for the full m × m ΔAIC sweep, and `association_plot` for vcd-style Pearson residuals (H-0006). Requires `pycatdap[tutorial]`.
 - **[One-call profile() report](08-profile-titanic.ipynb)** — The v0.5.0 flagship API: `pycatdap.profile(df, response=...)` bundles overview, variable cards, ΔAIC association matrix, CATDAP-02 top subsets, and quality warnings into a single call, then renders a self-contained HTML report with inline Plotly figures (H-0007). Requires `pycatdap[plotly]` and `pycatdap[tutorial]`.
 - **[Phase D APIs — target_analysis, quality_report, measures, suite](09-phase-d-target-analysis-and-suite.ipynb)** — The v0.6.0 target-driven additions: `quality_report(df)` for a fast CI-friendly quality scan, `target_analysis(df, response)` for ΔAIC ranking + top-K cross-tabs, `pycatdap.measures.*` (aic / cramers_v / mutual_info + register), `association_matrix(measure=...)` extension, and `pycatdap.suite.AICIndependenceSuite` for the `assert suite_result.passed, suite_result.summary()` CI idiom (H-0008). Requires `pycatdap[plotly]` and `pycatdap[tutorial]`.
+- **[Phase G error labelling](10-phase-g-error-labeling.ipynb)** — The v0.7.0 ML-error building blocks: `error_label`, `confusion_label`, `residual_label`, and `abs_residual_pool` turn predictions into CATDAP-ready categorical responses (H-0010).
+- **[Phase H error_analysis() one-call](11-phase-h-error-analysis.ipynb)** — The v0.8.0 wrapper: `error_analysis(df, y_true, y_pred)` returns an `ErrorAnalysisResult` with ΔAIC feature ranking, single-variable slices, and confusion/residual summaries (H-0011).
+- **[Phase I+J error visualisation](12-phase-i-j-error-visualization.ipynb)** — The v0.9.0 visualisation layer: `plot_confusion` / `plot_confusion_by_slice` / `confusion_aic` (classification) and `residual_plot` / `residual_by_category` / `residual_pool_plot` (regression), plus `ErrorAnalysisResult` delegation methods on both backends (H-0012).
+- **[Phase K calibration](13-phase-k-calibration.ipynb)** — The v0.10.0 calibration toolkit: `calibration_curve` reliability diagram with **AIC-optimal probability binning** + Wilson CIs, `brier_score` / `expected_calibration_error` / `maximum_calibration_error`, and the `ErrorAnalysisResult.calibration_curve` delegation (binary classification, H-0013). Requires `pycatdap[plotly]` and `pycatdap[tutorial]`.
 
 ## Planned
 
@@ -20,9 +24,7 @@ As Phases land on the [roadmap](../project/roadmap.md), additional tutorials wil
 
 | Tutorial | Phase | Status |
 |---|---|---|
-| Classification error analysis on Titanic predictions | G/H/I | 🟡 v0.7-v0.9 |
-| Regression error analysis on California Housing | J | 🟡 v0.9 |
-| Calibration with AIC binning | K | 🟡 v0.10 |
 | Slice discovery on Adult Income / COMPAS | L | 🟡 v0.11 |
+| Cohort comparison + drift detection | L | 🟡 v0.12 |
 
 The original tracking issue [#27](https://github.com/nbx-liz/pycatdap/issues/27) (basic tutorial set) was closed in v0.3+; the table above lists tutorials still pending against future phases.
