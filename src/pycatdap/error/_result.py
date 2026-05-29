@@ -133,6 +133,12 @@ class ErrorAnalysisResult:
         Defaults to ``None`` so existing test fixtures that built
         ``ErrorAnalysisResult`` instances directly still work; the
         :func:`pycatdap.error_analysis` wrapper always supplies them.
+    y_proba : ndarray or None
+        Positive-class probabilities for binary classification, retained
+        so the :meth:`calibration_curve` delegation method can render
+        (H-0013 Phase K). Frozen at construction; defaults to ``None`` —
+        :func:`pycatdap.error_analysis` only populates it when the caller
+        passes ``y_proba=``. Calibration requires 0/1-encoded ``y_true``.
     """
 
     task: Literal["classification", "regression"]
@@ -152,6 +158,7 @@ class ErrorAnalysisResult:
     rmse: float | None
     y_true: npt.NDArray[Any] | None = field(default=None, repr=False)
     y_pred: npt.NDArray[Any] | None = field(default=None, repr=False)
+    y_proba: npt.NDArray[Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         # Freeze the numpy buffers of the contained DataFrames so
@@ -188,6 +195,8 @@ class ErrorAnalysisResult:
             self.y_true.flags.writeable = False
         if self.y_pred is not None and isinstance(self.y_pred, np.ndarray):
             self.y_pred.flags.writeable = False
+        if self.y_proba is not None and isinstance(self.y_proba, np.ndarray):
+            self.y_proba.flags.writeable = False
 
     # ------------------------------------------------------------------
     # show()
@@ -524,6 +533,67 @@ class ErrorAnalysisResult:
         from pycatdap.error.residual import residual_plot as _residual_plot
 
         return _residual_plot(self.y_true, self.y_pred, backend=backend, **kwargs)
+
+    def calibration_curve(
+        self,
+        *,
+        strategy: Literal["aic", "equal_width", "quantile"] = "aic",
+        n_bins: int = 10,
+        backend: Literal["matplotlib", "plotly"] = "matplotlib",
+        **kwargs: Any,
+    ) -> Any:
+        """Plot a calibration reliability diagram from the stored labels.
+
+        Binary classification only, and only when probabilities were
+        supplied to :func:`pycatdap.error_analysis` via ``y_proba=``
+        (H-0013 Phase K). ``y_true`` must be 0/1-encoded.
+
+        Parameters
+        ----------
+        strategy : {"aic", "equal_width", "quantile"}
+            Probability-axis binning (see
+            :func:`pycatdap.error.calibration_curve`).
+        n_bins : int
+            Bin count for ``equal_width`` / ``quantile`` (ignored for
+            ``aic``).
+        backend : {"matplotlib", "plotly"}
+            Plotting backend.
+        **kwargs
+            Forwarded to :func:`pycatdap.error.calibration_curve`
+            (e.g. ``ax=`` for matplotlib).
+
+        Raises
+        ------
+        ValueError
+            If ``self.task != "classification"`` (use :meth:`residual_plot`
+            for regression), or if probabilities were not retained (the
+            result was constructed without ``y_proba=``).
+        """
+        if self.task != "classification":
+            msg = (
+                f"calibration_curve is classification-only; got task="
+                f"{self.task!r}. Use residual_plot for regression."
+            )
+            raise ValueError(msg)
+        if self.y_true is None or self.y_proba is None:
+            msg = (
+                "calibration_curve requires y_true / y_proba; this "
+                "ErrorAnalysisResult was constructed without probabilities. "
+                "Re-run pycatdap.error_analysis() with y_proba=..., or pass "
+                "them directly to pycatdap.error.calibration_curve()."
+            )
+            raise ValueError(msg)
+
+        from pycatdap.error.calibration import calibration_curve as _calibration_curve
+
+        return _calibration_curve(
+            self.y_true,
+            self.y_proba,
+            strategy=strategy,
+            n_bins=n_bins,
+            backend=backend,
+            **kwargs,
+        )
 
 
 # ---------------------------------------------------------------------------

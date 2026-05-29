@@ -64,6 +64,7 @@ def error_analysis(
     n_bins: int = 4,
     bins: int | None = None,
     criterion: Literal["aic", "aicc", "bic"] = "bic",
+    y_proba: str | pd.Series | npt.NDArray[Any] | Sequence[Any] | None = None,
 ) -> ErrorAnalysisResult:
     """ML error analysis one-call wrapper.
 
@@ -98,6 +99,11 @@ def error_analysis(
     criterion : {"aic", "aicc", "bic"}
         Penalty family for the regression AIC path inside
         :func:`pycatdap.target_analysis`.
+    y_proba : str | pd.Series | np.ndarray | Sequence | None, optional
+        Positive-class probabilities for binary classification.  When
+        supplied, retained on the result so
+        :meth:`ErrorAnalysisResult.calibration_curve` works (H-0013 Phase
+        K).  Either a column name in ``df`` or an array of equal length.
 
     Returns
     -------
@@ -127,6 +133,16 @@ def error_analysis(
             f"len(df) ({len(df)})"
         )
         raise ValueError(msg)
+
+    y_proba_arr: npt.NDArray[Any] | None = None
+    if y_proba is not None:
+        y_proba_arr = _resolve_one(df, y_proba, "y_proba")
+        if len(y_proba_arr) != len(df):
+            msg = (
+                f"y_proba length ({len(y_proba_arr)}) does not match "
+                f"len(df) ({len(df)})"
+            )
+            raise ValueError(msg)
 
     resolved_task = _detect_task(y_true_arr, y_pred_arr) if task == "auto" else task
 
@@ -227,6 +243,10 @@ def error_analysis(
         # freeze doesn't propagate to the caller's array.
         y_true=y_true_arr.copy(),
         y_pred=y_pred_arr.copy(),
+        # H-0013 PR-K2: retain positive-class probabilities (when supplied)
+        # so result.calibration_curve() can render. Defensive copy mirrors
+        # y_true / y_pred above.
+        y_proba=y_proba_arr.copy() if y_proba_arr is not None else None,
     )
 
 
