@@ -233,6 +233,23 @@ def build_error_analysis() -> Any:
     return pycatdap.error_analysis(_error_frame(), "y_true", "y_pred", top_k=1)
 
 
+def build_error_analysis_regression() -> Any:
+    """Regression task: the ``confusion`` section must be suppressed."""
+    rng = np.random.default_rng(3)
+    n = 90
+    x = rng.normal(0.0, 1.0, size=n)
+    y_true = 2.0 * x + rng.normal(0.0, 0.3, size=n)
+    y_pred = y_true + rng.normal(0.0, 0.6, size=n)
+    df = pd.DataFrame(
+        {
+            "grp": rng.choice(["a", "b", "c"], size=n),
+            "y_true": y_true,
+            "y_pred": y_pred,
+        }
+    )
+    return pycatdap.error_analysis(df, "y_true", "y_pred", top_k=1)
+
+
 # --------------------------------------------------------------------------- #
 # FLAT cases
 # --------------------------------------------------------------------------- #
@@ -290,6 +307,11 @@ SECTIONED_CASES: dict[str, tuple[Callable[[], Any], set[str], set[str]]] = {
         {"feature_ranking", "top_summaries"},
         {"feature_ranking", "top_summaries", "confusion"},
     ),
+    "ErrorAnalysisResult (regression)": (
+        build_error_analysis_regression,
+        {"feature_ranking", "top_summaries"},
+        {"feature_ranking", "top_summaries"},  # confusion suppressed for regression
+    ),
 }
 
 
@@ -309,10 +331,12 @@ def test_profile_top_subsets_is_conditional_on_response() -> None:
 
 
 def test_error_confusion_is_conditional_on_classification() -> None:
-    """The ``confusion`` section is present for classification tasks."""
-    spec = build_error_analysis().to_plotly_json()
-    assert "confusion" in spec, "classification error analysis must expose confusion"
-    assert_flat(spec["confusion"])
+    """``confusion`` is present for classification and absent for regression."""
+    clf = build_error_analysis().to_plotly_json()
+    assert "confusion" in clf, "classification error analysis must expose confusion"
+    assert_flat(clf["confusion"])
+    reg = build_error_analysis_regression().to_plotly_json()
+    assert "confusion" not in reg, "regression error analysis must omit confusion"
 
 
 # --------------------------------------------------------------------------- #

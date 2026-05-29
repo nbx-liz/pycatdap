@@ -114,3 +114,30 @@ def test_binary_confusion_label_still_rejects_multiclass() -> None:
     yt, yp = _mc_data(n=60)
     with pytest.raises(NotImplementedError):
         confusion_label(yt, yp)
+
+
+# --------------------------------------------------------------------------- #
+# Failure paths (TDD rules: length mismatch, empty, single-class)
+# --------------------------------------------------------------------------- #
+
+
+def test_length_mismatch_raises() -> None:
+    yt, yp = _mc_data(n=60)
+    with pytest.raises(ValueError):
+        multiclass_confusion_label(yt, yp[:-1])
+
+
+def test_empty_input_returns_empty_mapping() -> None:
+    result = multiclass_confusion_label(
+        np.array([], dtype=int), np.array([], dtype=int)
+    )
+    assert isinstance(result, MappingProxyType)
+    assert len(result) == 0
+
+
+def test_single_class_all_tp() -> None:
+    yt = np.zeros(20, dtype=int)
+    yp = np.zeros(20, dtype=int)
+    result = multiclass_confusion_label(yt, yp)
+    assert list(result.keys()) == [0]
+    assert (result[0].to_numpy() == "TP").all()

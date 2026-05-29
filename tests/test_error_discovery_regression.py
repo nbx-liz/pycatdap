@@ -140,6 +140,16 @@ def test_regression_length_mismatch_raises() -> None:
         discover_error_slices(df, y_true[:-1], y_pred, min_support=20)
 
 
+def test_regression_nan_raises_clear_error() -> None:
+    """NaN in y_true/y_pred must raise a clear ValueError, not crash opaquely
+    inside the AIC residual pooler (review finding, incident follow-up)."""
+    df, y_true, y_pred = _make_regression_data(n=200)
+    y_true = y_true.copy()
+    y_true[5] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        discover_error_slices(df, y_true, y_pred, min_support=20)
+
+
 # --------------------------------------------------------------------------- #
 # INV-R1 support floor honoured (no slice below min_support)
 # --------------------------------------------------------------------------- #
@@ -158,9 +168,22 @@ def test_regression_respects_min_support() -> None:
 
 
 def test_regression_does_not_leak_incorrect_category() -> None:
-    """A degenerate / well-fit regression must not surface via the
-    classification 'incorrect' pivot; it should simply find nothing
-    error-concentrated rather than misbehave."""
+    """INV-R9 (direct): with a real high-residual subgroup so slices ARE
+    returned, none of them may carry the classification 'incorrect' pivot —
+    the regression path uses the residual-magnitude label, not error_label."""
+    df, y_true, y_pred = _make_regression_data()
+    result = discover_error_slices(
+        df, y_true, y_pred, max_vars=2, min_support=20, top_k=10
+    )
+    assert result.label_kind == "abs_residual_pool"
+    assert len(result.slices) > 0, "expected the high-residual cohort to surface"
+    for s in result.slices:
+        assert "incorrect" not in s.description, s.description
+
+
+def test_regression_degenerate_perfect_fit_is_empty() -> None:
+    """A perfectly-fit regression has no residual variation, so no subgroup is
+    error-concentrated -> empty result, no crash."""
     rng = np.random.default_rng(7)
     n = 300
     x = rng.normal(0.0, 1.0, size=n)
@@ -168,7 +191,5 @@ def test_regression_does_not_leak_incorrect_category() -> None:
     y_true = 3.0 * x
     y_pred = y_true.copy()  # perfect predictions -> no residual variation
     result = discover_error_slices(df, y_true, y_pred, min_support=20)
-    # No subgroup can be "more error-dense than baseline" when residuals
-    # are uniform/zero -> empty, and it must not raise.
     assert isinstance(result, SliceDiscoveryResult)
     assert result.label_kind == "abs_residual_pool"

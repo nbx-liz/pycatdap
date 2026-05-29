@@ -135,3 +135,38 @@ def test_multiclass_curve_unknown_backend_raises() -> None:
     yt, proba = _mc_data()
     with pytest.raises(ValueError, match="backend"):
         multiclass_calibration_curve(yt, proba, backend="ggplot")  # type: ignore[arg-type]
+
+
+# --------------------------------------------------------------------------- #
+# matplotlib backend: plotted points must equal the table values
+# --------------------------------------------------------------------------- #
+
+
+def test_regression_curve_matplotlib_points_match_table() -> None:
+    pytest.importorskip("matplotlib")
+    yt, yp = _reg_data()
+    table = regression_calibration_table(yt, yp, n_quantiles=5)
+    ax = regression_calibration_curve(yt, yp, n_quantiles=5, backend="matplotlib")
+    # lines[0] = perfect y=x reference; lines[1] = the errorbar model line.
+    model = ax.lines[1]
+    np.testing.assert_allclose(
+        np.asarray(model.get_xdata(), dtype=float), table["pred_mean"].to_numpy()
+    )
+    np.testing.assert_allclose(
+        np.asarray(model.get_ydata(), dtype=float), table["actual_mean"].to_numpy()
+    )
+
+
+def test_multiclass_curve_matplotlib_points_match_table() -> None:
+    pytest.importorskip("matplotlib")
+    yt, proba = _mc_data()
+    tables = multiclass_calibration_table(yt, proba)
+    ax = multiclass_calibration_curve(yt, proba, backend="matplotlib")
+    # lines[0] = perfect; lines[1:] = one per non-empty class in tables order.
+    for line, (_cls, table) in zip(ax.lines[1:], tables.items(), strict=False):
+        np.testing.assert_allclose(
+            np.asarray(line.get_xdata(), dtype=float), table["prob_pred"].to_numpy()
+        )
+        np.testing.assert_allclose(
+            np.asarray(line.get_ydata(), dtype=float), table["prob_true"].to_numpy()
+        )
