@@ -3345,7 +3345,7 @@ AIC(E;F) = −2·loglik + 2·(C_E − 1)·C_F      # ペナルティ項が合成
 ## 2026-05-29: v0.12.0 — LizyStudio 統合イネーブルメント + 誤差分析の積み残し解消 (Phase M)
 
 - ID: `H-0015`
-- Status: `proposed`
+- Status: `accepted`
 - Scope: `API | data-contract | types`
 - Related: `H-0001 v0.12.0`, `H-0002 FR-*`, `BLUEPRINT.md §5.7 / §5.8`, Issue #21 / #16 / #11
 
@@ -3390,7 +3390,10 @@ LizyStudio (FastAPI + react-plotly.js) が依存できる **バージョン付�
   - `discovery.py:293` `label_kind="error_label"` 固定 → 回帰用 kind へ
   - (+1) `discovery.py:133` 連続列 `optimal_binning(values, response)` は残差 response で bin を切る (= **設計上正しい**、INV-R9 で固定)
 - measures レジストリ (response-agnostic)・enumerate・support 枝刈りは **無修正で再利用**。
-- 新パラメータ: `residual_method="aic_pool"` / `n_bins=4` (既存 `residual_label` と整合)。
+- 新パラメータ: `n_bins=4`(回帰のみ)。残差マグニチュード binning は `abs_residual_pool`
+  (AIC pooling)に固定し、`residual_method` の分岐は導入しない(magnitude=「高残差」
+  の意味に最も忠実で、measure 契約を分岐させない最小実装)。signed-residual / quantile
+  変種は後続の focused follow-up。
 
 #### C. T2-② — 回帰/多クラス calibration reliability plot
 
@@ -3473,9 +3476,20 @@ LizyStudio (FastAPI + react-plotly.js) が依存できる **バージョン付�
 
 ### Decision
 
-- Date: `(pending)`
-- Result: `proposed`
+- Date: `2026-05-30`
+- Result: `accepted`
 - Notes: 起票前 cross-check 実施。claim 2/3/4/6/7/10 TRUE、claim 1/5/8/9 PARTIALLY-TRUE、**FALSE なし**。最重要 claim #5「guard だけ置換」は誤りと判明 → 実装スコープを 4+1 箇所に修正、INV-R9 追加。D1 採用判断 (measures response-agnostic + abs_residual_pool 既存 + 枝刈り label 非依存) は有効。
+  実装は PR-M1〜M5 で段階的に進行(単一ブランチ `feat/h0015-phase-m`):
+  - PR-M1: `to_plotly_json` 契約スイート + BLUEPRINT §5.7.1。契約テストが `DescribeResult` の
+    NaN セル(JSON 非準拠)を検出 → 共有 `_jsonsafe.scalar_to_json` を抽出し修正(`profile.py` も再利用)。
+  - PR-M2: 回帰スライス探索(D1、`n_bins` のみ追加)。INV-R1〜R9 のテストスイート。
+  - PR-M3: `regression_calibration_curve` / `multiclass_calibration_curve`(両 backend)。
+  - PR-M4: `multiclass_confusion_label`(OvR、二値コア再利用)。
+  - PR-M5: BLUEPRINT §5.8 / CHANGELOG / 本 Decision、§5.8 deferred 更新、BLUEPRINT:127 陳腐化修正、
+    Adult Income slow テストの categorical `fillna` fixture 修正(pre-existing、release CI 専用)、
+    Issue #32 再スコープ + #21 統合準備コメント。
+  - 全 PR で non-slow suite green(934 passed)、ruff/mypy strict clean。`error_analysis` wrapper の
+    multiclass confusion 露出への配線、専用 Notebook は後続フェーズへ。
 
 ### Migration
 
