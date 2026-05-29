@@ -130,12 +130,12 @@ pycatdap/
 │   ├── analysis.py         # error_analysis() one-call（Phase H, v0.8.0）
 │   ├── confusion.py        # plot_confusion 等（Phase I, v0.9.0）
 │   ├── residual.py         # residual_plot 等（Phase J, v0.9.0）
-│   ├── calibration.py      # calibration_curve 等 + 回帰/multi-class（Phase K v0.10.0 / Phase L v0.11.0）
+│   ├── calibration.py      # calibration_curve 等 + 回帰/multi-class（Phase K v0.10.0 / Phase L v0.11.0 / Phase M reliability plot v0.12.0）
 │   ├── _backend.py         # plot backend dispatch 集約（Phase L, v0.11.0）
 │   ├── _slice.py           # ErrorSlice / SliceDiscoveryResult（Phase L, v0.11.0）
 │   ├── _describe.py        # slice description ビルダ（Phase L, v0.11.0）
 │   ├── _enumerate.py       # support 枝刈り列挙（Apriori）（Phase L, v0.11.0）
-│   ├── discovery.py        # discover_error_slices（Phase L, v0.11.0）
+│   ├── discovery.py        # discover_error_slices（Phase L 分類 v0.11.0 / Phase M 回帰 v0.12.0）
 │   └── cohorts.py          # compare_cohorts / detect_drift（Phase L, v0.11.0）
 ├── suite/                  # CI 統合スイート（§5.10, H-0008 PR-D5、v0.6.0 で実装）
 │   ├── __init__.py
@@ -632,7 +632,7 @@ LizyStudio（FastAPI + react-plotly.js）が依存する **バージョン付き
 
 **JSON 安全性（hard requirement）**: 全 spec は `json.dumps(spec, allow_nan=False)` で round-trip する。NaN / ±Inf は RFC 8259 上無効でブラウザの `JSON.parse` を壊すため、非有限値は `None` に置換する（共有ヘルパ `pycatdap._jsonsafe.scalar_to_json`、heatmap z の None 置換と同方針）。
 
-### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase L まで実装 v0.11.0）
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase M まで実装 v0.12.0）
 
 ```python
 # 誤差ラベリング（Phase G、v0.7.0 で実装済）

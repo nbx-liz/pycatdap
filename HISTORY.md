@@ -3353,7 +3353,7 @@ AIC(E;F) = −2·loglik + 2·(C_E − 1)·C_F      # ペナルティ項が合成
 
 誤差分析アーク (Phase G→H→I+J→K→L) は v0.11.0 (H-0014) で完結した。README ロードマップ上 v0.12.0 = **「LizyStudio integration」(#21)** だが、cross-check の結果、**#21 の重い作業は LizyStudio 側 (別リポジトリ) にあり**、pycatdap 本体側は契約ハードニングのみで足りることが判明した:
 
-- 全 9 個の `.to_plotly_json()` 実装と `[plotly]` extra は **既に存在** (#21 の pycatdap 側チェックボックスは充足可能)。
+- 全ての結果オブジェクトの `.to_plotly_json()` 実装と `[plotly]` extra は **既に存在** (#21 の pycatdap 側チェックボックスは充足可能)。
 - 残るギャップは「機械検証可能な契約テストの不在」と「BLUEPRINT が契約をキー単位で明文化していない」点のみ。
 
 そこでユーザー判断により、アークが defer した **3 つの積み残し (T2)** を v0.12.0 に同梱し、LizyStudio が消費する Error Analysis タブを「穴なし」で完成させてから統合する。公開 API・data contract・types を追加するため **Change Gate 対象**。本 Proposal を先行し、merge 前に cross-check で設計トラップを検証する (H-0011〜H-0014 と同じ運用 — 4 期連続で実トラップを事前検出)。
@@ -3464,7 +3464,7 @@ LizyStudio (FastAPI + react-plotly.js) が依存できる **バージョン付�
 
 ### Acceptance Criteria
 
-- [ ] `tests/contract/test_plotly_json_contract.py`: 全 9 結果型で `json.dumps` 成功 + FLAT/SECTIONED キー契約 + `Figure(spec)` 互換 (importorskip)。
+- [ ] `tests/contract/test_plotly_json_contract.py`: 全結果型で `json.dumps` 成功 + FLAT/SECTIONED キー契約 + `Figure(spec)` 互換 (importorskip)。
 - [ ] BLUEPRINT §5.7/DP-4 に契約 (2 形状 + per-result 安定キー) 明記。
 - [ ] LizyStudio 側 Issue 起票 + #21 クロスリンク。
 - [ ] **回帰スライス exhaustive vs pruned 等価テスト** (INV-R1, RED フェーズ): `set(pruned) == set(exhaustive ∩ {size≥min_support})`。
