@@ -15,6 +15,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from pycatdap._jsonsafe import scalar_to_json
+
 # Column ordering for the summary DataFrame produced by describe(). The
 # kept column set deliberately emphasises CATDAP-relevant signals
 # (n_missing, n_unique) rather than sklearn-style describe() output.
@@ -209,7 +211,9 @@ class DescribeResult:
                         "align": "left",
                     },
                     "cells": {
-                        "values": [df[c].tolist() for c in df.columns],
+                        "values": [
+                            [scalar_to_json(v) for v in df[c]] for c in df.columns
+                        ],
                         "align": "left",
                     },
                 }

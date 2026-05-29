@@ -124,18 +124,18 @@ pycatdap/
 │   ├── quality_report.html.j2
 │   ├── target_analysis.html.j2
 │   └── suite_result.html.j2
-├── error/                  # ML 誤差分析（§5.8, H-0002、Phase G で `_labels.py` 実装済 v0.7.0、H〜L は今後）
+├── error/                  # ML 誤差分析（§5.8, H-0002、Phase G〜L 実装済 v0.7.0〜v0.11.0、Phase M H-0015 v0.12.0）
 │   ├── __init__.py         # 公開 API
-│   ├── _labels.py          # error_label / confusion_label / residual_label / abs_residual_pool / _detect_task（v0.7.0）
+│   ├── _labels.py          # error_label / confusion_label / multiclass_confusion_label / residual_label / abs_residual_pool / _detect_task（v0.7.0, OvR v0.12.0）
 │   ├── analysis.py         # error_analysis() one-call（Phase H, v0.8.0）
 │   ├── confusion.py        # plot_confusion 等（Phase I, v0.9.0）
 │   ├── residual.py         # residual_plot 等（Phase J, v0.9.0）
-│   ├── calibration.py      # calibration_curve 等 + 回帰/multi-class（Phase K v0.10.0 / Phase L v0.11.0）
+│   ├── calibration.py      # calibration_curve 等 + 回帰/multi-class（Phase K v0.10.0 / Phase L v0.11.0 / Phase M reliability plot v0.12.0）
 │   ├── _backend.py         # plot backend dispatch 集約（Phase L, v0.11.0）
 │   ├── _slice.py           # ErrorSlice / SliceDiscoveryResult（Phase L, v0.11.0）
 │   ├── _describe.py        # slice description ビルダ（Phase L, v0.11.0）
 │   ├── _enumerate.py       # support 枝刈り列挙（Apriori）（Phase L, v0.11.0）
-│   ├── discovery.py        # discover_error_slices（Phase L, v0.11.0）
+│   ├── discovery.py        # discover_error_slices（Phase L 分類 v0.11.0 / Phase M 回帰 v0.12.0）
 │   └── cohorts.py          # compare_cohorts / detect_drift（Phase L, v0.11.0）
 ├── suite/                  # CI 統合スイート（§5.10, H-0008 PR-D5、v0.6.0 で実装）
 │   ├── __init__.py
@@ -608,14 +608,39 @@ pycatdap.association_plot(table, *, threshold=2.0, backend=...)
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
 
-### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase L まで実装 v0.11.0）
+#### 5.7.1 `.to_plotly_json()` 契約（DP-4、LizyStudio 消費面、H-0015）
+
+LizyStudio（FastAPI + react-plotly.js）が依存する **バージョン付き data contract**。`tests/contract/test_plotly_json_contract.py` が全結果型で機械検証する。
+
+**戻り形状は 2 種**:
+
+- **FLAT** — 単一 Plotly figure spec `{"data": list, "layout": dict}`。`react-plotly.js` / `plotly.graph_objects.Figure(spec)` が直接消費可能。各 trace は `"type"` を持つ。
+  - 該当: `Catdap1Result`、`Catdap2Result`、`DescribeResult`（`describe`）、`TargetSummary`、`RegressionTargetSummary`。
+- **SECTIONED** — セクション名→spec のマッピング `{<section_name>: <FLAT-spec または name→FLAT-spec の dict>}`。各セクションのキーは **安定**（always-present + 発火条件つき conditional）。
+
+**SECTIONED 各結果の安定キー**:
+
+| 結果型 | always-present | conditional（発火条件） |
+|---|---|---|
+| `ProfileResult`（`profile`） | `association_heatmap` | `top_subsets`（`response=` 指定時） |
+| `QualityReport`（`quality_report`） | `warnings_table` | — |
+| `SuiteResult`（`suite` runner） | `checks_table` | — |
+| `TargetAnalysisResult`（`target_analysis`） | `ranking`, `top_summaries` | — |
+| `ErrorAnalysisResult`（`error_analysis`） | `feature_ranking`, `top_summaries` | `confusion`（classification のみ。regression は省略） |
+
+`top_summaries` は `dict[col_name → FLAT spec]`（`top_k=0` で空 dict）。ネストした figure spec も FLAT 準拠。
+
+**JSON 安全性（hard requirement）**: 全 spec は `json.dumps(spec, allow_nan=False)` で round-trip する。NaN / ±Inf は RFC 8259 上無効でブラウザの `JSON.parse` を壊すため、非有限値は `None` に置換する（共有ヘルパ `pycatdap._jsonsafe.scalar_to_json`、heatmap z の None 置換と同方針）。
+
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase M まで実装 v0.12.0）
 
 ```python
 # 誤差ラベリング（Phase G、v0.7.0 で実装済）
 pycatdap.error.error_label(y_true, y_pred) -> pd.Series        # "correct"/"incorrect"
 pycatdap.error.confusion_label(y_true, y_pred, *, positive=None) -> pd.Series
-                                                                # "TP"/"FP"/"FN"/"TN"
-                                                                # multiclass は Phase H wrapper が error_label にフォールバック
+                                                                # "TP"/"FP"/"FN"/"TN"（二値のみ。>2 で NotImplementedError）
+pycatdap.error.multiclass_confusion_label(y_true, y_pred, *, classes=None) -> Mapping[Any, pd.Series]
+                                                                # OvR: クラスごとの TP/FP/FN/TN（H-0015 v0.12.0、二値コア再利用）
 pycatdap.error.residual_label(y_true, y_pred, *, method="aic_pool", n_bins=4) -> pd.Series
                                                                 # method = "aic_pool"|"quantile"|"equal_width"
 pycatdap.error.abs_residual_pool(y_true, y_pred, *, n_bins=4) -> pd.Series
@@ -702,6 +727,14 @@ pycatdap.error.multiclass_expected_calibration_error(
     y_true, y_proba, *, classes=None, strategy="aic", n_bins=10,
 ) -> float                                          # macro 平均 OvR ECE
 
+# 回帰 / multi-class calibration reliability plot（Phase M、H-0015、v0.12.0 で追加）
+pycatdap.error.regression_calibration_curve(
+    y_true, y_pred, *, n_quantiles=10, backend=..., **kwargs,
+) -> Axes | Figure                                  # pred_mean × actual_mean + y=x。軸は [0,1] 非クランプ
+pycatdap.error.multiclass_calibration_curve(
+    y_true, y_proba, *, classes=None, strategy="aic", n_bins=10, backend=..., **kwargs,
+) -> Axes | Figure                                  # OvR をクラスごとに [0,1] 正方形へオーバーレイ
+
 # スライス発見・コホート比較・ドリフト（Phase L、H-0014、v0.11.0 で実装）
 pycatdap.error.discover_error_slices(
     df, y_true, y_pred,
@@ -711,7 +744,10 @@ pycatdap.error.discover_error_slices(
     top_k=10,
     min_support=30,                                 # support(Apriori)枝刈り床。ΔAIC ではない
     columns=None,
-) -> SliceDiscoveryResult                           # 分類のみ。回帰は NotImplementedError
+    n_bins=4,                                       # 回帰のみ: |residual| AIC pooling の初期ビン数
+) -> SliceDiscoveryResult
+# 分類: error_label。回帰（H-0015 v0.12.0、設計 D1）: |y_true-y_pred| を abs_residual_pool で
+# AIC binning し、最大平均 |residual| ビンを binary "high_residual" 誤差カテゴリに（2 カテゴリ機構を共有）
 pycatdap.error.compare_cohorts(df_a, df_b, *, response=None) -> CohortComparison
 pycatdap.error.detect_drift(df_train, df_prod, *, y_true=None, y_pred=None) -> DriftReport
 ```
@@ -825,9 +861,14 @@ Phase H スコープアウト → 後続フェーズで解決済:
 - 多変数 subgroup discovery → **Phase L `discover_error_slices`（v0.11.0 実装済）**
 - 可視化(confusion matrix / residual scatter 等)→ Phase I+J（v0.9.0）
 - Calibration(`calibration_curve` / `brier_score` / ECE)→ Phase K（v0.10.0）
-- 回帰 / multi-class calibration → **Phase L（v0.11.0 実装済）**
-- `confusion_label` multiclass(one-vs-rest)→ Phase H wrapper は
-  `error_label` にフォールバックして回避、本格対応は別 Issue（未対応）
+- 回帰 / multi-class calibration → **Phase L（v0.11.0 実装済）**、
+  reliability-diagram plot → **Phase M `regression_calibration_curve` /
+  `multiclass_calibration_curve`（H-0015 v0.12.0 実装済）**
+- `confusion_label` multiclass(one-vs-rest)→ **Phase M
+  `multiclass_confusion_label`（H-0015 v0.12.0 実装済、二値コア再利用）**。
+  `error_analysis` wrapper の multiclass 露出への配線は後続
+- 回帰 slice discovery（高残差サブグループ）→ **Phase M `discover_error_slices`
+  回帰経路（H-0015 v0.12.0、設計 D1 実装済）**
 
 ### 5.9 `profile.py` — ワンコール EDA レポート（H-0001 / H-0007、v0.5.0 で実装）
 

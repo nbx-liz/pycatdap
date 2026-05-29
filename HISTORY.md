@@ -3341,3 +3341,165 @@ AIC(E;F) = −2·loglik + 2·(C_E − 1)·C_F      # ペナルティ項が合成
 - 有界 accuracy binning の教訓: H-0013 §B-bis、`src/pycatdap/_pooling.py` `optimal_binning`
 - SliceLine: <https://dl.acm.org/doi/10.1145/3448016.3457323>
 - DivExplorer: <https://github.com/elianap/divexplorer>
+
+## 2026-05-29: v0.12.0 — LizyStudio 統合イネーブルメント + 誤差分析の積み残し解消 (Phase M)
+
+- ID: `H-0015`
+- Status: `accepted`
+- Scope: `API | data-contract | types`
+- Related: `H-0001 v0.12.0`, `H-0002 FR-*`, `BLUEPRINT.md §5.7 / §5.8`, Issue #21 / #16 / #11
+
+### Context
+
+誤差分析アーク (Phase G→H→I+J→K→L) は v0.11.0 (H-0014) で完結した。README ロードマップ上 v0.12.0 = **「LizyStudio integration」(#21)** だが、cross-check の結果、**#21 の重い作業は LizyStudio 側 (別リポジトリ) にあり**、pycatdap 本体側は契約ハードニングのみで足りることが判明した:
+
+- 全ての結果オブジェクトの `.to_plotly_json()` 実装と `[plotly]` extra は **既に存在** (#21 の pycatdap 側チェックボックスは充足可能)。
+- 残るギャップは「機械検証可能な契約テストの不在」と「BLUEPRINT が契約をキー単位で明文化していない」点のみ。
+
+そこでユーザー判断により、アークが defer した **3 つの積み残し (T2)** を v0.12.0 に同梱し、LizyStudio が消費する Error Analysis タブを「穴なし」で完成させてから統合する。公開 API・data contract・types を追加するため **Change Gate 対象**。本 Proposal を先行し、merge 前に cross-check で設計トラップを検証する (H-0011〜H-0014 と同じ運用 — 4 期連続で実トラップを事前検出)。
+
+**本 Proposal は起票前に cross-check 済** (§Decision に結果)。D1 の「実装スコープ」見積もりに誤りが見つかり、修正済み。
+
+### Proposal
+
+#### A. T1 — `.to_plotly_json()` 契約の明文化 + 契約テスト
+
+LizyStudio (FastAPI + react-plotly.js) が依存できる **バージョン付き契約**を確立する。新 API は追加しない (契約の明文化 + テスト)。
+
+- **BLUEPRINT §5.7/DP-4 に契約を明記** (data-contract 追記):
+  - 2 つの戻り形状を区別する: **FLAT** `{data: list, layout: dict}` (Catdap1Result / Catdap2Result / EDAResult) と **SECTIONED** `{<section_name>: <spec>}` (ProfileResult / ErrorAnalysisResult / TargetAnalysisResult / QualityReport / suite)。
+  - 各 SECTIONED 結果の **安定キー集合**: always-present キーと conditional キー (発火条件つき) を列挙。例: `ErrorAnalysisResult` = `{feature_ranking, top_summaries}` 常時 + `confusion` (classification のみ); `ProfileResult` = `{association_heatmap}` 常時 + `top_subsets` (response 指定時)。
+  - nested figure spec (`top_summaries[*]` / `top_subsets`) も FLAT 準拠であること。
+  - **JSON-safety**: NaN/inf を含まない (heatmap z の None 置換等、既存挙動を契約化)。
+- **`tests/contract/test_plotly_json_contract.py`** (新規):
+  - 全結果型を parametrize し `json.dumps()` 成功を assert (現状 `ErrorAnalysisResult` のみが round-trip テスト保持)。
+  - FLAT/SECTIONED を分類し、上記キー契約を assert。
+  - `pytest.importorskip("plotly")` 下で `plotly.graph_objects.Figure(spec)` に通し react-plotly.js 互換を実証。
+- **LizyStudio 側 Issue を別リポジトリに起票** (#21 へクロスリンク): `pycatdap[plotly]` 依存追加・EDA/Error Analysis タブ配線・pooling 調整 anywidget スライダ・FastAPI エンドポイント。
+
+#### B. T2-① — 回帰スライス探索 (`discover_error_slices` 回帰経路)
+
+現状 `discovery.py:214-220` で `NotImplementedError`。**採用案 D1**: 残差を categorical ラベル化して既存の分類スコアリング+Apriori support 枝刈りを再利用する。
+
+- 既存 `abs_residual_pool(y_true, y_pred, n_bins)` (`_labels.py:290`) で |residual| を AIC プーリングし categorical ラベル化。**最上位ビンを動的特定** (`abs_residual_pool` は `bin_0..bin_{n-1}` を返すため `f"bin_{n_codes-1}"`、固定文字列ではない)。
+- **cross-check 修正**: 分類セマンティクスがハードコードされた **計 4 + 1 箇所**を回帰対応する (guard 1 箇所だけではない):
+  - `discovery.py:214` guard → 残差ラベル分岐へ
+  - `discovery.py:230` `error_label(...)` → `abs_residual_pool` へ分岐
+  - `discovery.py:234` `_ERROR_CATEGORY="incorrect"` 固定 → 最上位残差ビンへ
+  - `discovery.py:259-261` `base_error_rate` 意味の再定義 (高残差ビン比率)
+  - `discovery.py:293` `label_kind="error_label"` 固定 → 回帰用 kind へ
+  - (+1) `discovery.py:133` 連続列 `optimal_binning(values, response)` は残差 response で bin を切る (= **設計上正しい**、INV-R9 で固定)
+- measures レジストリ (response-agnostic)・enumerate・support 枝刈りは **無修正で再利用**。
+- 新パラメータ: `n_bins=4`(回帰のみ)。残差マグニチュード binning は `abs_residual_pool`
+  (AIC pooling)に固定し、`residual_method` の分岐は導入しない(magnitude=「高残差」
+  の意味に最も忠実で、measure 契約を分岐させない最小実装)。signed-residual / quantile
+  変種は後続の focused follow-up。
+
+#### C. T2-② — 回帰/多クラス calibration reliability plot
+
+現状 plot は binary `calibration_curve` のみ (表は regression/multiclass とも存在)。**採用案 A**: 既存 `_backend` dispatch + 既存テーブルを再利用する薄い dispatcher 2 本を追加。
+
+- `regression_calibration_curve(y_true, y_pred, *, n_quantiles=10, backend="matplotlib", **kwargs)`: `regression_calibration_table` を `pred_mean × actual_mean` + y=x で描画。**軸は [0,1] にクランプせず**データ範囲オートスケール。
+- `multiclass_calibration_curve(y_true, y_proba, *, classes=None, strategy="aic", n_bins=10, backend="matplotlib", **kwargs)`: OvR テーブル (二値[0,1]スキーマ) をクラスごとにオーバーレイ。
+- `plot/matplotlib.py` / `plot/plotly.py` に実装追加。`ErrorAnalysisResult` デリゲーションは任意 (後続可)。
+
+#### D. T2-③ — 多クラス `confusion_label` (one-vs-rest)
+
+現状 `_labels.py:152` で >2 クラス `NotImplementedError`、`analysis.py:167` で error_label へ silent fallback。**採用案 A**: 新関数を追加し、二値 `confusion_label` は無修正。
+
+- `multiclass_confusion_label(y_true, y_pred, *, classes=None) -> Mapping[class_label, pd.Series]`: クラス k ごとに `(y_true==k, y_pred==k)` へ縮約し既存二値 `confusion_label(positive=True)` を呼ぶ → `MappingProxyType`。`multiclass_calibration_table` の OvR 先例を踏襲。
+- `error_analysis` wrapper への配線は本 Proposal scope 内では任意 (multiclass の confusion 露出は後続 PR でも可)。
+
+#### E. Housekeeping
+
+- **Issue #32 再スコープ** (v0.12.0 外/T3): 核メソッド `to_divexplorer_format` は `ErrorAnalysisResult` (`_result.py:405`) / `SliceDiscoveryResult` (`_slice.py:151`) に **v0.8.0 で実装済**。残るは DivExplorer 実スキーマ (`pattern/support/t_value_FPR`) 整合 + docs のみ。#32 のチェックリストを更新。
+- **BLUEPRINT.md:127** ツリーコメント `H〜L は今後` を `H〜L 実装済 v0.11.0` に修正 (同ツリー 130-139 行と矛盾、docs-only / Change Gate 不要)。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `tests/contract/test_plotly_json_contract.py` (新) | 全結果型の to_plotly_json 契約テスト |
+| `BLUEPRINT.md §5.7/DP-4` | to_plotly_json 契約 (2 形状 + 安定キー) 明文化 |
+| `src/pycatdap/error/discovery.py` (拡張) | 回帰スライス探索 (4+1 箇所の回帰対応) |
+| `src/pycatdap/error/calibration.py` (拡張) | regression / multiclass calibration_curve dispatcher |
+| `src/pycatdap/plot/{matplotlib,plotly}.py` (拡張) | 2 calibration plot 実装 |
+| `src/pycatdap/error/_labels.py` (拡張) | `multiclass_confusion_label` |
+| `src/pycatdap/error/__init__.py` | 新公開シンボル re-export |
+| `BLUEPRINT.md:127` | 陳腐化コメント修正 |
+| Issue #32 / LizyStudio repo | 再スコープ / 新規起票 |
+
+### Compatibility
+
+**破壊的変更なし**。すべて追加。
+
+- 回帰スライス探索は新パス: 分類パスは byte-不変 (golden 回帰テストで固定)。
+- calibration: 二値 `calibration_curve` / `_calibration_table` は無修正。
+- `multiclass_confusion_label` は新関数: 二値 `confusion_label` は無修正、2クラス OvR == binary。
+- scipy/sklearn 非依存 (純 numpy)。`[plotly]` extra は既存。lowest-direct-deps CI 安全。
+
+### Alternatives Considered
+
+- **回帰スライス D2 (連続 Gaussian response, `_aic_regression`)** — 却下。measure 契約 (2D 分割表) を分岐させ `cramers_v`/`mutual_info` が使えず、`ErrorSlice` に新フィールド (r_squared) が必要で公開 API 改変が大。
+- **回帰スライス D3 (|residual| 閾値マスク)** — 却下。閾値という新パラメータ/判断が必要、残差符号を無視、AIC-native でない。
+- **「guard だけ置換」(当初案)** — **cross-check で却下**。分類セマンティクスが 4+1 箇所ハードコードされ、guard だけでは例外なく誤結果を返す。
+- **calibration plot B (単一多態 `calibration_curve`)** — 却下。安定 v0.10.0 二値契約を上書き、auto-detect は falsy-trap。one function one job 違反。
+- **OvR confusion B (`confusion_label` を long-form 多態化)** — 却下。固定 4-category dtype 契約と下流消費者 (`_build_confusion`/`_extract_slices`) を破壊。
+
+### Invariants (invariants-first)
+
+**T2-① 回帰スライス探索:**
+- INV-R1 (枝刈り健全性, MUST): `{c.conditions | enumerate(prune=True, min_support=m)} == {c.conditions | enumerate(prune=False) if size≥m}`。枝刈りは `size` のみ、残差/ΔAIC では刈らない。
+- INV-R2: 入力 `df`/`y_true`/`y_pred` 非破壊、response は copy の予約列へのみ注入、予約列衝突で ValueError。
+- INV-R3: 高残差比率 > baseline のスライスのみ surface。
+- INV-R5: `measure_value` は higher=better、built-in "aic" のみ符号反転。
+- INV-R6: 残差 NaN 行は tabulation から一貫除外、support を膨らませない。
+- INV-R7: 長さ契約 `len == len(df) == len(y_true) == len(y_pred)`、不一致で ValueError。
+- INV-R8: `SliceDiscoveryResult.label_kind` が実使用 labeller を反映 (回帰で `"error_label"` 固定にしない)。
+- **INV-R9 (cross-check 追加)**: 回帰経路実行後、`_ERROR_CATEGORY="incorrect"` 等の分類セマンティクス定数が**一切結果に残らない** (最上位残差ビンが error pivot)。連続列 binning は残差 response を使う。
+
+**T2-② calibration plot:** 二値 `calibration_curve`/`_calibration_table` byte-不変; plot 点 == テーブル値 (可視化と指標が乖離しない); backend は `_backend` のみ経由 (第4経路なし); 多クラスは [0,1]×y=x、回帰はオートスケール; 退化入力 (定数予測/欠如クラス) で raise しない; 戻り値型 Axes|Figure。
+
+**T2-③ OvR confusion:** 二値経路 byte-不変; 2クラス OvR == binary; per-class TP/FP/FN/TN 排他 + カウント保存 (Σ_k TP_k == n_correct); classes=None は sorted(unique(y_true)); 戻り値 MappingProxyType・入力非破壊。
+
+### Acceptance Criteria
+
+- [ ] `tests/contract/test_plotly_json_contract.py`: 全結果型で `json.dumps` 成功 + FLAT/SECTIONED キー契約 + `Figure(spec)` 互換 (importorskip)。
+- [ ] BLUEPRINT §5.7/DP-4 に契約 (2 形状 + per-result 安定キー) 明記。
+- [ ] LizyStudio 側 Issue 起票 + #21 クロスリンク。
+- [ ] **回帰スライス exhaustive vs pruned 等価テスト** (INV-R1, RED フェーズ): `set(pruned) == set(exhaustive ∩ {size≥min_support})`。
+- [ ] 回帰スライス: 合成高残差サブグループを surface、分類パス byte-不変 (golden 回帰)、入力非破壊、INV-R9 (分類定数残存ゼロ)。
+- [ ] regression/multiclass calibration plot: matplotlib (Axes) + plotly (Figure) 両 backend、plot 点 == テーブル値、二値 plot 無変更。
+- [ ] `multiclass_confusion_label`: 2クラス OvR == 二値 `confusion_label`、per-class カウント保存、二値経路無変更。
+- [ ] #32 チェックリスト更新 + BLUEPRINT:127 修正。
+- [ ] `make ci` 全 green、coverage 80%+。
+
+### Decision
+
+- Date: `2026-05-30`
+- Result: `accepted`
+- Notes: 起票前 cross-check 実施。claim 2/3/4/6/7/10 TRUE、claim 1/5/8/9 PARTIALLY-TRUE、**FALSE なし**。最重要 claim #5「guard だけ置換」は誤りと判明 → 実装スコープを 4+1 箇所に修正、INV-R9 追加。D1 採用判断 (measures response-agnostic + abs_residual_pool 既存 + 枝刈り label 非依存) は有効。
+  実装は PR-M1〜M5 で段階的に進行(単一ブランチ `feat/h0015-phase-m`):
+  - PR-M1: `to_plotly_json` 契約スイート + BLUEPRINT §5.7.1。契約テストが `DescribeResult` の
+    NaN セル(JSON 非準拠)を検出 → 共有 `_jsonsafe.scalar_to_json` を抽出し修正(`profile.py` も再利用)。
+  - PR-M2: 回帰スライス探索(D1、`n_bins` のみ追加)。INV-R1〜R9 のテストスイート。
+  - PR-M3: `regression_calibration_curve` / `multiclass_calibration_curve`(両 backend)。
+  - PR-M4: `multiclass_confusion_label`(OvR、二値コア再利用)。
+  - PR-M5: BLUEPRINT §5.8 / CHANGELOG / 本 Decision、§5.8 deferred 更新、BLUEPRINT:127 陳腐化修正、
+    Adult Income slow テストの categorical `fillna` fixture 修正(pre-existing、release CI 専用)、
+    Issue #32 再スコープ + #21 統合準備コメント。
+  - 全 PR で non-slow suite green(934 passed)、ruff/mypy strict clean。`error_analysis` wrapper の
+    multiclass confusion 露出への配線、専用 Notebook は後続フェーズへ。
+
+### Migration
+
+なし (純粋な追加)。回帰スライス探索は新パス、分類パス併存。既存ユーザーコード無修正。
+
+### Related References
+
+- 親仕様: H-0001 v0.12.0、Issue #21 / #11
+- cross-check で確認したハードコード箇所: `discovery.py:214,230,234,259-261,293,133`
+- 残差ラベル: `_labels.py:188` (`residual_label`) / `_labels.py:290` (`abs_residual_pool`)
+- OvR 先例: `calibration.py:577-695` (`multiclass_calibration_table`)
+- backend dispatch: `error/_backend.py`
+- to_plotly_json 契約 (現状実装): `catdap1.py:49`, `catdap2.py:59`, `profile.py:265`, `error/_result.py:289`, ほか

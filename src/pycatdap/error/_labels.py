@@ -12,6 +12,8 @@ Numerical conventions:
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any, Literal
 
 import numpy as np
@@ -183,6 +185,58 @@ def confusion_label(
         pd.Categorical(labels, categories=["TP", "FP", "FN", "TN"]),
         name="confusion_label",
     )
+
+
+def multiclass_confusion_label(
+    y_true: pd.Series | npt.NDArray[Any] | list[Any],
+    y_pred: pd.Series | npt.NDArray[Any] | list[Any],
+    *,
+    classes: list[Any] | None = None,
+) -> Mapping[Any, pd.Series]:
+    """One-vs-rest confusion labels for multi-class classification.
+
+    For each class ``k`` the problem is reduced to binary — ``(y_true == k)``
+    against ``(y_pred == k)`` — and labelled by the existing binary
+    :func:`confusion_label` core (``positive=True``). On a 2-class problem the
+    larger class's table is identical to ``confusion_label(positive=that
+    class)``. The binary :func:`confusion_label` is unchanged and still raises
+    for ``> 2`` classes; use this function for the multi-class case.
+
+    Parameters
+    ----------
+    y_true, y_pred : array-like
+        Aligned ground-truth and predicted labels.
+    classes : list or None
+        Class labels (and key order) to report. When ``None``, uses
+        ``sorted(unique(y_true))`` — mirroring the multi-class calibration OvR
+        convention. A class absent from both ``y_true`` and ``y_pred`` yields
+        an all-``"TN"`` table rather than raising.
+
+    Returns
+    -------
+    Mapping[class_label, pd.Series]
+        Read-only mapping of class label to its OvR confusion-label Series
+        (categorical, categories ``{"TP", "FP", "FN", "TN"}``).
+    """
+    y_true_arr, y_pred_arr = _as_arrays(y_true, y_pred)
+    resolved = (
+        sorted(np.unique(y_true_arr).tolist()) if classes is None else list(classes)
+    )
+
+    tables: dict[Any, pd.Series] = {}
+    for cls in resolved:
+        is_true = y_true_arr == cls
+        is_pred = y_pred_arr == cls
+        if not bool(is_true.any()) and not bool(is_pred.any()):
+            # Class never occurs in truth or prediction -> all true-negative.
+            all_tn = np.full(len(y_true_arr), "TN", dtype=object)
+            tables[cls] = pd.Series(
+                pd.Categorical(all_tn, categories=["TP", "FP", "FN", "TN"]),
+                name="confusion_label",
+            )
+        else:
+            tables[cls] = confusion_label(is_true, is_pred, positive=True)
+    return MappingProxyType(tables)
 
 
 def residual_label(

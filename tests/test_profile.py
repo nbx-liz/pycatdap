@@ -341,13 +341,24 @@ class TestHelpers:
 
     def test_scalar_to_json_rejects_infinities(self) -> None:
         """+/-inf must become None to keep to_dict() JSON-RFC-8259-valid."""
-        from pycatdap.profile import _scalar_to_json
+        from pycatdap._jsonsafe import scalar_to_json
 
-        assert _scalar_to_json(float("inf")) is None
-        assert _scalar_to_json(float("-inf")) is None
-        assert _scalar_to_json(float("nan")) is None
-        assert _scalar_to_json(1.5) == 1.5
-        assert _scalar_to_json("abc") == "abc"
+        assert scalar_to_json(float("inf")) is None
+        assert scalar_to_json(float("-inf")) is None
+        assert scalar_to_json(float("nan")) is None
+        assert scalar_to_json(1.5) == 1.5
+        assert scalar_to_json("abc") == "abc"
+
+    def test_scalar_to_json_preserves_booleans(self) -> None:
+        """bool / numpy.bool_ stay JSON booleans, not 1.0 / "True"."""
+        import numpy as np
+
+        from pycatdap._jsonsafe import scalar_to_json
+
+        assert scalar_to_json(True) is True
+        assert scalar_to_json(False) is False
+        assert scalar_to_json(np.bool_(True)) is True
+        assert scalar_to_json(np.bool_(False)) is False
 
     def test_quality_thresholds_empty_dict_is_not_falsy(
         self, df_mixed: pd.DataFrame
