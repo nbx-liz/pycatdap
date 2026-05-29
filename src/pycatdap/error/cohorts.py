@@ -21,6 +21,7 @@ MappingProxyType-wrapped mappings, frozen DataFrame numpy buffers.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,12 +86,26 @@ def _cohort_aic_table(prepared: pd.DataFrame, columns: list[str]) -> pd.DataFram
     return sorted_table
 
 
+def _interval_sort_key(value: object) -> tuple[int, float, str]:
+    """Sort categories numerically when they are interval/bound labels
+    (``"< 10"`` / ``"[10, 20]"`` / ``">= 20"``), else lexicographically.
+
+    Returns ``(group, leading_number, text)`` so plain categoricals sort
+    by text and binned labels sort by their first numeric edge.
+    """
+    text = str(value)
+    match = re.search(r"-?\d+(?:\.\d+)?", text)
+    if match:
+        return (0, float(match.group()), text)
+    return (1, 0.0, text)
+
+
 def _distribution(prepared: pd.DataFrame, col: str) -> pd.DataFrame:
     """Normalised per-value distribution of ``col`` in each cohort."""
     sub = prepared[[col, _COHORT_COL]].dropna()
     prop_a = sub[sub[_COHORT_COL] == _A][col].value_counts(normalize=True)
     prop_b = sub[sub[_COHORT_COL] == _B][col].value_counts(normalize=True)
-    values = sorted(set(prop_a.index) | set(prop_b.index), key=str)
+    values = sorted(set(prop_a.index) | set(prop_b.index), key=_interval_sort_key)
     return pd.DataFrame(
         {
             "value": values,
@@ -243,9 +258,12 @@ def compare_cohorts(
     ValueError
         If the frames share no columns.
     """
-    columns = _shared_columns(df_a, df_b)
-    if response is not None and response in columns:
-        columns = [c for c in columns if c != response]
+    shared = _shared_columns(df_a, df_b)
+    # response_delta is only meaningful when the response is present in
+    # BOTH cohorts; otherwise _feature_response_aic would return 0.0 for
+    # the missing side and the "shift" would be garbage (review finding).
+    response_in_shared = response is not None and response in shared
+    columns = [c for c in shared if c != response] if response_in_shared else shared
     if not columns:
         msg = "df_a and df_b share no comparable columns"
         raise ValueError(msg)
@@ -264,7 +282,8 @@ def compare_cohorts(
     )
 
     response_delta = None
-    if response is not None:
+    if response_in_shared:
+        assert response is not None  # narrowed by response_in_shared
         response_delta = _response_delta_table(df_a, df_b, columns, response)
 
     return CohortComparison(

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import re
 
 import numpy as np
 import pandas as pd
@@ -124,6 +125,43 @@ def test_response_delta_present_when_response_given() -> None:
     # to_html exercises the has_response branch
     pytest.importorskip("jinja2")
     assert "Response-relationship shift" in cmp.to_html()
+
+
+def test_response_not_in_both_cohorts_yields_no_response_delta() -> None:
+    """HIGH regression: response present in only one cohort must NOT
+    produce a garbage response_delta (it stays None)."""
+    rng = np.random.default_rng(7)
+    n = 200
+    a = pd.DataFrame(
+        {"feat": rng.choice(["x", "y"], size=n), "target": rng.integers(0, 2, size=n)}
+    )
+    b = pd.DataFrame({"feat": rng.choice(["x", "y"], size=n)})  # no 'target'
+    cmp = compare_cohorts(a, b, response="target")
+    assert cmp.response_delta is None
+    # 'target' (only in A) is not a shared comparable column either
+    assert "target" not in set(cmp.summary["variable"])
+
+
+def test_interval_labels_sorted_numerically() -> None:
+    rng = np.random.default_rng(8)
+    a = pd.DataFrame({"age": rng.integers(0, 100, size=400).astype(float)})
+    b = pd.DataFrame({"age": rng.integers(0, 100, size=400).astype(float)})
+    dist = compare_cohorts(a, b).distributions["age"]
+    leading = []
+    for v in dist["value"]:
+        m = re.search(r"-?\d+(?:\.\d+)?", str(v))
+        if m:
+            leading.append(float(m.group()))
+    assert leading == sorted(leading)
+
+
+def test_double_mappingproxy_not_rewrapped() -> None:
+    from types import MappingProxyType
+
+    a, b = _two_cohorts()
+    cmp = compare_cohorts(a, b)
+    # distributions is already a MappingProxyType after construction
+    assert isinstance(cmp.distributions, MappingProxyType)
 
 
 def test_to_dict_structure() -> None:
