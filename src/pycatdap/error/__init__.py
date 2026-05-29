@@ -35,14 +35,22 @@ from pycatdap.error._labels import (
 )
 from pycatdap.error._result import ErrorAnalysisResult, Slice
 from pycatdap.error.analysis import error_analysis
+from pycatdap.error.confusion import (
+    confusion_aic,
+    plot_confusion,
+    plot_confusion_by_slice,
+)
 
 __all__ = [
     "ErrorAnalysisResult",
     "Slice",
     "_detect_task",
     "abs_residual_pool",
+    "confusion_aic",
     "confusion_label",
     "error_analysis",
     "error_label",
+    "plot_confusion",
+    "plot_confusion_by_slice",
     "residual_label",
 ]

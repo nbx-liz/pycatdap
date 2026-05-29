@@ -856,3 +856,162 @@ def plot_missing(
         yaxis={"title": "Missing count"},
     )
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Phase I (H-0012): confusion matrix visualization
+# ---------------------------------------------------------------------------
+
+
+def plot_confusion(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    labels: list[Any] | None = None,
+    normalize: str | None = None,
+    colorscale: str = "Blues",
+    show_values: bool = True,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Confusion matrix heatmap (H-0012 Phase I, Plotly backend).
+
+    See :func:`pycatdap.plot.matplotlib.plot_confusion` for the parameter
+    contract. ``cmap`` is renamed ``colorscale`` to match Plotly conventions.
+    """
+    go = _import_plotly()
+    from pycatdap.plot.matplotlib import _build_confusion_matrix
+
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    matrix, label_strs = _build_confusion_matrix(
+        y_true_arr, y_pred_arr, labels, normalize
+    )
+
+    annotations: list[dict[str, Any]] = []
+    if show_values:
+        if normalize:
+            threshold = matrix[np.isfinite(matrix)].max() / 2.0 if matrix.size else 0.5
+            fmt = "{:.2f}"
+        else:
+            threshold = matrix.max() / 2.0 if matrix.size else 0.0
+            fmt = "{:.0f}"
+        for i, true_lbl in enumerate(label_strs):
+            for j, pred_lbl in enumerate(label_strs):
+                value = matrix[i, j]
+                if not np.isfinite(value):
+                    continue
+                color = "white" if value > threshold else "black"
+                annotations.append(
+                    {
+                        "x": pred_lbl,
+                        "y": true_lbl,
+                        "text": fmt.format(value),
+                        "showarrow": False,
+                        "font": {"size": 12, "color": color},
+                    }
+                )
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=matrix,
+                x=label_strs,
+                y=label_strs,
+                colorscale=colorscale,
+                colorbar={"title": "proportion" if normalize else "count"},
+                hovertemplate=(
+                    "True: %{y}<br>Predicted: %{x}<br>value: %{z}<extra></extra>"
+                ),
+            )
+        ]
+    )
+    title_suffix = " (normalized)" if normalize else ""
+    fig.update_layout(
+        title=f"Confusion matrix{title_suffix}",
+        xaxis={"title": "Predicted"},
+        yaxis={"title": "True", "autorange": "reversed"},
+        annotations=annotations,
+    )
+    return fig
+
+
+def plot_confusion_by_slice(
+    df: pd.DataFrame,
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    var: str,
+    *,
+    labels: list[Any] | None = None,
+    n_cols: int = 3,
+    normalize: str | None = "true",
+    colorscale: str = "Blues",
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Per-category small-multiples of confusion matrices (H-0012 Phase I, Plotly)."""
+    go = _import_plotly()
+    from plotly.subplots import make_subplots
+
+    from pycatdap.plot.matplotlib import _build_confusion_matrix
+
+    if var not in df.columns:
+        msg = f"plot_confusion_by_slice: var={var!r} not in df.columns"
+        raise KeyError(msg)
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    if len(y_true_arr) != len(df) or len(y_pred_arr) != len(df):
+        msg = (
+            f"y_true / y_pred length must equal len(df) "
+            f"(got {len(y_true_arr)} / {len(y_pred_arr)} vs {len(df)})"
+        )
+        raise ValueError(msg)
+
+    if labels is None:
+        labels = sorted(
+            {*np.unique(y_true_arr).tolist(), *np.unique(y_pred_arr).tolist()}
+        )
+
+    categories = sorted(df[var].dropna().unique().tolist(), key=str)
+    n_panels = len(categories)
+    if n_panels == 0:
+        msg = f"plot_confusion_by_slice: var={var!r} has no non-NA categories"
+        raise ValueError(msg)
+
+    n_cols = max(1, min(n_cols, n_panels))
+    n_rows = (n_panels + n_cols - 1) // n_cols
+
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=[f"{var} = {c}" for c in categories],
+    )
+
+    for idx, category in enumerate(categories):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
+        mask = (df[var] == category).to_numpy()
+        matrix, label_strs = _build_confusion_matrix(
+            y_true_arr[mask], y_pred_arr[mask], labels, normalize
+        )
+        fig.add_trace(
+            go.Heatmap(
+                z=matrix,
+                x=label_strs,
+                y=label_strs,
+                colorscale=colorscale,
+                showscale=(idx == 0),
+                hovertemplate=(
+                    f"{var} = {category}<br>True: %{{y}}<br>"
+                    "Predicted: %{x}<br>value: %{z}<extra></extra>"
+                ),
+            ),
+            row=row,
+            col=col,
+        )
+
+    fig.update_layout(
+        title=f"Confusion matrix by {var}",
+        height=350 * n_rows,
+        width=350 * n_cols,
+    )
+    fig.update_yaxes(autorange="reversed")
+    return fig

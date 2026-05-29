@@ -854,3 +854,254 @@ def plot_missing(
     if len(columns) > 6:
         ax.tick_params(axis="x", rotation=45)
     return ax
+
+
+# ---------------------------------------------------------------------------
+# Phase I (H-0012): confusion matrix visualization
+# ---------------------------------------------------------------------------
+
+
+def _build_confusion_matrix(
+    y_true: npt.NDArray[Any],
+    y_pred: npt.NDArray[Any],
+    labels: list[Any] | None,
+    normalize: str | None,
+) -> tuple[npt.NDArray[np.float64], list[str]]:
+    """Build a normalized confusion matrix shared by both backends.
+
+    Parameters
+    ----------
+    y_true, y_pred : ndarray
+        Aligned ground-truth and predicted labels.
+    labels : list or None
+        Class order; ``None`` uses sorted unique values from both inputs.
+    normalize : {"true", "pred", "all", None}
+        Row / column / total normalization, or raw counts.
+
+    Returns
+    -------
+    matrix : ndarray, shape (N, N)
+    label_strs : list[str]
+    """
+    if labels is None:
+        labels = sorted({*np.unique(y_true).tolist(), *np.unique(y_pred).tolist()})
+    label_strs = [str(label) for label in labels]
+    cross = pd.crosstab(
+        pd.Series(y_true, name="y_true"),
+        pd.Series(y_pred, name="y_pred"),
+        dropna=False,
+    ).reindex(index=labels, columns=labels, fill_value=0)
+    matrix = cross.to_numpy(dtype=np.float64)
+
+    if normalize == "true":
+        row_sums = matrix.sum(axis=1, keepdims=True)
+        out = np.zeros_like(matrix)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            np.divide(matrix, row_sums, out=out, where=row_sums != 0)
+        matrix = out
+    elif normalize == "pred":
+        col_sums = matrix.sum(axis=0, keepdims=True)
+        out = np.zeros_like(matrix)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            np.divide(matrix, col_sums, out=out, where=col_sums != 0)
+        matrix = out
+    elif normalize == "all":
+        total = matrix.sum()
+        if total > 0:
+            matrix = matrix / total
+    elif normalize is not None:
+        msg = (
+            f"unknown normalize={normalize!r}; expected one of "
+            f"'true', 'pred', 'all', None"
+        )
+        raise ValueError(msg)
+
+    return matrix, label_strs
+
+
+def plot_confusion(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    labels: list[Any] | None = None,
+    normalize: str | None = None,
+    ax: Axes | None = None,
+    cmap: str = "Blues",
+    show_values: bool = True,
+    **kwargs: Any,
+) -> Axes:
+    """Confusion matrix heatmap (H-0012 Phase I, matplotlib backend).
+
+    Multi-class capable (N×N grid for any N).
+
+    Parameters
+    ----------
+    y_true, y_pred : array-like
+        Aligned ground-truth and predicted labels.
+    labels : list or None
+        Class order. ``None`` uses sorted unique values.
+    normalize : {"true", "pred", "all", None}
+        Row / column / total normalization, or raw counts.
+    ax : Axes or None
+        Matplotlib axes. Created if ``None``.
+    cmap : str
+        Matplotlib colormap. Default ``"Blues"`` mirrors sklearn convention.
+    show_values : bool
+        Annotate each cell with its numeric value.
+    **kwargs
+        Forwarded to :meth:`Axes.imshow`.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    matrix, label_strs = _build_confusion_matrix(
+        y_true_arr, y_pred_arr, labels, normalize
+    )
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    image = ax.imshow(matrix, cmap=cmap, aspect="auto", **kwargs)
+
+    n = len(label_strs)
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(label_strs)
+    ax.set_yticklabels(label_strs)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True")
+    title_suffix = " (normalized)" if normalize else ""
+    ax.set_title(f"Confusion matrix{title_suffix}")
+    if n > 6:
+        ax.tick_params(axis="x", rotation=45)
+
+    if show_values:
+        if normalize:
+            threshold = matrix[np.isfinite(matrix)].max() / 2.0 if matrix.size else 0.5
+            fmt = ".2f"
+        else:
+            threshold = matrix.max() / 2.0 if matrix.size else 0.0
+            fmt = ".0f"
+        for i in range(n):
+            for j in range(n):
+                value = matrix[i, j]
+                if not np.isfinite(value):
+                    continue
+                color = "white" if value > threshold else "black"
+                ax.text(
+                    j,
+                    i,
+                    format(value, fmt),
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontsize=9,
+                )
+
+    ax.figure.colorbar(image, ax=ax, label="proportion" if normalize else "count")
+    return ax
+
+
+def plot_confusion_by_slice(
+    df: pd.DataFrame,
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    var: str,
+    *,
+    labels: list[Any] | None = None,
+    n_cols: int = 3,
+    normalize: str | None = "true",
+    cmap: str = "Blues",
+    **kwargs: Any,  # noqa: ARG001
+) -> Figure:
+    """Per-category small-multiples of confusion matrices (H-0012 Phase I).
+
+    Multi-panel grid: one confusion matrix per category of ``var``.
+
+    Returns ``matplotlib.figure.Figure`` (intentional exception to the
+    Axes convention — see H-0012 §F-bis). Does NOT accept ``ax=``.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source frame. Must have ``len(df) == len(y_true) == len(y_pred)``.
+    y_true, y_pred : array-like
+        Labels aligned to ``df``.
+    var : str
+        Column in ``df`` to slice on. Continuous numeric columns must be
+        pre-binned (the function does not auto-bin; see Phase J's
+        ``residual_by_category`` for a continuous-aware analogue).
+    labels : list or None
+        Class order shared across panels.
+    n_cols : int
+        Grid column count.
+    normalize : {"true", "pred", "all", None}
+        Per-panel normalization; default ``"true"`` (row-normalized).
+    cmap : str
+        Matplotlib colormap.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    plt = _import_matplotlib()
+
+    if var not in df.columns:
+        msg = f"plot_confusion_by_slice: var={var!r} not in df.columns"
+        raise KeyError(msg)
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    if len(y_true_arr) != len(df) or len(y_pred_arr) != len(df):
+        msg = (
+            f"y_true / y_pred length must equal len(df) "
+            f"(got {len(y_true_arr)} / {len(y_pred_arr)} vs {len(df)})"
+        )
+        raise ValueError(msg)
+
+    if labels is None:
+        labels = sorted(
+            {*np.unique(y_true_arr).tolist(), *np.unique(y_pred_arr).tolist()}
+        )
+
+    categories = sorted(df[var].dropna().unique().tolist(), key=str)
+    n_panels = len(categories)
+    if n_panels == 0:
+        msg = f"plot_confusion_by_slice: var={var!r} has no non-NA categories"
+        raise ValueError(msg)
+
+    n_cols = max(1, min(n_cols, n_panels))
+    n_rows = (n_panels + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), squeeze=False
+    )
+
+    for idx, category in enumerate(categories):
+        row = idx // n_cols
+        col = idx % n_cols
+        ax = axes[row][col]
+        mask = (df[var] == category).to_numpy()
+        plot_confusion(
+            y_true_arr[mask],
+            y_pred_arr[mask],
+            labels=labels,
+            normalize=normalize,
+            ax=ax,
+            cmap=cmap,
+        )
+        ax.set_title(f"{var} = {category}")
+
+    # Hide unused axes
+    for idx in range(n_panels, n_rows * n_cols):
+        row = idx // n_cols
+        col = idx % n_cols
+        axes[row][col].axis("off")
+
+    fig.tight_layout()
+    return fig  # type: ignore[no-any-return]
