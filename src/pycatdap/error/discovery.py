@@ -41,7 +41,7 @@ from pycatdap._contingency import build_multidim_crosstab
 from pycatdap._pooling import optimal_binning
 from pycatdap.error._describe import interval_label
 from pycatdap.error._enumerate import enumerate_cells
-from pycatdap.error._labels import _detect_task, error_label
+from pycatdap.error._labels import _detect_task, abs_residual_pool, error_label
 from pycatdap.error._slice import ErrorSlice, SliceDiscoveryResult
 from pycatdap.measures import _registry
 
@@ -55,8 +55,12 @@ _MAX_DISCRETE_CARD = 20
 #: (the §B-bis lesson, generalised from probabilities to any range).
 _BIN_INIT_GRID = 50
 
-#: The error category surfaced by :func:`error_label`.
+#: The error category surfaced by :func:`error_label` (classification).
 _ERROR_CATEGORY = "incorrect"
+
+#: Binary residual-magnitude categories for the regression path (D1).
+_HIGH_RESIDUAL = "high_residual"
+_LOW_RESIDUAL = "low_residual"
 
 #: Internal response column injected into the prepared frame for subset
 #: ΔAIC scoring. Reserved — collides loudly if a user column shares it.
@@ -142,6 +146,55 @@ def _bin_continuous(
     return pd.Series(labels, index=series.index, dtype="object")
 
 
+def _top_residual_bin(
+    resid_bins: npt.NDArray[np.object_],
+    abs_resid: npt.NDArray[np.float64],
+) -> Any:
+    """Return the residual-bin label with the largest mean ``|residual|``.
+
+    Determined dynamically rather than by assuming the AIC pooler numbered
+    its bins in magnitude order, so the "worst predictions" pivot is correct
+    regardless of bin-code ordering (INV-R9).
+    """
+    best_label: Any = None
+    best_mean = -np.inf
+    for label in pd.unique(resid_bins):
+        if pd.isna(label):
+            continue
+        mean_resid = float(abs_resid[resid_bins == label].mean())
+        if mean_resid > best_mean:
+            best_mean = mean_resid
+            best_label = label
+    return best_label
+
+
+def _high_residual_labels(
+    y_true: pd.Series | npt.NDArray[Any] | list[Any],
+    y_pred: pd.Series | npt.NDArray[Any] | list[Any],
+    *,
+    n_bins: int,
+) -> pd.Series:
+    """Binary high/low ``|residual|`` response for regression discovery (D1).
+
+    Bins ``|y_true - y_pred|`` via AIC pooling (:func:`abs_residual_pool`)
+    and marks the bin with the largest mean ``|residual|`` as
+    ``"high_residual"``; every other row is ``"low_residual"``. This is the
+    regression analogue of :func:`error_label`'s ``"incorrect"`` category and
+    keeps the downstream 2-category contingency machinery unchanged.
+    """
+    resid_bins = abs_residual_pool(y_true, y_pred, n_bins=n_bins).to_numpy()
+    yt = np.asarray(y_true, dtype=np.float64)
+    yp = np.asarray(y_pred, dtype=np.float64)
+    abs_resid = np.abs(yt - yp)
+    top = _top_residual_bin(resid_bins, abs_resid)
+    is_high = resid_bins == top
+    labels = np.where(is_high, _HIGH_RESIDUAL, _LOW_RESIDUAL)
+    return pd.Series(
+        pd.Categorical(labels, categories=[_LOW_RESIDUAL, _HIGH_RESIDUAL]),
+        name="high_residual_label",
+    )
+
+
 def _normalised_measure(
     measure: MeasureArg,
 ) -> tuple[str, Callable[[npt.NDArray[np.float64]], float], bool]:
@@ -166,20 +219,28 @@ def discover_error_slices(
     top_k: int = 10,
     min_support: int | float = 30,
     columns: list[str] | None = None,
+    n_bins: int = 4,
 ) -> SliceDiscoveryResult:
     """Discover multivariable subgroups where prediction errors concentrate.
 
-    Classification only: errors are defined by :func:`error_label`
-    (``y_true != y_pred``). Continuous explanatory columns are AIC-binned.
-    The search is support-pruned (Apriori) — see HISTORY H-0014 §C for
-    why pruning is on support, not ΔAIC.
+    Works for both tasks (auto-detected via :func:`_detect_task`):
+
+    - **Classification**: errors are :func:`error_label` (``y_true != y_pred``);
+      the error category is ``"incorrect"``.
+    - **Regression**: ``|y_true - y_pred|`` is AIC-binned via
+      :func:`abs_residual_pool` and the largest-residual bin becomes a binary
+      ``"high_residual"`` error category (design D1, H-0015 §B). The downstream
+      2-category contingency / measure / support-pruning machinery is shared.
+
+    Continuous explanatory columns are AIC-binned. The search is support-pruned
+    (Apriori) — see HISTORY H-0014 §C for why pruning is on support, not ΔAIC.
 
     Parameters
     ----------
     df : DataFrame
         Explanatory variables. Not mutated.
     y_true, y_pred : array-like
-        Aligned ground-truth and predicted labels (length ``len(df)``).
+        Aligned ground-truth and predicted values (length ``len(df)``).
     max_vars : int, default 3
         Maximum number of conditions combined per slice.
     measure : {"aic", "cramers_v", "mutual_info"} or callable, default "aic"
@@ -196,6 +257,9 @@ def discover_error_slices(
     columns : list[str] or None
         Explanatory columns to search. ``None`` uses every column of
         ``df``.
+    n_bins : int, default 4
+        Regression only: initial bin count for AIC-pooling ``|residual|``
+        into the high/low-residual response. Ignored for classification.
 
     Returns
     -------
@@ -205,19 +269,10 @@ def discover_error_slices(
 
     Raises
     ------
-    NotImplementedError
-        If the task auto-detects as regression. Regression slice
-        discovery (high-residual subgroups) is a documented follow-up.
     ValueError
         On length mismatch or invalid ``min_support``.
     """
-    if _detect_task(np.asarray(y_true), np.asarray(y_pred)) == "regression":
-        msg = (
-            "discover_error_slices supports classification only "
-            "(error_label = y_true != y_pred). Regression slice discovery "
-            "(high-residual subgroups) is a planned follow-up."
-        )
-        raise NotImplementedError(msg)
+    task = _detect_task(np.asarray(y_true), np.asarray(y_pred))
 
     cols = list(df.columns) if columns is None else list(columns)
     if _RESPONSE_COL in cols:
@@ -227,11 +282,19 @@ def discover_error_slices(
     support_floor = _resolve_min_support(min_support, n_rows)
     name, measure_fn, negate = _normalised_measure(measure)
 
-    labels = error_label(y_true, y_pred)
+    if task == "regression":
+        labels = _high_residual_labels(y_true, y_pred, n_bins=n_bins)
+        error_category = _HIGH_RESIDUAL
+        label_kind = "abs_residual_pool"
+    else:
+        labels = error_label(y_true, y_pred)
+        error_category = _ERROR_CATEGORY
+        label_kind = "error_label"
+
     if len(labels) != n_rows:
         msg = f"y_true/y_pred length ({len(labels)}) must equal len(df) ({n_rows})"
         raise ValueError(msg)
-    error_mask = (labels.to_numpy() == _ERROR_CATEGORY).astype(np.bool_)
+    error_mask = (labels.to_numpy() == error_category).astype(np.bool_)
     base_error_rate = float(error_mask.mean()) if n_rows else 0.0
 
     response = labels.to_numpy().astype(object)
@@ -290,7 +353,7 @@ def discover_error_slices(
         base_aic=base_aic,
         n_evaluated=n_evaluated,
         n_pruned=n_pruned,
-        label_kind="error_label",
+        label_kind=label_kind,
     )
 
 
