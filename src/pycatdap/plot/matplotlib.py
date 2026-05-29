@@ -1485,6 +1485,11 @@ def regression_calibration_curve(
         upper = np.clip(table["ci_high"].to_numpy(dtype=np.float64) - obs, 0.0, None)
         lo = float(min(pred.min(), obs.min()))
         hi = float(max(pred.max(), obs.max()))
+        if hi - lo < 1e-12:
+            # Degenerate (constant predictor): expand so the y=x reference and
+            # the single data point remain visible instead of collapsing to a dot.
+            margin = max(abs(lo) * 0.05, 1e-6)
+            lo, hi = lo - margin, hi + margin
         ax.plot(
             [lo, hi],
             [lo, hi],

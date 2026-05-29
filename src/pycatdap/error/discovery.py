@@ -154,7 +154,10 @@ def _top_residual_bin(
 
     Determined dynamically rather than by assuming the AIC pooler numbered
     its bins in magnitude order, so the "worst predictions" pivot is correct
-    regardless of bin-code ordering (INV-R9).
+    regardless of bin-code ordering (INV-R9). Ties are broken by first-seen
+    label (strict ``>`` comparison). Returns ``None`` only when every label is
+    ``NaN`` — unreachable on the production path because
+    :func:`_high_residual_labels` rejects non-finite inputs first.
     """
     best_label: Any = None
     best_mean = -np.inf
@@ -181,10 +184,23 @@ def _high_residual_labels(
     ``"high_residual"``; every other row is ``"low_residual"``. This is the
     regression analogue of :func:`error_label`'s ``"incorrect"`` category and
     keeps the downstream 2-category contingency machinery unchanged.
+
+    Raises
+    ------
+    ValueError
+        If ``y_true`` or ``y_pred`` contains a non-finite value (NaN / Inf):
+        the AIC residual pooler cannot bin missing residuals, and dropping
+        rows here would break the length contract with ``df`` / ``error_mask``.
     """
-    resid_bins = abs_residual_pool(y_true, y_pred, n_bins=n_bins).to_numpy()
     yt = np.asarray(y_true, dtype=np.float64)
     yp = np.asarray(y_pred, dtype=np.float64)
+    if not bool(np.isfinite(yt).all()) or not bool(np.isfinite(yp).all()):
+        msg = (
+            "discover_error_slices: regression y_true/y_pred must be finite "
+            "(no NaN/Inf). Drop or impute missing values before discovery."
+        )
+        raise ValueError(msg)
+    resid_bins = abs_residual_pool(y_true, y_pred, n_bins=n_bins).to_numpy()
     abs_resid = np.abs(yt - yp)
     top = _top_residual_bin(resid_bins, abs_resid)
     is_high = resid_bins == top

@@ -411,8 +411,10 @@ def calibration_curve(
     backend : {"matplotlib", "plotly"}
         Plotting backend.
     **kwargs
-        Forwarded to the matplotlib ``Axes.errorbar`` call (e.g. ``ax=``,
-        ``color=``, ``markersize=``). The plotly backend ignores ``**kwargs``.
+        Forwarded to the matplotlib backend. ``ax=`` selects the Axes to draw
+        on (a new figure is created if omitted); the remaining kwargs (e.g.
+        ``color=``, ``markersize=``) reach ``Axes.errorbar``. The plotly
+        backend ignores ``**kwargs``.
 
     Returns
     -------
@@ -590,8 +592,10 @@ def regression_calibration_curve(
     backend : {"matplotlib", "plotly"}
         Plotting backend.
     **kwargs
-        Forwarded to the matplotlib ``Axes.errorbar`` call (e.g. ``ax=``,
-        ``color=``). The plotly backend ignores ``**kwargs``.
+        Forwarded to the matplotlib backend. ``ax=`` selects the Axes to draw
+        on (a new figure is created if omitted); the remaining kwargs (e.g.
+        ``color=``) reach ``Axes.errorbar``. The plotly backend ignores
+        ``**kwargs``.
 
     Returns
     -------

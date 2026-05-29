@@ -20,8 +20,9 @@ def scalar_to_json(v: Any) -> Any:
     """Convert a pandas/numpy scalar to a JSON-friendly value.
 
     Returns ``None`` for NA, NaN, and +/-inf (the latter two are not valid
-    JSON per RFC 8259 and break strict JS parsers); preserves finite numerics
-    as ``float``; falls back to ``str`` for anything else.
+    JSON per RFC 8259 and break strict JS parsers); preserves ``bool`` /
+    ``numpy.bool_`` as JSON ``bool`` (``true`` / ``false``); preserves finite
+    numerics as ``float``; falls back to ``str`` for anything else.
 
     Parameters
     ----------
@@ -31,10 +32,16 @@ def scalar_to_json(v: Any) -> Any:
     Returns
     -------
     Any
-        ``None``, a finite ``float``, or a ``str``.
+        ``None``, a ``bool``, a finite ``float``, or a ``str``.
     """
     if pd.isna(v):
         return None
+    # bool is a subclass of int, so this MUST precede the numeric branch,
+    # otherwise True/False would coerce to 1.0/0.0 and serialise as numbers
+    # instead of JSON booleans. numpy.bool_ is not an int subclass and would
+    # otherwise fall through to str().
+    if isinstance(v, (bool, np.bool_)):
+        return bool(v)
     if isinstance(v, (int, float, np.floating, np.integer)):
         f = float(v)
         return f if np.isfinite(f) else None
