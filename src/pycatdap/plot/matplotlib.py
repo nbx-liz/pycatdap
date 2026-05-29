@@ -854,3 +854,529 @@ def plot_missing(
     if len(columns) > 6:
         ax.tick_params(axis="x", rotation=45)
     return ax
+
+
+# ---------------------------------------------------------------------------
+# Phase I (H-0012): confusion matrix visualization
+# ---------------------------------------------------------------------------
+
+
+def _build_confusion_matrix(
+    y_true: npt.NDArray[Any],
+    y_pred: npt.NDArray[Any],
+    labels: list[Any] | None,
+    normalize: str | None,
+) -> tuple[npt.NDArray[np.float64], list[str]]:
+    """Build a normalized confusion matrix shared by both backends.
+
+    Parameters
+    ----------
+    y_true, y_pred : ndarray
+        Aligned ground-truth and predicted labels.
+    labels : list or None
+        Class order; ``None`` uses sorted unique values from both inputs.
+    normalize : {"true", "pred", "all", None}
+        Row / column / total normalization, or raw counts.
+
+    Returns
+    -------
+    matrix : ndarray, shape (N, N)
+    label_strs : list[str]
+    """
+    if labels is None:
+        labels = sorted({*np.unique(y_true).tolist(), *np.unique(y_pred).tolist()})
+    label_strs = [str(label) for label in labels]
+    cross = pd.crosstab(
+        pd.Series(y_true, name="y_true"),
+        pd.Series(y_pred, name="y_pred"),
+        dropna=False,
+    ).reindex(index=labels, columns=labels, fill_value=0)
+    matrix = cross.to_numpy(dtype=np.float64)
+
+    if normalize == "true":
+        row_sums = matrix.sum(axis=1, keepdims=True)
+        out = np.zeros_like(matrix)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            np.divide(matrix, row_sums, out=out, where=row_sums != 0)
+        matrix = out
+    elif normalize == "pred":
+        col_sums = matrix.sum(axis=0, keepdims=True)
+        out = np.zeros_like(matrix)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            np.divide(matrix, col_sums, out=out, where=col_sums != 0)
+        matrix = out
+    elif normalize == "all":
+        total = matrix.sum()
+        if total > 0:
+            matrix = matrix / total
+    elif normalize is not None:
+        msg = (
+            f"unknown normalize={normalize!r}; expected one of "
+            f"'true', 'pred', 'all', None"
+        )
+        raise ValueError(msg)
+
+    return matrix, label_strs
+
+
+def plot_confusion(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    labels: list[Any] | None = None,
+    normalize: str | None = None,
+    ax: Axes | None = None,
+    cmap: str = "Blues",
+    show_values: bool = True,
+    **kwargs: Any,
+) -> Axes:
+    """Confusion matrix heatmap (H-0012 Phase I, matplotlib backend).
+
+    Multi-class capable (N×N grid for any N).
+
+    Parameters
+    ----------
+    y_true, y_pred : array-like
+        Aligned ground-truth and predicted labels.
+    labels : list or None
+        Class order. ``None`` uses sorted unique values.
+    normalize : {"true", "pred", "all", None}
+        Row / column / total normalization, or raw counts.
+    ax : Axes or None
+        Matplotlib axes. Created if ``None``.
+    cmap : str
+        Matplotlib colormap. Default ``"Blues"`` mirrors sklearn convention.
+    show_values : bool
+        Annotate each cell with its numeric value.
+    **kwargs
+        Forwarded to :meth:`Axes.imshow`.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    matrix, label_strs = _build_confusion_matrix(
+        y_true_arr, y_pred_arr, labels, normalize
+    )
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    image = ax.imshow(matrix, cmap=cmap, aspect="auto", **kwargs)
+
+    n = len(label_strs)
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    ax.set_xticklabels(label_strs)
+    ax.set_yticklabels(label_strs)
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("True")
+    title_suffix = " (normalized)" if normalize else ""
+    ax.set_title(f"Confusion matrix{title_suffix}")
+    if n > 6:
+        ax.tick_params(axis="x", rotation=45)
+
+    if show_values:
+        if normalize:
+            threshold = matrix[np.isfinite(matrix)].max() / 2.0 if matrix.size else 0.5
+            fmt = ".2f"
+        else:
+            threshold = matrix.max() / 2.0 if matrix.size else 0.0
+            fmt = ".0f"
+        for i in range(n):
+            for j in range(n):
+                value = matrix[i, j]
+                if not np.isfinite(value):
+                    continue
+                color = "white" if value > threshold else "black"
+                ax.text(
+                    j,
+                    i,
+                    format(value, fmt),
+                    ha="center",
+                    va="center",
+                    color=color,
+                    fontsize=9,
+                )
+
+    ax.figure.colorbar(image, ax=ax, label="proportion" if normalize else "count")
+    return ax
+
+
+def plot_confusion_by_slice(
+    df: pd.DataFrame,
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    var: str,
+    *,
+    labels: list[Any] | None = None,
+    n_cols: int = 3,
+    normalize: str | None = "true",
+    cmap: str = "Blues",
+    **kwargs: Any,  # noqa: ARG001
+) -> Figure:
+    """Per-category small-multiples of confusion matrices (H-0012 Phase I).
+
+    Multi-panel grid: one confusion matrix per category of ``var``.
+
+    Returns ``matplotlib.figure.Figure`` (intentional exception to the
+    Axes convention — see H-0012 §F-bis). Does NOT accept ``ax=``.
+
+    Parameters
+    ----------
+    df : DataFrame
+        Source frame. Must have ``len(df) == len(y_true) == len(y_pred)``.
+    y_true, y_pred : array-like
+        Labels aligned to ``df``.
+    var : str
+        Column in ``df`` to slice on. Continuous numeric columns must be
+        pre-binned (the function does not auto-bin; see Phase J's
+        ``residual_by_category`` for a continuous-aware analogue).
+    labels : list or None
+        Class order shared across panels.
+    n_cols : int
+        Grid column count.
+    normalize : {"true", "pred", "all", None}
+        Per-panel normalization; default ``"true"`` (row-normalized).
+    cmap : str
+        Matplotlib colormap.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+    """
+    plt = _import_matplotlib()
+
+    if var not in df.columns:
+        msg = f"plot_confusion_by_slice: var={var!r} not in df.columns"
+        raise KeyError(msg)
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    if len(y_true_arr) != len(df) or len(y_pred_arr) != len(df):
+        msg = (
+            f"y_true / y_pred length must equal len(df) "
+            f"(got {len(y_true_arr)} / {len(y_pred_arr)} vs {len(df)})"
+        )
+        raise ValueError(msg)
+
+    if labels is None:
+        labels = sorted(
+            {*np.unique(y_true_arr).tolist(), *np.unique(y_pred_arr).tolist()}
+        )
+
+    categories = sorted(df[var].dropna().unique().tolist(), key=str)
+    n_panels = len(categories)
+    if n_panels == 0:
+        msg = f"plot_confusion_by_slice: var={var!r} has no non-NA categories"
+        raise ValueError(msg)
+
+    n_cols = max(1, min(n_cols, n_panels))
+    n_rows = (n_panels + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(
+        n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), squeeze=False
+    )
+
+    for idx, category in enumerate(categories):
+        row = idx // n_cols
+        col = idx % n_cols
+        ax = axes[row][col]
+        mask = (df[var] == category).to_numpy()
+        plot_confusion(
+            y_true_arr[mask],
+            y_pred_arr[mask],
+            labels=labels,
+            normalize=normalize,
+            ax=ax,
+            cmap=cmap,
+        )
+        ax.set_title(f"{var} = {category}")
+
+    # Hide unused axes
+    for idx in range(n_panels, n_rows * n_cols):
+        row = idx // n_cols
+        col = idx % n_cols
+        axes[row][col].axis("off")
+
+    fig.tight_layout()
+    return fig  # type: ignore[no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# Phase J (H-0012): regression residual visualization
+# ---------------------------------------------------------------------------
+
+
+def _residual_values(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """Compute aligned (y_true_f, y_pred_f, residual) float arrays."""
+    yt = np.asarray(y_true, dtype=np.float64)
+    yp = np.asarray(y_pred, dtype=np.float64)
+    if yt.shape[0] != yp.shape[0]:
+        msg = (
+            f"y_true and y_pred must have the same length "
+            f"(got {yt.shape[0]} and {yp.shape[0]})"
+        )
+        raise ValueError(msg)
+    return yt, yp, yt - yp
+
+
+def residual_plot(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    kind: str = "scatter_pred_resid",
+    color_by: pd.Series | npt.NDArray[Any] | None = None,
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Residual diagnostic plot (H-0012 Phase J, matplotlib backend).
+
+    Parameters
+    ----------
+    y_true, y_pred : array-like
+        Aligned regression targets and predictions.
+    kind : {"scatter_pred_resid", "scatter_true_pred", "histogram"}
+        - ``"scatter_pred_resid"`` (default): residual vs y_pred scatter
+          with a zero reference line.
+        - ``"scatter_true_pred"``: y_pred vs y_true scatter with a
+          y = x identity line.
+        - ``"histogram"``: residual histogram.
+    color_by : array-like or None
+        Optional third variable used to colour the scatter points.
+        Ignored when ``kind == "histogram"``.
+    ax : Axes or None
+        Matplotlib axes; created if ``None``.
+    **kwargs
+        Forwarded to the underlying matplotlib call.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+
+    yt, yp, residual = _residual_values(y_true, y_pred)
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    color_arr: npt.NDArray[Any] | None = None
+    if color_by is not None:
+        color_arr = np.asarray(color_by)
+        if color_arr.shape[0] != yt.shape[0]:
+            msg = (
+                f"color_by length ({color_arr.shape[0]}) does not match "
+                f"y_true / y_pred length ({yt.shape[0]})"
+            )
+            raise ValueError(msg)
+
+    if kind == "scatter_pred_resid":
+        if color_arr is not None and color_arr.dtype.kind in "fiub":
+            scatter = ax.scatter(yp, residual, c=color_arr, **kwargs)
+            ax.figure.colorbar(scatter, ax=ax)
+        else:
+            ax.scatter(yp, residual, **kwargs)
+        ax.axhline(0, color="black", linewidth=1)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("Residual (y_true − y_pred)")
+        ax.set_title("Residuals vs predictions")
+    elif kind == "scatter_true_pred":
+        ax.scatter(yt, yp, **kwargs)
+        lo = float(min(yt.min(), yp.min()))
+        hi = float(max(yt.max(), yp.max()))
+        ax.plot([lo, hi], [lo, hi], color="black", linewidth=1)
+        ax.set_xlabel("True")
+        ax.set_ylabel("Predicted")
+        ax.set_title("Predictions vs truth")
+    elif kind == "histogram":
+        ax.hist(residual, bins=kwargs.pop("bins", 30), **kwargs)
+        ax.axvline(0, color="black", linewidth=1)
+        ax.set_xlabel("Residual (y_true − y_pred)")
+        ax.set_ylabel("Count")
+        ax.set_title("Residual histogram")
+    else:
+        msg = (
+            f"unknown kind={kind!r}; expected one of "
+            f"'scatter_pred_resid', 'scatter_true_pred', 'histogram'"
+        )
+        raise ValueError(msg)
+
+    return ax
+
+
+def _ordered_categories(values: pd.Series) -> list[Any]:
+    """Sort unique non-NA categories, preserving Categorical ordering."""
+    if isinstance(values.dtype, pd.CategoricalDtype):
+        return [c for c in values.cat.categories if c in values.unique()]
+    return sorted(values.dropna().unique().tolist(), key=str)
+
+
+def residual_by_category(
+    df: pd.DataFrame,
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    var: str,
+    *,
+    bins: int | None = None,
+    ax: Axes | None = None,
+    **kwargs: Any,  # noqa: ARG001
+) -> Axes:
+    """Box plot of residuals stratified by a categorical variable.
+
+    Continuous ``var`` is auto-binned via :func:`pycatdap._pooling.optimal_binning`
+    (AIC-driven) when ``bins=None``. Pass ``bins=int`` for equal-width binning.
+
+    Returns ``Axes`` (single panel). Categorical or pre-binned ``var``
+    yields one box per category, ordered alphabetically (Categorical
+    dtype preserves declared order).
+    """
+    plt = _import_matplotlib()
+
+    if var not in df.columns:
+        msg = f"residual_by_category: var={var!r} not in df.columns"
+        raise KeyError(msg)
+    yt, yp, residual = _residual_values(y_true, y_pred)
+    if len(yt) != len(df):
+        msg = f"y_true / y_pred length ({len(yt)}) does not match len(df) ({len(df)})"
+        raise ValueError(msg)
+
+    series = df[var]
+    is_continuous = pd.api.types.is_numeric_dtype(series) and not isinstance(
+        series.dtype, pd.CategoricalDtype
+    )
+    if is_continuous:
+        from pycatdap._pooling import optimal_binning
+
+        values = series.to_numpy(dtype=np.float64)
+        mask = np.isfinite(values)
+        if not mask.any():
+            msg = f"residual_by_category: var={var!r} has no finite values"
+            raise ValueError(msg)
+        if bins is None:
+            # AIC-optimal binning using residual sign as a proxy response.
+            response = np.where(residual >= 0, "pos", "neg").astype(object)
+            pooling = optimal_binning(values[mask], response[mask])
+            codes_masked = pooling.codes
+            edges = list(pooling.boundaries)
+            codes = np.full_like(values, fill_value=-1, dtype=np.intp)
+            codes[mask] = codes_masked
+            categories_str = _bin_labels_from_edges(values[mask], edges)
+        else:
+            categories_str, codes = _equal_width_bin_labels(values, mask, int(bins))
+        categories = list(range(len(categories_str)))
+        valid = codes >= 0
+        group_data = [residual[valid & (codes == k)] for k in categories]
+        group_labels = categories_str
+    else:
+        cats = _ordered_categories(series)
+        if not cats:
+            msg = f"residual_by_category: var={var!r} has no non-NA categories"
+            raise ValueError(msg)
+        group_data = [residual[(series == c).to_numpy()] for c in cats]
+        group_labels = [str(c) for c in cats]
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    # Matplotlib 3.9+ uses `tick_labels=` and `orientation=`; pass via a
+    # version-tolerant kwarg dict so we don't trip new deprecations.
+    ax.boxplot(group_data, tick_labels=group_labels)
+    ax.axhline(0, color="black", linewidth=1)
+    ax.set_xlabel(var)
+    ax.set_ylabel("Residual (y_true − y_pred)")
+    ax.set_title(f"Residuals by {var}")
+    if len(group_labels) > 6:
+        ax.tick_params(axis="x", rotation=45)
+    return ax
+
+
+def _equal_width_bin_labels(
+    values: npt.NDArray[np.float64],
+    mask: npt.NDArray[np.bool_],
+    n_bins: int,
+) -> tuple[list[str], npt.NDArray[np.intp]]:
+    """Equal-width binning with closed-on-left intervals."""
+    finite = values[mask]
+    if finite.size == 0:
+        return [], np.full_like(values, -1, dtype=np.intp)
+    lo, hi = float(finite.min()), float(finite.max())
+    if lo == hi:
+        labels = [f"[{lo:.3g}]"]
+        codes = np.full_like(values, -1, dtype=np.intp)
+        codes[mask] = 0
+        return labels, codes
+    edges = np.linspace(lo, hi, n_bins + 1)
+    codes = np.full_like(values, -1, dtype=np.intp)
+    codes[mask] = np.clip(np.digitize(values[mask], edges[1:-1]), 0, n_bins - 1).astype(
+        np.intp
+    )
+    labels = [f"[{edges[i]:.2f}, {edges[i + 1]:.2f})" for i in range(n_bins)]
+    return labels, codes
+
+
+def _bin_labels_from_edges(
+    values: npt.NDArray[np.float64],
+    boundaries: list[float],
+) -> list[str]:
+    """Format AIC-pool boundaries as half-open interval labels."""
+    if not boundaries:
+        lo, hi = float(values.min()), float(values.max())
+        return [f"[{lo:.2f}, {hi:.2f}]"]
+    edges = [float(values.min()), *boundaries, float(values.max())]
+    return [f"[{edges[i]:.2f}, {edges[i + 1]:.2f})" for i in range(len(edges) - 1)]
+
+
+def residual_pool_plot(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    n_bins: int = 4,
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Visualise the AIC pooling boundaries of |residual| (H-0012 Phase J).
+
+    Plots an absolute-residual histogram with vertical lines at the
+    AIC-pooled bin boundaries derived from
+    :func:`pycatdap.error.residual_label` (``method="aic_pool"``).
+    """
+    plt = _import_matplotlib()
+    from pycatdap.error._labels import _residual_label_aic_pool
+
+    _, _, residual = _residual_values(y_true, y_pred)
+    abs_resid = np.abs(residual)
+
+    pooled = _residual_label_aic_pool(abs_resid, n_bins=n_bins)
+    bin_counts = pooled.value_counts().reindex(pooled.cat.categories, fill_value=0)
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    ax.hist(abs_resid, bins=kwargs.pop("bins", 30), color="#bcd2e8", **kwargs)
+
+    # Draw vertical lines at the boundaries between consecutive AIC bins
+    # by walking each unique bin label in order.
+    sorted_resid = np.sort(abs_resid)
+    bin_codes = pooled.cat.codes.to_numpy()[np.argsort(abs_resid)]
+    for k in range(1, len(bin_counts)):
+        switch = np.where(bin_codes == k)[0]
+        if switch.size == 0:
+            continue
+        boundary = float(sorted_resid[switch[0]])
+        ax.axvline(boundary, color="#cf222e", linewidth=1.2, linestyle="--")
+
+    ax.set_xlabel("|residual|")
+    ax.set_ylabel("Count")
+    ax.set_title(f"AIC-pooled |residual| bins ({len(bin_counts)} bins)")
+    return ax

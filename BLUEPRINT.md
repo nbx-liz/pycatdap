@@ -604,7 +604,7 @@ pycatdap.association_plot(table, *, threshold=2.0, backend=...)
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
 
-### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase H まで実装 v0.8.0）
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase I+J まで実装 v0.9.0）
 
 ```python
 # 誤差ラベリング（Phase G、v0.7.0 で実装済）
@@ -630,15 +630,47 @@ pycatdap.error_analysis(
     criterion="bic",
 ) -> ErrorAnalysisResult
 
-# 分類可視化
-pycatdap.error.plot_confusion(y_true, y_pred, backend=...)
-pycatdap.error.plot_confusion_by_slice(df, y_true, y_pred, var, backend=...)
+# 分類可視化（Phase I、H-0012、v0.9.0 で実装済）
+pycatdap.error.plot_confusion(
+    y_true, y_pred,
+    *,
+    labels: list | None = None,
+    normalize: Literal["true", "pred", "all"] | None = None,
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    **kwargs,
+) -> Axes | Figure                                  # multi-class 対応
+pycatdap.error.plot_confusion_by_slice(
+    df, y_true, y_pred, var,
+    *,
+    labels=None, n_cols=3, normalize="true",
+    backend=..., **kwargs,
+) -> Figure                                         # H-0012 §F-bis 例外: matplotlib も Figure
 pycatdap.error.confusion_aic(y_true, y_pred) -> float
+                                                    # ΔAIC、負ほど informative（既存 pycatdap 規約）
 
-# 回帰可視化
-pycatdap.error.residual_plot(y_true, y_pred, color_by=None, backend=...)
-pycatdap.error.residual_by_category(df, y_true, y_pred, var, backend=...)
-pycatdap.error.residual_pool_plot(y_true, y_pred, backend=...)
+# 回帰可視化（Phase J、H-0012、v0.9.0 で実装済）
+pycatdap.error.residual_plot(
+    y_true, y_pred,
+    *,
+    kind: Literal["scatter_pred_resid", "scatter_true_pred", "histogram"] = "scatter_pred_resid",
+    color_by=None, backend=..., **kwargs,
+) -> Axes | Figure
+pycatdap.error.residual_by_category(
+    df, y_true, y_pred, var,
+    *,
+    bins: int | None = None,                        # None → AIC 最適 binning
+    backend=..., **kwargs,
+) -> Axes | Figure
+pycatdap.error.residual_pool_plot(
+    y_true, y_pred,
+    *,
+    n_bins=4,
+    backend=..., **kwargs,
+) -> Axes | Figure                                  # AIC pooling boundary 線オーバーレイ
+
+# Result delegation（Phase I+J、H-0012、v0.9.0 で追加）
+result.plot_confusion(*, backend=..., **kwargs)     # binary OR multi-class
+result.residual_plot(*, backend=..., **kwargs)      # regression 専用
 
 # キャリブレーション（分類+回帰両対応、AIC binning）
 pycatdap.error.calibration_curve(y_true, y_proba, n_bins="aic"|int, backend=...)
@@ -685,12 +717,22 @@ class ErrorAnalysisResult:
     n_incorrect: int | None
     mae: float | None
     rmse: float | None
+    # H-0012 PR-H3 で追加(v0.9.0)。default None なので既存 caller は無影響
+    y_true: npt.NDArray[Any] | None = None             # 構築時 numpy buffer frozen
+    y_pred: npt.NDArray[Any] | None = None             # 同上
 
     def show(self) -> None: ...
     def to_html(self, path: str | Path | None = None) -> str: ...
     def to_plotly_json(self) -> dict: ...
     def to_dict(self) -> dict: ...
     def to_divexplorer_format(self) -> pd.DataFrame: ...
+    # H-0012 PR-H3 で追加(v0.9.0)
+    def plot_confusion(self, *, backend="matplotlib", **kwargs) -> Any: ...
+                                                       # binary AND multi-class
+                                                       # regression / 不在ラベルで ValueError
+    def residual_plot(self, *, backend="matplotlib", **kwargs) -> Any: ...
+                                                       # regression 専用
+                                                       # classification / 不在ラベルで ValueError
 ```
 
 実装 safeguards(H-0011 §F、cross-check 2026-05-28 抽出):

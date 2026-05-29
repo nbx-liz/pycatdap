@@ -856,3 +856,360 @@ def plot_missing(
         yaxis={"title": "Missing count"},
     )
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Phase I (H-0012): confusion matrix visualization
+# ---------------------------------------------------------------------------
+
+
+def plot_confusion(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    labels: list[Any] | None = None,
+    normalize: str | None = None,
+    colorscale: str = "Blues",
+    show_values: bool = True,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Confusion matrix heatmap (H-0012 Phase I, Plotly backend).
+
+    See :func:`pycatdap.plot.matplotlib.plot_confusion` for the parameter
+    contract. ``cmap`` is renamed ``colorscale`` to match Plotly conventions.
+    """
+    go = _import_plotly()
+    from pycatdap.plot.matplotlib import _build_confusion_matrix
+
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    matrix, label_strs = _build_confusion_matrix(
+        y_true_arr, y_pred_arr, labels, normalize
+    )
+
+    annotations: list[dict[str, Any]] = []
+    if show_values:
+        if normalize:
+            threshold = matrix[np.isfinite(matrix)].max() / 2.0 if matrix.size else 0.5
+            fmt = "{:.2f}"
+        else:
+            threshold = matrix.max() / 2.0 if matrix.size else 0.0
+            fmt = "{:.0f}"
+        for i, true_lbl in enumerate(label_strs):
+            for j, pred_lbl in enumerate(label_strs):
+                value = matrix[i, j]
+                if not np.isfinite(value):
+                    continue
+                color = "white" if value > threshold else "black"
+                annotations.append(
+                    {
+                        "x": pred_lbl,
+                        "y": true_lbl,
+                        "text": fmt.format(value),
+                        "showarrow": False,
+                        "font": {"size": 12, "color": color},
+                    }
+                )
+
+    fig = go.Figure(
+        data=[
+            go.Heatmap(
+                z=matrix,
+                x=label_strs,
+                y=label_strs,
+                colorscale=colorscale,
+                colorbar={"title": "proportion" if normalize else "count"},
+                hovertemplate=(
+                    "True: %{y}<br>Predicted: %{x}<br>value: %{z}<extra></extra>"
+                ),
+            )
+        ]
+    )
+    title_suffix = " (normalized)" if normalize else ""
+    fig.update_layout(
+        title=f"Confusion matrix{title_suffix}",
+        xaxis={"title": "Predicted"},
+        yaxis={"title": "True", "autorange": "reversed"},
+        annotations=annotations,
+    )
+    return fig
+
+
+def plot_confusion_by_slice(
+    df: pd.DataFrame,
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    var: str,
+    *,
+    labels: list[Any] | None = None,
+    n_cols: int = 3,
+    normalize: str | None = "true",
+    colorscale: str = "Blues",
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Per-category small-multiples of confusion matrices (H-0012 Phase I, Plotly)."""
+    go = _import_plotly()
+    from plotly.subplots import make_subplots
+
+    from pycatdap.plot.matplotlib import _build_confusion_matrix
+
+    if var not in df.columns:
+        msg = f"plot_confusion_by_slice: var={var!r} not in df.columns"
+        raise KeyError(msg)
+    y_true_arr = np.asarray(y_true)
+    y_pred_arr = np.asarray(y_pred)
+    if len(y_true_arr) != len(df) or len(y_pred_arr) != len(df):
+        msg = (
+            f"y_true / y_pred length must equal len(df) "
+            f"(got {len(y_true_arr)} / {len(y_pred_arr)} vs {len(df)})"
+        )
+        raise ValueError(msg)
+
+    if labels is None:
+        labels = sorted(
+            {*np.unique(y_true_arr).tolist(), *np.unique(y_pred_arr).tolist()}
+        )
+
+    categories = sorted(df[var].dropna().unique().tolist(), key=str)
+    n_panels = len(categories)
+    if n_panels == 0:
+        msg = f"plot_confusion_by_slice: var={var!r} has no non-NA categories"
+        raise ValueError(msg)
+
+    n_cols = max(1, min(n_cols, n_panels))
+    n_rows = (n_panels + n_cols - 1) // n_cols
+
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=[f"{var} = {c}" for c in categories],
+    )
+
+    for idx, category in enumerate(categories):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
+        mask = (df[var] == category).to_numpy()
+        matrix, label_strs = _build_confusion_matrix(
+            y_true_arr[mask], y_pred_arr[mask], labels, normalize
+        )
+        fig.add_trace(
+            go.Heatmap(
+                z=matrix,
+                x=label_strs,
+                y=label_strs,
+                colorscale=colorscale,
+                showscale=(idx == 0),
+                hovertemplate=(
+                    f"{var} = {category}<br>True: %{{y}}<br>"
+                    "Predicted: %{x}<br>value: %{z}<extra></extra>"
+                ),
+            ),
+            row=row,
+            col=col,
+        )
+
+    fig.update_layout(
+        title=f"Confusion matrix by {var}",
+        height=350 * n_rows,
+        width=350 * n_cols,
+    )
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Phase J (H-0012): regression residual visualization
+# ---------------------------------------------------------------------------
+
+
+def residual_plot(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    kind: str = "scatter_pred_resid",
+    color_by: pd.Series | npt.NDArray[Any] | None = None,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Residual diagnostic plot (H-0012 Phase J, Plotly backend).
+
+    See :func:`pycatdap.plot.matplotlib.residual_plot` for the parameter
+    contract.
+    """
+    go = _import_plotly()
+    from pycatdap.plot.matplotlib import _residual_values
+
+    yt, yp, residual = _residual_values(y_true, y_pred)
+
+    color_arr: npt.NDArray[Any] | None = None
+    if color_by is not None:
+        color_arr = np.asarray(color_by)
+        if color_arr.shape[0] != yt.shape[0]:
+            msg = (
+                f"color_by length ({color_arr.shape[0]}) does not match "
+                f"y_true / y_pred length ({yt.shape[0]})"
+            )
+            raise ValueError(msg)
+
+    fig = go.Figure()
+
+    if kind == "scatter_pred_resid":
+        marker: dict[str, Any] = {}
+        if color_arr is not None:
+            marker["color"] = color_arr.tolist()
+            marker["colorbar"] = {"title": "color"}
+            marker["colorscale"] = "Viridis"
+            marker["showscale"] = True
+        fig.add_trace(
+            go.Scatter(x=yp, y=residual, mode="markers", marker=marker, name="residual")
+        )
+        fig.add_hline(y=0, line={"color": "black", "width": 1})
+        fig.update_layout(
+            title="Residuals vs predictions",
+            xaxis={"title": "Predicted"},
+            yaxis={"title": "Residual (y_true − y_pred)"},
+        )
+    elif kind == "scatter_true_pred":
+        lo = float(min(yt.min(), yp.min()))
+        hi = float(max(yt.max(), yp.max()))
+        fig.add_trace(go.Scatter(x=yt, y=yp, mode="markers", name="prediction"))
+        fig.add_trace(
+            go.Scatter(
+                x=[lo, hi],
+                y=[lo, hi],
+                mode="lines",
+                line={"color": "black", "width": 1},
+                name="y = x",
+            )
+        )
+        fig.update_layout(
+            title="Predictions vs truth",
+            xaxis={"title": "True"},
+            yaxis={"title": "Predicted"},
+        )
+    elif kind == "histogram":
+        fig.add_trace(go.Histogram(x=residual, nbinsx=30))
+        fig.add_vline(x=0, line={"color": "black", "width": 1})
+        fig.update_layout(
+            title="Residual histogram",
+            xaxis={"title": "Residual (y_true − y_pred)"},
+            yaxis={"title": "Count"},
+        )
+    else:
+        msg = (
+            f"unknown kind={kind!r}; expected one of "
+            f"'scatter_pred_resid', 'scatter_true_pred', 'histogram'"
+        )
+        raise ValueError(msg)
+    return fig
+
+
+def residual_by_category(
+    df: pd.DataFrame,
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    var: str,
+    *,
+    bins: int | None = None,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Box plot of residuals stratified by ``var`` (H-0012 Phase J, Plotly)."""
+    go = _import_plotly()
+    from pycatdap.plot.matplotlib import (
+        _bin_labels_from_edges,
+        _equal_width_bin_labels,
+        _ordered_categories,
+        _residual_values,
+    )
+
+    if var not in df.columns:
+        msg = f"residual_by_category: var={var!r} not in df.columns"
+        raise KeyError(msg)
+    yt, _yp, residual = _residual_values(y_true, y_pred)
+    if len(yt) != len(df):
+        msg = f"y_true / y_pred length ({len(yt)}) does not match len(df) ({len(df)})"
+        raise ValueError(msg)
+
+    series = df[var]
+    is_continuous = pd.api.types.is_numeric_dtype(series) and not isinstance(
+        series.dtype, pd.CategoricalDtype
+    )
+    if is_continuous:
+        from pycatdap._pooling import optimal_binning
+
+        values = series.to_numpy(dtype=np.float64)
+        mask = np.isfinite(values)
+        if not mask.any():
+            msg = f"residual_by_category: var={var!r} has no finite values"
+            raise ValueError(msg)
+        if bins is None:
+            response = np.where(residual >= 0, "pos", "neg").astype(object)
+            pooling = optimal_binning(values[mask], response[mask])
+            codes_masked = pooling.codes
+            edges = list(pooling.boundaries)
+            codes = np.full_like(values, fill_value=-1, dtype=np.intp)
+            codes[mask] = codes_masked
+            categories_str = _bin_labels_from_edges(values[mask], edges)
+        else:
+            categories_str, codes = _equal_width_bin_labels(values, mask, int(bins))
+        categories = list(range(len(categories_str)))
+        valid = codes >= 0
+        groups = [
+            (categories_str[k], residual[valid & (codes == k)]) for k in categories
+        ]
+    else:
+        cats = _ordered_categories(series)
+        if not cats:
+            msg = f"residual_by_category: var={var!r} has no non-NA categories"
+            raise ValueError(msg)
+        groups = [(str(c), residual[(series == c).to_numpy()]) for c in cats]
+
+    fig = go.Figure()
+    for label, group_residuals in groups:
+        fig.add_trace(go.Box(y=group_residuals, name=label, boxpoints="outliers"))
+    fig.add_hline(y=0, line={"color": "black", "width": 1})
+    fig.update_layout(
+        title=f"Residuals by {var}",
+        xaxis={"title": var},
+        yaxis={"title": "Residual (y_true − y_pred)"},
+    )
+    return fig
+
+
+def residual_pool_plot(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    n_bins: int = 4,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """AIC-pooled |residual| histogram with boundary lines (H-0012 Phase J, Plotly)."""
+    go = _import_plotly()
+    from pycatdap.error._labels import _residual_label_aic_pool
+    from pycatdap.plot.matplotlib import _residual_values
+
+    _, _, residual = _residual_values(y_true, y_pred)
+    abs_resid = np.abs(residual)
+
+    pooled = _residual_label_aic_pool(abs_resid, n_bins=n_bins)
+
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=abs_resid, nbinsx=30, marker_color="#bcd2e8"))
+
+    sorted_resid = np.sort(abs_resid)
+    bin_codes = pooled.cat.codes.to_numpy()[np.argsort(abs_resid)]
+    n_bins_actual = len(pooled.cat.categories)
+    for k in range(1, n_bins_actual):
+        switch = np.where(bin_codes == k)[0]
+        if switch.size == 0:
+            continue
+        boundary = float(sorted_resid[switch[0]])
+        fig.add_vline(
+            x=boundary, line={"color": "#cf222e", "width": 1.5, "dash": "dash"}
+        )
+
+    fig.update_layout(
+        title=f"AIC-pooled |residual| bins ({n_bins_actual} bins)",
+        xaxis={"title": "|residual|"},
+        yaxis={"title": "Count"},
+    )
+    return fig

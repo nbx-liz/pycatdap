@@ -29,6 +29,7 @@ from types import MappingProxyType
 from typing import Any, Literal
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from pycatdap._target_pair import RegressionTargetSummary, TargetSummary
@@ -124,6 +125,14 @@ class ErrorAnalysisResult:
         Classification only.
     mae, rmse : float or None
         Regression only.
+    y_true, y_pred : ndarray or None
+        Raw aligned ground-truth and predicted labels, retained so the
+        :meth:`plot_confusion` / :meth:`residual_plot` delegation
+        methods can render without round-tripping through the user.
+        Frozen at construction (H-0009 numpy ``writeable = False``).
+        Defaults to ``None`` so existing test fixtures that built
+        ``ErrorAnalysisResult`` instances directly still work; the
+        :func:`pycatdap.error_analysis` wrapper always supplies them.
     """
 
     task: Literal["classification", "regression"]
@@ -141,6 +150,8 @@ class ErrorAnalysisResult:
     n_incorrect: int | None
     mae: float | None
     rmse: float | None
+    y_true: npt.NDArray[Any] | None = field(default=None, repr=False)
+    y_pred: npt.NDArray[Any] | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         # Freeze the numpy buffers of the contained DataFrames so
@@ -169,6 +180,14 @@ class ErrorAnalysisResult:
                 "residual_pooling",
                 MappingProxyType(dict(self.residual_pooling)),
             )
+
+        # H-0012 PR-H3: freeze the y_true / y_pred buffers in place so
+        # delegation methods cannot mutate them. None guard per the
+        # cross-check Claim 3 finding.
+        if self.y_true is not None and isinstance(self.y_true, np.ndarray):
+            self.y_true.flags.writeable = False
+        if self.y_pred is not None and isinstance(self.y_pred, np.ndarray):
+            self.y_pred.flags.writeable = False
 
     # ------------------------------------------------------------------
     # show()
@@ -412,6 +431,99 @@ class ErrorAnalysisResult:
                 "category",
             ],
         )
+
+    # ------------------------------------------------------------------
+    # Phase I+J delegation (H-0012 PR-H3)
+    # ------------------------------------------------------------------
+
+    def plot_confusion(
+        self,
+        *,
+        backend: Literal["matplotlib", "plotly"] = "matplotlib",
+        **kwargs: Any,
+    ) -> Any:
+        """Plot the confusion matrix using the stored ``y_true`` / ``y_pred``.
+
+        Works for both binary and multi-class classification (per
+        H-0012 §F-ter: \"the wrapper falls back to ``error_label`` on
+        multi-class, but the heatmap renders any N×N matrix\").
+
+        Parameters
+        ----------
+        backend : {"matplotlib", "plotly"}
+            Plotting backend.
+        **kwargs
+            Forwarded to :func:`pycatdap.error.plot_confusion`
+            (``labels``, ``normalize``, ``ax``, ``cmap``, ``show_values``
+            for matplotlib; ``colorscale`` for plotly).
+
+        Raises
+        ------
+        ValueError
+            If ``self.task == "regression"`` (use :meth:`residual_plot`
+            instead) or if the raw labels were not retained (legacy
+            constructor calls that left ``y_true=None`` / ``y_pred=None``).
+        """
+        if self.task != "classification":
+            msg = (
+                f"plot_confusion is classification-only; got task="
+                f"{self.task!r}. Use residual_plot for regression."
+            )
+            raise ValueError(msg)
+        if self.y_true is None or self.y_pred is None:
+            msg = (
+                "plot_confusion requires y_true / y_pred; this "
+                "ErrorAnalysisResult was constructed without them. "
+                "Re-run pycatdap.error_analysis() to populate them, "
+                "or pass them directly to pycatdap.error.plot_confusion()."
+            )
+            raise ValueError(msg)
+
+        from pycatdap.error.confusion import plot_confusion as _plot_confusion
+
+        return _plot_confusion(self.y_true, self.y_pred, backend=backend, **kwargs)
+
+    def residual_plot(
+        self,
+        *,
+        backend: Literal["matplotlib", "plotly"] = "matplotlib",
+        **kwargs: Any,
+    ) -> Any:
+        """Plot residuals using the stored ``y_true`` / ``y_pred``.
+
+        Parameters
+        ----------
+        backend : {"matplotlib", "plotly"}
+            Plotting backend.
+        **kwargs
+            Forwarded to :func:`pycatdap.error.residual_plot`
+            (``kind``, ``color_by``, ``ax``).
+
+        Raises
+        ------
+        ValueError
+            If ``self.task == "classification"`` (use
+            :meth:`plot_confusion` instead) or if the raw labels were
+            not retained.
+        """
+        if self.task != "regression":
+            msg = (
+                f"residual_plot is regression-only; got task="
+                f"{self.task!r}. Use plot_confusion for classification."
+            )
+            raise ValueError(msg)
+        if self.y_true is None or self.y_pred is None:
+            msg = (
+                "residual_plot requires y_true / y_pred; this "
+                "ErrorAnalysisResult was constructed without them. "
+                "Re-run pycatdap.error_analysis() to populate them, "
+                "or pass them directly to pycatdap.error.residual_plot()."
+            )
+            raise ValueError(msg)
+
+        from pycatdap.error.residual import residual_plot as _residual_plot
+
+        return _residual_plot(self.y_true, self.y_pred, backend=backend, **kwargs)
 
 
 # ---------------------------------------------------------------------------

@@ -2594,3 +2594,320 @@ codes = _codes_from_boundaries(values, boundaries)  # np.digitize against ascend
 - 合成元: `pycatdap.target_analysis`(`src/pycatdap/target_analysis.py`)
 - sklearn fetch_openml: <https://scikit-learn.org/stable/modules/generated/sklearn.datasets.fetch_openml.html>
 - DivExplorer 互換性参考: <https://github.com/divexplorer/divexplorer>(Phase L で完全対応、Phase H はフォーマット互換のみ)
+
+## 2026-05-29: Phase I+J 誤差可視化(confusion / residual プロット群)
+
+- ID: `H-0012`
+- Status: `proposed`
+- Scope: `API | plot`
+- Related: `H-0001 Phase I+J`, `H-0011 Phase H`, `BLUEPRINT.md §5.8 / §5.6 (plot)`, Issue #18
+
+### Context
+
+H-0011(v0.8.0)で `error_analysis()` ワンコール入口が出荷され、`ErrorAnalysisResult` に `confusion`(分類)/ `residual_pooling`(回帰)/ `feature_ranking` / `top_slices` が揃った。Phase I+J はこの結果オブジェクトの可視化を完成させる:
+
+- **Phase I(分類)**: confusion matrix を「ヒートマップ」「スライス別 small-multiples」で可視化、加えて confusion 情報量を ΔAIC で定量化
+- **Phase J(回帰)**: residual の散布図 / カテゴリ別 box / AIC pooling 結果のヒストグラム
+
+既存 `pycatdap.plot.*` の backend dispatch(`matplotlib` / `plotly`)パターンと完全に揃え、`ax=` パラメータ(matplotlib)/ `plotly.Figure` 返却を一貫させる。
+
+### Proposal
+
+#### A. Phase I 公開 API(`pycatdap.error.*`)
+
+```python
+# 分類: confusion matrix のヒートマップ
+pycatdap.error.plot_confusion(
+    y_true, y_pred,
+    *,
+    labels: list | None = None,        # クラス順序の明示指定(None → np.unique 順)
+    normalize: Literal["true", "pred", "all", None] = None,  # 行/列/全体正規化
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    ax=None,                           # matplotlib 用
+    cmap: str = "Blues",
+    show_values: bool = True,          # セルに数値を描画
+) -> Axes | Figure
+
+# 分類: 説明変数のカテゴリ別に confusion を small-multiples
+pycatdap.error.plot_confusion_by_slice(
+    df, y_true, y_pred, var,
+    *,
+    labels: list | None = None,
+    n_cols: int = 3,                   # グリッド列数
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    normalize: Literal["true", "pred", "all", None] = "true",
+    cmap: str = "Blues",
+) -> Figure                            # 両 backend で Figure 返却(複数 axes 必要)
+
+# 分類: confusion 情報量を ΔAIC で定量化(プロットではなく統計関数)
+pycatdap.error.confusion_aic(
+    y_true, y_pred,
+) -> float
+```
+
+**`confusion_aic` の符号規約**: pycatdap 既存の `catdap1` / `target_analysis.ranking` と統一し、**ΔAIC = AIC(model) - AIC(null) で「負ほど情報量が大きい」**。null model = `y_pred` と `y_true` が独立(`y_pred` を捨てて baseline 多項分布で `y_true` を fit)。実装は `pycatdap._aic.compute_delta_aic` を流用(target_analysis と同じ経路)。
+
+Issue #18 本文は「positive when informative」と書かれているが、これは執筆時のラフな期待値。pycatdap 全体で「ΔAIC は負が良い」を貫いてきたため、本 Proposal でこの方向を確定し、docstring と Notebook 12 で「負 = informative」と明示する。Issue にコメントで報告。
+
+#### B. Phase J 公開 API(`pycatdap.error.*`)
+
+```python
+# 回帰: 残差散布図 (y_pred vs residual) または (y_true vs y_pred)
+pycatdap.error.residual_plot(
+    y_true, y_pred,
+    *,
+    kind: Literal["scatter_pred_resid", "scatter_true_pred", "histogram"] = "scatter_pred_resid",
+    color_by: pd.Series | npt.NDArray | None = None,  # 第3変数で色分け
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    ax=None,
+) -> Axes | Figure
+
+# 回帰: 残差をカテゴリ別 box (説明変数のカテゴリで層別)
+pycatdap.error.residual_by_category(
+    df, y_true, y_pred, var,
+    *,
+    bins: int | None = None,           # var が連続なら AIC binning(target_summary と同じ規約)
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    ax=None,
+) -> Axes | Figure
+
+# 回帰: AIC pooling 結果を |residual| ヒストグラム + 境界線で可視化
+pycatdap.error.residual_pool_plot(
+    y_true, y_pred,
+    *,
+    n_bins: int = 4,                   # 初期分位ビン数(residual_label と同じ)
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    ax=None,
+) -> Axes | Figure
+```
+
+#### C. `ErrorAnalysisResult` への delegation メソッド追加
+
+ユーザーが `r = pycatdap.error_analysis(...)` の後で `r.plot_confusion()` を直接呼べるようにする(ergonomics):
+
+```python
+# src/pycatdap/error/_result.py に追加
+class ErrorAnalysisResult:
+    def plot_confusion(self, *, backend="matplotlib", **kwargs) -> Any:
+        """Plot the confusion summary. classification + binary のみ動作。
+        regression / multiclass 時は ValueError。"""
+        ...
+
+    def residual_plot(self, *, backend="matplotlib", **kwargs) -> Any:
+        """Plot residuals. regression のみ動作。classification 時は ValueError。"""
+        ...
+```
+
+これらは内部で `y_true` / `y_pred` を保持しないので、現在の `ErrorAnalysisResult` には十分なデータが**ない**(`confusion` は集計済 4 行 DataFrame、`residual_pooling` は bin layout のみ、生の y_true/y_pred を持たない)。
+
+**選択肢**:
+
+- **C-1**: `ErrorAnalysisResult` に `y_true: npt.NDArray | None` / `y_pred: npt.NDArray | None` フィールドを追加(immutable: `__post_init__` で `flags.writeable = False`)
+- **C-2**: delegation メソッドを諦め、`pycatdap.error.plot_confusion(y_true, y_pred)` を直接呼ばせる
+- **C-3**: delegation だが y_true/y_pred は外部から渡す(`r.plot_confusion(y_true, y_pred)`)
+
+**採用: C-1**。理由:
+- ユーザー体験が圧倒的に良い(ワンコールで完結)
+- v0.6.1 immutable pattern で安全に追加可能
+- メモリコスト: y_true/y_pred の numpy 配列、大規模(数百万行)でなければ問題なし
+- LizyStudio が `result.to_dict()` 経由で配列もシリアライズできる(将来オプション)
+
+ただし `to_dict()` / `to_plotly_json()` の出力サイズが膨らむため、`include_raw_predictions=False` デフォルトを追加するか、`to_dict()` は配列を含めない(別途 `result.y_true` / `result.y_pred` でアクセス)選択。後者を採用。
+
+#### D. Backend 配置
+
+既存パターン(`pycatdap.plot.matplotlib` / `pycatdap.plot.plotly` に backend impl、`pycatdap.plot.__init__` で dispatch)に揃える:
+
+| ファイル | 追加内容 |
+|---|---|
+| `src/pycatdap/plot/matplotlib.py` | `plot_confusion_mpl` / `plot_confusion_by_slice_mpl` / `residual_plot_mpl` / `residual_by_category_mpl` / `residual_pool_plot_mpl` |
+| `src/pycatdap/plot/plotly.py` | 同上(`_plotly` suffix) |
+| `src/pycatdap/error/confusion.py`(NEW) | `plot_confusion` / `plot_confusion_by_slice` / `confusion_aic` dispatch + 型シグネチャ |
+| `src/pycatdap/error/residual.py`(NEW) | `residual_plot` / `residual_by_category` / `residual_pool_plot` dispatch + 型シグネチャ |
+| `src/pycatdap/error/__init__.py` | 上記を re-export |
+| `src/pycatdap/error/_result.py` | `plot_confusion` / `residual_plot` メソッド追加、`y_true` / `y_pred` フィールド追加 |
+| `src/pycatdap/error/analysis.py` | `ErrorAnalysisResult` 構築時に `y_true` / `y_pred` をセット |
+
+#### E. Multiclass 対応
+
+H-0010 §C で `confusion_label` は multiclass で `NotImplementedError`、Phase H wrapper は `error_label` に fallback する。だが **confusion matrix 自体は multiclass で意味があり可視化したい** ニーズが強い。
+
+Phase I の `plot_confusion(y_true, y_pred)` は **3+ クラスを正しく扱う**:
+
+- `labels=` 引数でクラス順序を制御
+- `np.unique(np.concatenate([y_true, y_pred]))` でクラス検出
+- N×N の行列をヒートマップとして描画(N=2 でも N=10 でも同じパス)
+
+`plot_confusion_by_slice` も同様に multiclass 対応。これは `confusion_label` の二値前提とは別の話で、ヒートマップ可視化レイヤーは制限なし。
+
+#### F. `confusion_aic` の数学的定義
+
+`y_true`(観測) × `y_pred`(予測) の 2 元クロス表 `C[i,j]` に対して:
+
+- **Saturated model**: 各セルが独立パラメータ(自由度 = N²−1、N = クラス数)
+- **Null model**: `y_true` の周辺分布のみ(`y_pred` を捨てる、自由度 = N−1)
+- **Model**: 「`y_pred = y_true` ならば correct、それ以外は incorrect」の 2 値出力 → 多項 model に変換し AIC 計算
+
+実装方針(cross-check 2026-05-29 で確認、F-1 修正済):
+
+既存 `pycatdap._aic.compute_delta_aic` の **正しいシグネチャは** `compute_delta_aic(cross_freq, marginal_e, marginal_f, n)`(全 numpy 配列 + スカラー)。`y_true` / `y_pred` を直接渡せないので、`confusion_aic` 実装は以下のフロー:
+
+```python
+def confusion_aic(y_true, y_pred) -> float:
+    # 1. クラスの集合を確定(union)
+    classes = np.unique(np.concatenate([y_true, y_pred]))
+    # 2. C×C contingency table を構築(pd.crosstab で OK、欠損カテゴリは reindex で 0 補完)
+    cross = pd.crosstab(y_true, y_pred, dropna=False).reindex(
+        index=classes, columns=classes, fill_value=0
+    ).to_numpy()
+    # 3. marginals
+    marginal_e = cross.sum(axis=1)  # y_true 周辺
+    marginal_f = cross.sum(axis=0)  # y_pred 周辺
+    n = int(cross.sum())
+    # 4. compute_delta_aic を呼ぶ
+    return compute_delta_aic(cross, marginal_e, marginal_f, n)
+```
+
+つまり `confusion_aic(y_true, y_pred) == catdap1(df, response="y_true", x="y_pred").delta_aic` と等価(値の上では)。Phase I 実装は **新規 AIC 計算をせず** 既存関数を呼ぶ薄いラッパー。`_aic.py:192-194` で確認済 — return は `AIC(model) - AIC(null)` で「負ほど informative」。
+
+#### F-bis. `plot_confusion_by_slice` の戻り値型(cross-check Claim 6 修正)
+
+既存 `pycatdap.plot.*` の matplotlib backend は **すべて `Axes` を返す**(`aic_heatmap` 含む)。`plot_confusion_by_slice` は multi-panel small-multiples のため `Axes` 1 つでは表現できない。`Figure` を返す:
+
+- `backend="matplotlib"`: `matplotlib.figure.Figure`(他関数の `Axes` 規約からの**意図的な例外**)
+- `backend="plotly"`: `plotly.graph_objects.Figure`(subplots を `make_subplots` で組み立てる)
+- `ax=` 引数は **受け取らない**(複数 axes を内部生成)
+- API docstring と Acceptance Criteria でこの例外を明記
+- 将来 `plot_residual_by_category_grid` 等も追加する場合は同じ "grid 系は Figure" 規約を適用
+
+これに伴い Acceptance Criteria の "matplotlib backend は Axes を返す" 行を「`plot_confusion_by_slice` を除き Axes、`plot_confusion_by_slice` のみ Figure」に修正。
+
+#### F-ter. `ErrorAnalysisResult.plot_confusion()` の multiclass 仕様(cross-check Claim 4 修正)
+
+cross-check で「C-1 を採用して `y_true`/`y_pred` を保持するなら、multiclass でも N×N ヒートマップは描画できる。`label_kind == "error_label"` (multiclass fallback) で ValueError は設計矛盾」と指摘された。
+
+修正後の仕様:
+
+- `result.plot_confusion(**kwargs)` は `self.task == "classification"` であれば **multiclass でも描画する**
+- 内部実装: `pycatdap.error.plot_confusion(self.y_true, self.y_pred, **kwargs)` をそのまま呼ぶ(`y_true`/`y_pred` は v0.9.0 で追加するフィールドから取得)
+- `self.task == "regression"` のときのみ `ValueError("plot_confusion is classification-only; got task='regression'")`
+- 同様に `result.residual_plot()` は `self.task == "classification"` のとき `ValueError`
+
+これにより `confusion`(集計 4 行 DataFrame、`label_kind == "confusion_label"` のみ有効)は **HTML レポート / `to_dict()` 用の表形式サマリ** として残し、**プロットは raw `y_true`/`y_pred` から再計算**する責務分離になる。
+
+#### F-quater. `ErrorAnalysisResult` への `y_true` / `y_pred` 追加と `__post_init__` の None ガード(cross-check Claim 3 修正)
+
+cross-check で「`tests/test_error_analysis_result.py` に 12 箇所の直接コンストラクタ呼び出しがあり、デフォルト値追加で技術的に壊れないが `__post_init__` の numpy freeze が `None` を受けるとエラー」と指摘された。
+
+修正後の実装方針:
+
+- `y_true: npt.NDArray[Any] | None = None`(デフォルト `None`)
+- `y_pred: npt.NDArray[Any] | None = None`(同上)
+- `__post_init__` で:
+  ```python
+  if self.y_true is not None and isinstance(self.y_true, np.ndarray):
+      self.y_true.flags.writeable = False
+  if self.y_pred is not None and isinstance(self.y_pred, np.ndarray):
+      self.y_pred.flags.writeable = False
+  ```
+- 既存テスト 12 箇所は **修正不要**(デフォルト `None` で動作)。ただし PR-H3 で「delegation メソッドの test」を追加する際は `y_true`/`y_pred` を明示する fixture を新規追加
+- `to_dict()` / `to_plotly_json()` は配列を含めない(既存出力サイズを変えない)
+- `error_analysis()` ラッパーは構築時に必ず `y_true=y_true_arr.copy()` / `y_pred=y_pred_arr.copy()` をセット(`.copy()` で freeze が呼び出し側の元配列に波及しないようにする)
+
+#### G. Phase I+J が解決しないこと(スコープアウト)
+
+#### G. Phase I+J が解決しないこと(スコープアウト)
+
+- **Multivariable subgroup viz**: 多変数組み合わせの confusion / residual サブグループ可視化 → Phase L
+- **Calibration**: `calibration_curve` / `brier_score` / ECE → Phase K(v0.10.0)
+- **Drift detection**: `compare_cohorts` / `detect_drift` → Phase L
+- **アニメーション / インタラクティブ slider**: Phase I+J は静的可視化のみ。Plotly の hover は支援するが slider / animation はスコープ外
+- **3D viz / surface plot**: Phase I+J はすべて 2D
+
+### Alternatives Considered
+
+#### A1: 既存 `pycatdap.plot.*` に直接追加(error/ サブパッケージを使わない)
+
+- **不採用理由**: Phase G/H の「error 関連は `pycatdap.error.*` に集める」設計と乖離。tab completion で `pycatdap.error.<TAB>` を打つユーザは confusion / residual プロット関数を期待する。
+
+#### A2: `ErrorAnalysisResult` に y_true / y_pred を持たせない(C-2 / C-3)
+
+- **不採用理由**: ユーザー体験劣化。`r.plot_confusion()` の自然さを失う。メモリコストは現実的データサイズで無視できる。
+
+#### A3: matplotlib backend を必須にする(plotly backend を後回し)
+
+- **不採用理由**: pycatdap.plot の既存パターンは「両 backend 同時実装」。片方だけだと他関数との整合性が崩れる。Phase I+J はリリース時に両 backend サポート必須。
+
+#### A4: confusion matrix を Plotly Table で描画
+
+- **不採用理由**: ヒートマップ(`go.Heatmap`)の方が情報量を視覚的に伝える。sklearn `ConfusionMatrixDisplay` も heatmap。慣習に従う。
+
+#### A5: `confusion_aic` を「positive = informative」符号にする(Issue 本文に従う)
+
+- **不採用理由**: pycatdap 全体で `delta_aic` は「負ほど良い」(`target_analysis.ranking`、`catdap1`、`profile`)。confusion_aic だけ符号反転すると認知負荷が高い。Notebook 12 で「負 = informative」を明示し、Issue にコメントで報告。
+
+### Acceptance Criteria
+
+- [ ] `pycatdap.error.plot_confusion / plot_confusion_by_slice / confusion_aic` が動作(Phase I)
+- [ ] `pycatdap.error.residual_plot / residual_by_category / residual_pool_plot` が動作(Phase J)
+- [ ] 全プロット関数が `backend="matplotlib"` と `backend="plotly"` で動作
+- [ ] matplotlib backend: `ax=` 引数受け入れ、`matplotlib.axes.Axes` を返す **(例外: `plot_confusion_by_slice` のみ `matplotlib.figure.Figure` を返す、`ax=` 受け取らず)**
+- [ ] plotly backend: `plotly.graph_objects.Figure` を返す
+- [ ] `plot_confusion(multiclass_y_true, multiclass_y_pred)` が正しく N×N ヒートマップを描画
+- [ ] `confusion_aic` が `catdap1(df, response="y_true", x="y_pred").delta_aic` と数値一致(回帰テスト)
+- [ ] `confusion_aic` が**負値**を返す(prediction informative の test fixture)
+- [ ] `ErrorAnalysisResult.plot_confusion()` / `.residual_plot()` が delegation で動作
+- [ ] `ErrorAnalysisResult.plot_confusion()` は **multiclass classification でも N×N ヒートマップを描画**(regression のみ `ValueError`)
+- [ ] `ErrorAnalysisResult.residual_plot()` は **regression のみ動作**、classification で `ValueError`
+- [ ] `ErrorAnalysisResult.y_true` / `.y_pred` が numpy buffer frozen(H-0009 pattern、`None` ガード付き `__post_init__`)
+- [ ] 既存 `tests/test_error_analysis_result.py` 12 箇所の直接コンストラクタ呼び出しが **無修正で pass**(`y_true=None` / `y_pred=None` デフォルト動作)
+- [ ] `error_analysis()` ラッパーは `y_true=arr.copy()` / `y_pred=arr.copy()` で defensive copy(呼び出し側元配列の freeze を防ぐ)
+- [ ] `to_dict()` / `to_plotly_json()` は raw y_true / y_pred を含めない(出力サイズ抑制)
+- [ ] Issue #18 に「confusion_aic の符号規約は ΔAIC 既存規約に従い負=informative」コメント済
+- [ ] backend 未導入時は明示的 `ImportError`(matplotlib なら `pycatdap[plot]`、plotly なら `pycatdap[plotly]`)
+- [ ] 80% 以上の line coverage、TDD で test → impl
+- [ ] BLUEPRINT.md §5.8 を Phase I+J released に更新
+- [ ] Tutorial Notebook 12 で 6 プロット関数 + `ErrorAnalysisResult` delegation のフルデモ
+- [ ] Issue #18 が close される
+- [ ] CHANGELOG.md v0.9.0 セクション、Phase H → I+J 連結明記
+
+### PR 分割
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-H0**(本 Proposal) | `docs(history): propose H-0012` | none |
+| **PR-H1** | Phase I 関数群: `confusion_aic` + `plot_confusion` + `plot_confusion_by_slice` + matplotlib/plotly backend 実装 + tests | PR-H0 merge |
+| **PR-H2** | Phase J 関数群: `residual_plot` + `residual_by_category` + `residual_pool_plot` + matplotlib/plotly backend 実装 + tests | PR-H0 merge(H1 と並行可) |
+| **PR-H3** | `ErrorAnalysisResult` に `y_true` / `y_pred` フィールド追加 + `plot_confusion` / `residual_plot` delegation メソッド + tests | PR-H1 + PR-H2 merge |
+| **PR-H4** | Tutorial Notebook 12 + BLUEPRINT §5.8 更新 + README quickstart + CHANGELOG cut to v0.9.0 + Issue #18 close | PR-H3 merge |
+| **PR-H5**(release) | `release: v0.9.0` | PR-H4 merge |
+
+各 PR は CI green 確認後に次へ進む。develop に **squash** で merge、release PR のみ `--merge`(release line 維持)。
+
+### Decision
+
+- Date: `TBD`
+- Result: `pending`
+- Notes: PR-H0(本 PR)で Proposal 承認待ち。
+
+### Migration
+
+破壊的変更なし。新規追加のみ:
+
+- `pycatdap.error.plot_confusion / plot_confusion_by_slice / confusion_aic`
+- `pycatdap.error.residual_plot / residual_by_category / residual_pool_plot`
+- `ErrorAnalysisResult.y_true` / `.y_pred` フィールド(新規追加。既存コンストラクタ呼び出しは引数追加で更新必要)
+- `ErrorAnalysisResult.plot_confusion()` / `.residual_plot()` メソッド
+
+**`ErrorAnalysisResult` のコンストラクタ署名変更は破壊的変更**:
+
+`y_true: npt.NDArray | None = None` / `y_pred: npt.NDArray | None = None` をデフォルト引数で追加するので、既存呼び出しは無影響。`error_analysis()` ラッパー側で自動セットされるため、ユーザコードは変更不要。
+
+### Related References
+
+- 親仕様: H-0001 Phase I+J、Issue #18
+- 前段: H-0011 Phase H(`error_analysis` + `ErrorAnalysisResult`、v0.8.0 で出荷済)
+- backend dispatch パターン: `src/pycatdap/plot/__init__.py:43-54` の `_get_backend_module`
+- 既存可視化リファレンス: `pycatdap.plot.aic_heatmap`(2D heatmap、Plotly 実装あり)、`pycatdap.plot_target` の binned-numeric mode(box per category)
+- sklearn ConfusionMatrixDisplay: <https://scikit-learn.org/stable/modules/generated/sklearn.metrics.ConfusionMatrixDisplay.html>(ヒートマップ慣習の参考)
+- Immutable pattern: H-0009 / H-0011 PR-G1(`__post_init__` numpy freeze)

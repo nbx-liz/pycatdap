@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-05-29
+
+このリリースは **H-0012 Phase I+J** に対応し、ML 誤差分析 arc の
+**可視化レイヤー**(classification confusion + regression residual)
+と、`ErrorAnalysisResult` への delegation メソッドを追加する。
+v0.8.0 で出荷した `error_analysis()` の結果を、直接 1 メソッド呼び出し
+で可視化できるようになる。BLUEPRINT.md §5.8 / Issue #18 を参照。
+
+主要な追加:
+- `pycatdap.error.plot_confusion / plot_confusion_by_slice / confusion_aic`
+  — Phase I 分類エラー可視化 + ΔAIC スコア。
+- `pycatdap.error.residual_plot / residual_by_category / residual_pool_plot`
+  — Phase J 回帰残差可視化(scatter / box / AIC pooling histogram)。
+- `ErrorAnalysisResult.y_true / .y_pred` — 生ラベルを result に保持
+  (H-0009 immutable pattern で `__post_init__` 内 freeze)。
+- `ErrorAnalysisResult.plot_confusion() / .residual_plot()` — 直接呼び
+  delegation メソッド。binary + multi-class + regression dispatch。
+
+### Added — Phase I classification visualisation (`pycatdap.error`)
+
+- `plot_confusion(y_true, y_pred, *, labels=None, normalize=None,
+  backend="matplotlib"|"plotly", **kwargs)` — N×N confusion matrix
+  heatmap、多クラス対応、4 normalize モード(`"true"`/`"pred"`/`"all"`/`None`)
+  サポート。matplotlib backend は `ax=` 受け入れ、`Axes` を返す。plotly
+  backend は `Figure` を返す。
+- `plot_confusion_by_slice(df, y_true, y_pred, var, *, labels=None,
+  n_cols=3, normalize="true", backend=..., **kwargs)` — `var` カテゴリ別
+  small-multiples confusion グリッド。**matplotlib backend は `Figure` を
+  返す**(H-0012 §F-bis 例外、multi-panel のため `Axes` 規約から逸脱)。
+- `confusion_aic(y_true, y_pred) -> float` — 予測の情報量を ΔAIC で
+  定量化。`pycatdap._aic.compute_delta_aic` の薄いラッパー。**負ほど
+  informative**(`target_analysis` / `catdap1` の既存規約に従う)。
+  Issue #18 本文は「positive when informative」だが、プロジェクト規約
+  優先のため反転(H-0012 §A5 で理由明記)。
+
+### Added — Phase J regression residual visualisation (`pycatdap.error`)
+
+- `residual_plot(y_true, y_pred, *, kind="scatter_pred_resid"|
+  "scatter_true_pred"|"histogram", color_by=None, backend=..., **kwargs)`
+  — 3 種類の診断プロット。`color_by=` で散布図に第 3 変数の色分け追加。
+- `residual_by_category(df, y_true, y_pred, var, *, bins=None,
+  backend=..., **kwargs)` — `var` 別の残差 box plot。連続 var は
+  `bins=None` で `_pooling.optimal_binning`(AIC ベース、残差符号を proxy
+  response として使う)、`bins=int` で等幅 binning。Categorical dtype は
+  declared order を honor。
+- `residual_pool_plot(y_true, y_pred, *, n_bins=4, backend=..., **kwargs)`
+  — |residual| ヒストグラム + `residual_label(method="aic_pool")` 由来の
+  境界線オーバーレイ。AIC マージ後の bin 数は `n_bins=` より少ない場合あり。
+
+### Added — `ErrorAnalysisResult` delegation (`pycatdap.error._result`)
+
+- 新規フィールド `y_true: NDArray | None = None` / `y_pred: NDArray | None = None`
+  — 生ラベルを result に保持。default `None` のため既存の直接構築は
+  影響なし(cross-check Claim 3 mitigation)。
+- `__post_init__` で `None` ガード付きの numpy buffer freeze
+  (`writeable = False`)。`error_analysis()` ラッパーは `.copy()` で
+  defensive copy してから渡すため、呼び出し側元配列の freeze は防ぐ。
+- `ErrorAnalysisResult.plot_confusion(*, backend="matplotlib"|"plotly",
+  **kwargs)` — 内部で `pycatdap.error.plot_confusion(self.y_true,
+  self.y_pred, **kwargs)` を呼ぶ delegation。**binary AND multi-class**
+  両方で動作(H-0012 §F-ter — Phase H wrapper が multi-class で
+  `error_label` に fallback しても、`y_true`/`y_pred` は保持されているので
+  N×N ヒートマップは描画可能)。regression / 不在ラベルで `ValueError`。
+- `ErrorAnalysisResult.residual_plot(*, backend=..., **kwargs)` — 同様の
+  delegation、regression 専用、classification / 不在ラベルで `ValueError`。
+
+### Changed
+
+- 既存 `target_analysis` / `error_analysis` / `confusion_label` 等の API
+  には変更なし。Phase I+J は純粋な追加。
+
+### Fixed — Issues closed
+
+- Closes #18 (Phase I+J Classification & regression error visualization)
+
+### Breaking changes
+
+- なし。既存 v0.8.0 API は全て後方互換。`ErrorAnalysisResult` の
+  コンストラクタ署名変更は default `None` フィールド追加のため非破壊。
+
 ## [0.8.0] — 2026-05-29
 
 このリリースは **H-0011 Phase H** に対応し、ML 誤差分析 arc の
