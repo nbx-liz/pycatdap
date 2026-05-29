@@ -66,6 +66,7 @@ nav:
       - Phase H error_analysis() one-call: tutorials/11-phase-h-error-analysis.ipynb
       - Phase I+J error visualisation: tutorials/12-phase-i-j-error-visualization.ipynb
       - Phase K calibration: tutorials/13-phase-k-calibration.ipynb
+      - Phase L slice discovery & drift: tutorials/14-phase-l-slice-discovery.ipynb
   - How-to Guides:
       - how-to/index.md
   - API Reference:
