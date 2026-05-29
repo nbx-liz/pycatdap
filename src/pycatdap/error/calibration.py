@@ -37,8 +37,9 @@ import numpy.typing as npt
 import pandas as pd
 
 from pycatdap._pooling import optimal_binning
+from pycatdap.error._backend import Backend
+from pycatdap.error._backend import get_backend_module as _get_backend_module
 
-Backend = Literal["matplotlib", "plotly"]
 Strategy = Literal["aic", "equal_width", "quantile"]
 
 #: Bounded initial-grid resolution for ``strategy="aic"`` (H-0013 §B-bis).
@@ -50,19 +51,6 @@ _AIC_INIT_BINS = 50
 
 #: Standard-normal two-sided quantile for a 95% interval.
 _WILSON_Z = 1.959963984540054
-
-
-def _get_backend_module(backend: Backend) -> Any:
-    if backend == "matplotlib":
-        from pycatdap.plot import matplotlib as _mpl
-
-        return _mpl
-    if backend == "plotly":
-        from pycatdap.plot import plotly as _plotly
-
-        return _plotly
-    msg = f"Unknown plot backend: {backend!r}. Use 'matplotlib' or 'plotly'."
-    raise ValueError(msg)
 
 
 def _validate_binary_proba(

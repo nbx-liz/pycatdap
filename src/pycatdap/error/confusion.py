@@ -21,22 +21,10 @@ import numpy.typing as npt
 import pandas as pd
 
 from pycatdap._aic import compute_delta_aic
+from pycatdap.error._backend import Backend
+from pycatdap.error._backend import get_backend_module as _get_backend_module
 
-Backend = Literal["matplotlib", "plotly"]
 NormalizeMode = Literal["true", "pred", "all"] | None
-
-
-def _get_backend_module(backend: Backend) -> Any:
-    if backend == "matplotlib":
-        from pycatdap.plot import matplotlib as _mpl
-
-        return _mpl
-    if backend == "plotly":
-        from pycatdap.plot import plotly as _plotly
-
-        return _plotly
-    msg = f"Unknown plot backend: {backend!r}. Use 'matplotlib' or 'plotly'."
-    raise ValueError(msg)
 
 
 def plot_confusion(
