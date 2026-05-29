@@ -221,6 +221,12 @@ def error_analysis(
         n_incorrect=n_incorrect,
         mae=mae,
         rmse=rmse,
+        # H-0012 PR-H3: retain raw labels so result.plot_confusion() /
+        # result.residual_plot() can render without round-tripping. The
+        # .copy() is a defensive copy so the result's __post_init__
+        # freeze doesn't propagate to the caller's array.
+        y_true=y_true_arr.copy(),
+        y_pred=y_pred_arr.copy(),
     )
 
 
