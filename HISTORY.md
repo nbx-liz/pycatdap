@@ -2911,3 +2911,240 @@ cross-check で「`tests/test_error_analysis_result.py` に 12 箇所の直接�
 - 既存可視化リファレンス: `pycatdap.plot.aic_heatmap`(2D heatmap、Plotly 実装あり)、`pycatdap.plot_target` の binned-numeric mode(box per category)
 - sklearn ConfusionMatrixDisplay: <https://scikit-learn.org/stable/modules/generated/sklearn.metrics.ConfusionMatrixDisplay.html>(ヒートマップ慣習の参考)
 - Immutable pattern: H-0009 / H-0011 PR-G1(`__post_init__` numpy freeze)
+
+## 2026-05-29: Phase K calibration(AIC binning による信頼性診断)
+
+- ID: `H-0013`
+- Status: `proposed`
+- Scope: `API | plot | data-contract`
+- Related: `H-0001 Phase K`, `H-0012 Phase I+J`, `BLUEPRINT.md §5.8`, Issue #19 / #11
+
+### Context
+
+H-0012(v0.9.0)で Phase I+J(confusion / residual 可視化 + `ErrorAnalysisResult` delegation)が出荷され、誤差分析の「分類の当たり外れ」「回帰の残差」が可視化できるようになった。Phase K はその次の問い —— **「モデルが 70% と言ったとき、実際に 70% 起きるのか?」**(確率予測の calibration / 信頼性) —— に答える。
+
+pycatdap 固有の価値は **確率軸の AIC-optimal binning**:sklearn / netcal の equal-width / quantile ビンと違い、観測陽性率が実際にシフトする位置に境界を置く。Issue #19 が指摘する **歪んだ(skewed)確率予測** に対して特に優位。既存 `_pooling.optimal_binning`(Phase J `residual_by_category` で連続変数 binning に使用済)を確率軸に流用する。
+
+公開 API・data contract(`ErrorAnalysisResult` への新フィールド)に触れるため Change Gate 対象。本 Proposal を先行 merge(PR-K0)し、merge 前に cross-check で設計トラップを検証する(H-0011 / H-0012 と同じ運用 — 前回は 4 件の罠を事前に潰した)。
+
+### Proposal
+
+#### A. Phase K 公開 API(`pycatdap.error.*`)
+
+```python
+# 信頼性図(reliability diagram)+ Wilson 二項信頼区間。プロット関数。
+pycatdap.error.calibration_curve(
+    y_true, y_proba,
+    *,
+    strategy: Literal["aic", "equal_width", "quantile"] = "aic",
+    n_bins: int = 10,                  # equal_width / quantile のビン数(strategy="aic" では無視)
+    backend: Literal["matplotlib", "plotly"] = "matplotlib",
+    ax=None,                           # matplotlib 用
+) -> Axes | Figure
+
+# 信頼性図の背後にある数値テーブル(metric の single source of truth)
+pycatdap.error.calibration_table(
+    y_true, y_proba,
+    *,
+    strategy="aic", n_bins=10,
+) -> pd.DataFrame                       # cols: bin_low, bin_high, n, prob_pred, prob_true, ci_low, ci_high
+
+# スカラーメトリクス(プロットではなく統計関数、confusion_aic と同じ位置づけ)
+pycatdap.error.brier_score(y_true, y_proba) -> float
+pycatdap.error.expected_calibration_error(y_true, y_proba, *, strategy="aic", n_bins=10) -> float
+pycatdap.error.maximum_calibration_error(y_true, y_proba, *, strategy="aic", n_bins=10) -> float
+```
+
+**sklearn との命名差**:sklearn の `calibration_curve` は `(prob_true, prob_pred)` の配列を返すデータ関数だが、pycatdap の `calibration_curve` は Phase I/J の `plot_confusion` / `residual_plot` と一貫して **Figure を返すプロット関数**(Issue #19 の `backend=` 署名に従う)。数値が欲しい場合は `calibration_table` を使う。docstring でこの差を明記する。
+
+#### B. binning 戦略(aic / equal_width / quantile)
+
+| strategy | 実装 | 用途 |
+|---|---|---|
+| `"aic"`(default) | `optimal_binning(values=y_proba, response=y_true)` の `.boundaries` で確率軸を分割。`n_bins` は無視 | pycatdap 固有。陽性率がシフトする位置に境界。skewed 予測に強い |
+| `"equal_width"` | `np.linspace(0, 1, n_bins+1)` | sklearn `strategy="uniform"` 相当 |
+| `"quantile"` | `np.quantile(y_proba, ...)` で等頻度ビン | sklearn `strategy="quantile"` 相当 |
+
+Issue #19 本文の `n_bins="aic"|int` という overload は、3 戦略を表現できないため **explicit な `strategy` + `n_bins`** に分解する(Alternatives A2)。AIC binning は `residual_by_category`(`plot/matplotlib.py`)の連続変数 binning と同じ消費パターン(`PoolingResult.codes` / `.boundaries`)だが、response は残差符号 proxy ではなく **y_true(二値)を直接** 使う。
+
+#### B-bis. cross-check 由来の実装 safeguard(2026-05-29)
+
+merge 前 cross-check で 2 件の実装トラップを検出。`_pooling.py` の挙動を読んで確認済:
+
+- **(1) AIC の初期グリッドを有界化(必須)**: `optimal_binning(values, response, accuracy=None)` は `accuracy=None` のとき `_auto_accuracy`(`_pooling.py:49-58`)で「ソート済ユニーク値の最小正ギャップ」を accuracy にする。モデル確率は 0.6231, 0.6234… のように細かいため最小ギャップが `~1e-4` になり、`_initial_bins`(`_pooling.py:80`)の `n_bins = ceil((vmax-vmin)/accuracy)` が **数千本に爆発**して bottom-up merge が極端に遅くなる。
+
+  → calibration では **明示的に `accuracy` を渡す**。確率は概念上 [0,1] 有界なので、固定の初期グリッド解像度 `_AIC_INIT_BINS`(モジュール定数、既定 50)から `accuracy = 1.0 / _AIC_INIT_BINS`(= 0.02)を算出して渡す。初期ビンは ≤ 50 本に有界化され、その後 AIC bottom-up merge が最適な粗いビンを発見する(AIC binning の本来の動作)。`residual_by_category` は粒度の粗い説明変数を対象とするため auto で問題が出ていなかったが、確率軸では明示指定が必須。
+
+- **(2) ECE/MCE の空ビンスキップ(必須)**: `strategy="equal_width"` で [0,1] を等幅分割すると観測の無い空ビン(`n_b=0`)が生じうる。ECE は `n_b/N` 重みで自然に 0 寄与だが、**MCE と per-bin 平均(`prob_true_b` / `prob_pred_b`)は空ビンを除外**してゼロ除算 / 未定義平均を回避する。`_calibration_table` は空ビン行を出力しない(または `n=0` 行を metric 計算で skip)。
+
+- **(3) response dtype(軽微)**: `_encode_response`(`_pooling.py:124-129`)は `np.unique(..., return_inverse=True)` ベースで int 0/1 をそのまま処理できる。`y_true` を object/str に astype する必要はなく、二値配列を直接渡す。
+
+#### C. `ErrorAnalysisResult` への `y_proba` 追加 + `calibration_curve` delegation
+
+calibration は y_pred(ラベル)ではなく **y_proba(確率)** を要するため、H-0012 の y_true/y_pred とは別に新フィールドが必要:
+
+```python
+# src/pycatdap/error/_result.py
+class ErrorAnalysisResult:
+    y_proba: npt.NDArray[Any] | None = field(default=None, repr=False)  # 新フィールド
+
+    def calibration_curve(self, *, strategy="aic", n_bins=10,
+                          backend="matplotlib", **kwargs) -> Any:
+        """信頼性図。classification + y_proba 保持時のみ動作。
+        regression / y_proba 未設定で ValueError。"""
+        ...
+```
+
+- `default=None` で後方互換(H-0012 の y_true/y_pred 追加と同パターン。既存の直接コンストラクタ呼び出しは無修正)
+- `__post_init__` で `None` ガード付き numpy freeze(`_result.py:187-190` の y_true/y_pred と同じ)
+- `error_analysis(..., y_proba=None)` を optional param で追加。`_resolve_one` で正規化、defensive `.copy()`(`analysis.py:228-229` と同じ)
+- `to_dict()` / `to_plotly_json()` は **y_proba を含めない**(出力サイズ抑制、y_true/y_pred と同様)
+
+#### D. Backend 配置
+
+H-0012 のパターン(error 層が dispatch、plot 層が impl)に揃える:
+
+| ファイル | 追加内容 |
+|---|---|
+| `src/pycatdap/error/calibration.py`(NEW) | `calibration_curve` dispatch + `calibration_table` + `brier_score` + `expected_calibration_error` + `maximum_calibration_error` + 私的 `_calibration_table` / `_wilson_interval` / `_bin_edges`(aic/equal_width/quantile)+ モジュール定数 `_AIC_INIT_BINS = 50`(B-bis (1)) |
+| `src/pycatdap/plot/matplotlib.py` | `calibration_curve`(reliability diagram、`Axes` 返却、`ax=` 受入) |
+| `src/pycatdap/plot/plotly.py` | `calibration_curve`(`Figure` 返却、`error_y` で CI) |
+| `src/pycatdap/error/__init__.py` | 上記 5 関数を re-export |
+| `src/pycatdap/error/_result.py` | `y_proba` フィールド + `calibration_curve` メソッド |
+| `src/pycatdap/error/analysis.py` | `y_proba` param + 構築時セット |
+
+**循環 import 回避**:純 numpy の `_calibration_table`(binning + per-bin 統計 + CI)は `error/calibration.py` に置く。backend の `calibration_curve` は関数内で `from pycatdap.error.calibration import _calibration_table` を **lazy import**(`error/calibration.py` 側は backend を `_get_backend_module` で lazy dispatch)。これにより `import pycatdap.error` が matplotlib 非依存を維持する(lowest-deps CI 安全)。
+
+#### E. Wilson 二項信頼区間
+
+reliability diagram の各ビンの観測陽性率に二項信頼区間を表示する。既存ヘルパは無いため **pure-numpy で Wilson score interval** を新規実装:
+
+```
+center = (p̂ + z²/2n) / (1 + z²/n)
+half   = (z / (1 + z²/n)) * sqrt(p̂(1-p̂)/n + z²/4n²)
+ci = [center - half, center + half]   # z = 1.96 (95%)
+```
+
+normal approx は p→0/1 近傍で区間が [0,1] を外れるが、Wilson は内側に収まる —— skewed 予測の calibration(Issue #19 の主眼)で重要。**scipy 非依存**(`_aic.py` の `_safe_xlogy` のような optional-fallback すら不要)。
+
+#### F. メトリクスの数学的定義
+
+すべて `_calibration_table` の 1 回の呼び出しから導出 → diagram と metric が乖離しない(single source of truth):
+
+- **Brier score** = `mean((y_proba - y_true)²)`(二値)。`sklearn.metrics.brier_score_loss` の二値と一致。table 非依存(全点)
+- **ECE** = `Σ_b (n_b / N) · |prob_true_b − prob_pred_b|`(ビン重み付き絶対差の平均)
+- **MCE** = `max_b |prob_true_b − prob_pred_b|`(最悪ビンの絶対差)
+
+sklearn には ECE/MCE の直接関数が無い(netcal にある)。テストは **equal_width binning で inline reference 式と 1e-9 一致** を確認(netcal/sklearn 依存を避ける)。AIC binning は参照実装が無いため non-degenerate + 自値 pin。
+
+#### G. Phase K が解決しないこと(スコープアウト)
+
+- **回帰 calibration**(predicted vs actual quantiles、netcal の回帰モード)→ v0.11.0。二値分類 calibration とは別概念(quantile calibration)のため本リリースから分離(Alternatives A3)
+- **multi-class calibration**(one-vs-rest)→ v0.11.0。Phase H が multiclass `confusion_label` を defer したのと同じ判断
+- **確率の補正**(Platt scaling / isotonic recalibration)→ Phase K は **診断のみ**。再校正はスコープ外
+- **top-level `pycatdap.*` 再エクスポート** → `pycatdap.error.*` のみ(Phase I/J と一貫)
+
+### Compatibility
+
+**破壊的変更なし。** すべて新規追加:
+
+- 新規公開関数 5 個はすべて `pycatdap.error.*` 名前空間の追加のみ
+- `ErrorAnalysisResult.y_proba` は `default=None` で追加(H-0012 の y_true/y_pred と同パターン)。既存の直接コンストラクタ呼び出し(テスト含む)は **無修正で動作**
+- `error_analysis(y_proba=None)` は末尾 keyword-only optional param の追加。既存呼び出しは無影響
+- `to_dict()` / `to_plotly_json()` の出力スキーマは不変(y_proba を含めない)
+
+### Alternatives Considered
+
+#### A1: `calibration_curve` を sklearn 同様にデータ(prob_true, prob_pred)を返す
+
+- **不採用理由**: Phase I/J の `plot_*` が Figure を返す規約・Issue #19 の `backend=` 署名と矛盾。代わりに `calibration_table` で数値を提供し、命名差を docstring で明記。
+
+#### A2: `n_bins="aic"|int` の overload(Issue #19 本文の署名)
+
+- **不採用理由**: aic / equal_width / quantile の 3 戦略を 1 引数で表現できない。explicit な `strategy` + `n_bins` に分解。
+
+#### A3: 回帰 calibration も v0.10.0 に含める
+
+- **不採用理由**: 回帰の quantile calibration は二値分類 calibration とは別概念でスコープが肥大。Phase H の multiclass defer と同じ方針で v0.11.0 に分離。
+
+#### A4: normal approximation の信頼区間(Wald)
+
+- **不採用理由**: p→0/1 近傍で区間が [0,1] を外れる。skewed 予測の calibration で頻発するため Wilson を採用。
+
+#### A5: scipy.stats で CI / メトリクスを計算
+
+- **不採用理由**: scipy は optional dep。`Quality (lowest-direct deps)` CI で使えない。Wilson + Brier/ECE/MCE はすべて pure-numpy で十分。
+
+#### A6: `ErrorAnalysisResult` に y_proba を持たせず delegation を諦める(C-2 相当)
+
+- **不採用理由**: ユーザー判断で delegation 採用(2026-05-29)。`r.calibration_curve()` のワンコール体験を優先。メモリコストは現実的データサイズで無視可能。
+
+#### A7: AIC binning で `optimal_binning(accuracy=None)` の auto-accuracy に委ねる
+
+- **不採用理由**: cross-check で検出(B-bis (1))。連続確率の最小ギャップ `~1e-4` を accuracy に採ると初期ビンが数千本に爆発し bottom-up merge が極端に遅くなる。[0,1] 有界の固定初期グリッド(`_AIC_INIT_BINS`)から accuracy を明示算出する。
+
+### Acceptance Criteria
+
+- [ ] `calibration_curve / calibration_table / brier_score / expected_calibration_error / maximum_calibration_error` が動作
+- [ ] `strategy="aic"` が `optimal_binning` で non-degenerate な bin を生成
+- [ ] `strategy in {"equal_width", "quantile"}` が動作
+- [ ] `calibration_curve` が両 backend で動作、matplotlib は `Axes`(`ax=` 受入)/ plotly は `Figure`
+- [ ] reliability diagram に Wilson 二項 CI を表示
+- [ ] `expected_calibration_error(strategy="equal_width")` が inline reference 式と `1e-9` 一致(netcal/sklearn 非依存)
+- [ ] `brier_score` が手計算値と一致
+- [ ] 二値以外の `y_true` → `ValueError`
+- [ ] `y_proba ∉ [0, 1]` → `ValueError`
+- [ ] 退化入力(全 proba 同値)→ 1 bin、クラッシュなし
+- [ ] `strategy="aic"` の初期グリッドは [0,1] 上で有界(≤ `_AIC_INIT_BINS` 本)— 連続確率でも初期ビン爆発なし(明示 `accuracy` 渡し)
+- [ ] ECE/MCE は空ビン(`n_b=0`)をスキップ(`equal_width` で発生しうる)、ゼロ除算なし
+- [ ] `ErrorAnalysisResult.y_proba` が numpy buffer frozen(`None` ガード付き `__post_init__`)
+- [ ] `error_analysis(y_proba=)` が `y_proba=arr.copy()` で defensive copy
+- [ ] `r.calibration_curve()` delegation が動作、regression / y_proba 不在で `ValueError`
+- [ ] 既存の直接コンストラクタ呼び出しが **無修正で pass**(`y_proba=None` default)
+- [ ] `to_dict()` / `to_plotly_json()` は raw y_proba を含めない
+- [ ] sklearn / scipy を src calibration path とテストで import しない(lowest-deps CI 安全)
+- [ ] 80% 以上の line coverage、TDD で test → impl
+- [ ] BLUEPRINT.md §5.8 を Phase K released に更新
+- [ ] Tutorial Notebook 13 で全関数 + `ErrorAnalysisResult` delegation のフルデモ
+- [ ] Issue #19 に scope note(回帰 / multi-class は v0.11.0 へ defer)コメント
+- [ ] CHANGELOG.md v0.10.0 セクション
+
+### PR 分割
+
+| PR | スコープ | 依存 |
+|---|---|---|
+| **PR-K0**(本 Proposal) | `docs(history): propose H-0013` | none |
+| **PR-K1** | `calibration.py`(curve dispatch + table + Brier/ECE/MCE + Wilson CI)+ matplotlib/plotly backend 実装 + `error/__init__` export + tests | PR-K0 merge |
+| **PR-K2** | `ErrorAnalysisResult.y_proba` フィールド + `calibration_curve` delegation + `error_analysis(y_proba=)` + tests | PR-K1 merge |
+| **PR-K3** | Tutorial Notebook 13 + BLUEPRINT §5.8 更新 + README + CHANGELOG cut to v0.10.0 + Issue #19 scope note | PR-K2 merge |
+| **PR-K4**(release) | `release: v0.10.0` | PR-K3 merge |
+
+各 PR は CI green 確認後に次へ進む。develop に **squash** で merge、release PR のみ `--merge`(release line 維持)。
+
+### Decision
+
+- Date: `TBD`
+- Result: `pending`
+- Notes: PR-K0(本 PR)で Proposal 承認待ち。merge 前に cross-check 実施。
+
+### Migration
+
+破壊的変更なし。新規追加のみ:
+
+- `pycatdap.error.calibration_curve / calibration_table / brier_score / expected_calibration_error / maximum_calibration_error`
+- `ErrorAnalysisResult.y_proba` フィールド(`default=None`、既存無影響)
+- `ErrorAnalysisResult.calibration_curve()` メソッド
+- `error_analysis(y_proba=)` optional param
+
+ユーザコードの変更は不要。`error_analysis()` に `y_proba=` を渡せば `r.calibration_curve()` が使えるようになる(opt-in)。
+
+### Related References
+
+- 親仕様: H-0001 Phase K、Issue #19 / #11
+- 前段: H-0012 Phase I+J(plot backend dispatch + `ErrorAnalysisResult` delegation pattern)
+- AIC binning: `src/pycatdap/_pooling.py` `optimal_binning`、`residual_by_category`(`plot/matplotlib.py:1257-1272`)の連続変数 binning 消費パターン
+- delegation pattern: `src/pycatdap/error/_result.py:439-526`(`plot_confusion` / `residual_plot`)
+- defensive copy: `src/pycatdap/error/analysis.py:228-229`
+- Wilson score interval: <https://en.wikipedia.org/wiki/Binomial_proportion_confidence_interval#Wilson_score_interval>
+- sklearn calibration_curve(データ返却の対比): <https://scikit-learn.org/stable/modules/generated/sklearn.calibration.calibration_curve.html>
+- netcal(ECE/MCE / 回帰 calibration の参考): <https://github.com/EFS-OpenSource/calibration-framework>
