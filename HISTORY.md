@@ -3152,7 +3152,7 @@ sklearn には ECE/MCE の直接関数が無い(netcal にある)。テストは
 ## 2026-05-29: Phase L slice discovery + cohort comparison + drift detection(誤差サブグループの自動発見)
 
 - ID: `H-0014`
-- Status: `proposed`
+- Status: `accepted`
 - Scope: `API | data-contract | types`
 - Related: `H-0001 Phase L`, `H-0002 FR-5/FR-7/FR-9`, `H-0013 Phase K`, `BLUEPRINT.md §5.8`, Issue #20 / #11
 
@@ -3321,9 +3321,9 @@ AIC(E;F) = −2·loglik + 2·(C_E − 1)·C_F      # ペナルティ項が合成
 
 ### Decision
 
-- Date: `(pending)`
-- Result: `proposed`
-- Notes: PR-L0 merge 前に cross-check で §C(support 枝刈りの健全性)・等価テスト定式化・perf 予算・OvR の binary 非破壊を検証する。
+- Date: `2026-05-29`
+- Result: `accepted`
+- Notes: PR-L0(#123)merge 前に cross-check 実施。6 件の load-bearing claim すべて TRUE/PARTIALLY-TRUE(FALSE なし)。§C(support 枝刈りの健全性)・等価テスト定式化・perf 予算(max_vars=3 × 14 列 = 469 評価で tractable)・OvR の binary 非破壊(`calibration.py:126` の bool 分岐)をコードで検証済み。実装は PR-L1〜L8 で段階的に進行。
 
 ### Migration
 

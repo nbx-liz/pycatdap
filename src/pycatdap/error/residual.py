@@ -20,21 +20,10 @@ from typing import Any, Literal
 import numpy.typing as npt
 import pandas as pd
 
-Backend = Literal["matplotlib", "plotly"]
+from pycatdap.error._backend import Backend
+from pycatdap.error._backend import get_backend_module as _get_backend_module
+
 ResidualKind = Literal["scatter_pred_resid", "scatter_true_pred", "histogram"]
-
-
-def _get_backend_module(backend: Backend) -> Any:
-    if backend == "matplotlib":
-        from pycatdap.plot import matplotlib as _mpl
-
-        return _mpl
-    if backend == "plotly":
-        from pycatdap.plot import plotly as _plotly
-
-        return _plotly
-    msg = f"Unknown plot backend: {backend!r}. Use 'matplotlib' or 'plotly'."
-    raise ValueError(msg)
 
 
 def residual_plot(
