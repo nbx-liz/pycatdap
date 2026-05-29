@@ -608,6 +608,30 @@ pycatdap.association_plot(table, *, threshold=2.0, backend=...)
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
 
+#### 5.7.1 `.to_plotly_json()` 契約（DP-4、LizyStudio 消費面、H-0015）
+
+LizyStudio（FastAPI + react-plotly.js）が依存する **バージョン付き data contract**。`tests/contract/test_plotly_json_contract.py` が全結果型で機械検証する。
+
+**戻り形状は 2 種**:
+
+- **FLAT** — 単一 Plotly figure spec `{"data": list, "layout": dict}`。`react-plotly.js` / `plotly.graph_objects.Figure(spec)` が直接消費可能。各 trace は `"type"` を持つ。
+  - 該当: `Catdap1Result`、`Catdap2Result`、`DescribeResult`（`describe`）、`TargetSummary`、`RegressionTargetSummary`。
+- **SECTIONED** — セクション名→spec のマッピング `{<section_name>: <FLAT-spec または name→FLAT-spec の dict>}`。各セクションのキーは **安定**（always-present + 発火条件つき conditional）。
+
+**SECTIONED 各結果の安定キー**:
+
+| 結果型 | always-present | conditional（発火条件） |
+|---|---|---|
+| `ProfileResult`（`profile`） | `association_heatmap` | `top_subsets`（`response=` 指定時） |
+| `QualityReport`（`quality_report`） | `warnings_table` | — |
+| `SuiteResult`（`suite` runner） | `checks_table` | — |
+| `TargetAnalysisResult`（`target_analysis`） | `ranking`, `top_summaries` | — |
+| `ErrorAnalysisResult`（`error_analysis`） | `feature_ranking`, `top_summaries` | `confusion`（classification のみ。regression は省略） |
+
+`top_summaries` は `dict[col_name → FLAT spec]`（`top_k=0` で空 dict）。ネストした figure spec も FLAT 準拠。
+
+**JSON 安全性（hard requirement）**: 全 spec は `json.dumps(spec, allow_nan=False)` で round-trip する。NaN / ±Inf は RFC 8259 上無効でブラウザの `JSON.parse` を壊すため、非有限値は `None` に置換する（共有ヘルパ `pycatdap._jsonsafe.scalar_to_json`、heatmap z の None 置換と同方針）。
+
 ### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase L まで実装 v0.11.0）
 
 ```python
