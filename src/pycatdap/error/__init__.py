@@ -40,6 +40,11 @@ from pycatdap.error.confusion import (
     plot_confusion,
     plot_confusion_by_slice,
 )
+from pycatdap.error.residual import (
+    residual_by_category,
+    residual_plot,
+    residual_pool_plot,
+)
 
 __all__ = [
     "ErrorAnalysisResult",
@@ -52,5 +57,8 @@ __all__ = [
     "error_label",
     "plot_confusion",
     "plot_confusion_by_slice",
+    "residual_by_category",
     "residual_label",
+    "residual_plot",
+    "residual_pool_plot",
 ]
