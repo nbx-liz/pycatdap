@@ -43,6 +43,12 @@ from pycatdap.error.calibration import (
     expected_calibration_error,
     maximum_calibration_error,
 )
+from pycatdap.error.cohorts import (
+    CohortComparison,
+    DriftReport,
+    compare_cohorts,
+    detect_drift,
+)
 from pycatdap.error.confusion import (
     confusion_aic,
     plot_confusion,
@@ -56,6 +62,8 @@ from pycatdap.error.residual import (
 )
 
 __all__ = [
+    "CohortComparison",
+    "DriftReport",
     "ErrorAnalysisResult",
     "ErrorSlice",
     "Slice",
@@ -65,8 +73,10 @@ __all__ = [
     "brier_score",
     "calibration_curve",
     "calibration_table",
+    "compare_cohorts",
     "confusion_aic",
     "confusion_label",
+    "detect_drift",
     "discover_error_slices",
     "error_analysis",
     "error_label",
