@@ -35,6 +35,7 @@ from pycatdap.error._describe import (
         (float("inf"), "inf"),
         (float("-inf"), "-inf"),
         (float("nan"), "nan"),
+        (60.708540000000006, "60.7085"),  # float-noise rounding
     ],
 )
 def test_fmt_number(value: float, expected: str) -> None:

@@ -68,7 +68,10 @@ def fmt_number(x: float) -> str:
     # string (review finding). Bin boundaries are never that large.
     if abs(x) < 1e15 and x == int(x):
         return str(int(x))
-    return str(x)
+    # Round non-integers to 6 significant figures so AIC bin boundaries
+    # render as ``60.7085`` rather than ``60.708540000000006`` (float
+    # noise). ``:g`` also drops trailing zeros.
+    return f"{x:.6g}"
 
 
 def interval_label(code: int, boundaries: Sequence[float]) -> str:
