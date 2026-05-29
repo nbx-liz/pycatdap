@@ -34,6 +34,7 @@ from pycatdap.error._labels import (
     residual_label,
 )
 from pycatdap.error._result import ErrorAnalysisResult, Slice
+from pycatdap.error._slice import ErrorSlice, SliceDiscoveryResult
 from pycatdap.error.analysis import error_analysis
 from pycatdap.error.calibration import (
     brier_score,
@@ -55,7 +56,9 @@ from pycatdap.error.residual import (
 
 __all__ = [
     "ErrorAnalysisResult",
+    "ErrorSlice",
     "Slice",
+    "SliceDiscoveryResult",
     "_detect_task",
     "abs_residual_pool",
     "brier_score",
