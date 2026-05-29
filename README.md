@@ -188,6 +188,30 @@ pycatdap.error.maximum_calibration_error(y_true, proba)    # MCE
 
 `strategy="aic"` bins the probability axis where the observed positive-rate shifts — sharper than equal-width / quantile bins on skewed predictions. See [`docs/tutorials/13-phase-k-calibration.ipynb`](docs/tutorials/13-phase-k-calibration.ipynb).
 
+### ML slice discovery, cohort comparison & drift — Phase L (v0.11.0)
+
+```python
+# Auto-discover the multivariable cohorts where the model fails most
+result = pycatdap.error.discover_error_slices(
+    df, y_true, y_pred, max_vars=3, measure="aic", top_k=10, min_support=30
+)
+for s in result.slices:
+    print(s.error_metric, s.description)   # e.g. "age ∈ [60, 78] × plan = basic"
+result.to_divexplorer_format()             # DivExplorer-compatible flat table
+
+# Compare two cohorts (distribution + ΔAIC), Sweetviz-style HTML report
+pycatdap.error.compare_cohorts(df_a, df_b).to_html("comparison.html")
+
+# Detect train→prod drift, ranked by ΔAIC magnitude
+pycatdap.error.detect_drift(df_train, df_prod, y_true=y, y_pred=yhat)
+
+# Calibration beyond binary (deferred from Phase K)
+pycatdap.error.regression_calibration_table(y_true, y_pred)          # regression
+pycatdap.error.multiclass_calibration_table(y_true, y_proba)         # one-vs-rest
+```
+
+Slice discovery prunes the search space on **support** (Apriori, anti-monotone) rather than ΔAIC — sound, and >50% reduction on wide datasets. The interestingness measure is pluggable (`"aic"`, `"cramers_v"`, `"mutual_info"`, or any registered callable). See [`docs/tutorials/14-phase-l-slice-discovery.ipynb`](docs/tutorials/14-phase-l-slice-discovery.ipynb).
+
 ## Status & Roadmap
 
 | Version | Theme |
@@ -198,7 +222,8 @@ pycatdap.error.maximum_calibration_error(y_true, proba)    # MCE
 | v0.8.0 ✅ | Phase H `error_analysis()` one-call + D4 benchmarks |
 | v0.9.0 ✅ | Phase I+J error visualisation (confusion + residual) |
 | v0.10.0 ✅ | Phase K calibration (AIC-binned reliability diagram + Brier/ECE/MCE) |
-| v0.11.0 — v0.12.0 | Phase L slice discovery + LizyStudio integration |
+| v0.11.0 ✅ | Phase L slice discovery + cohort comparison + drift + regression/multi-class calibration |
+| v0.12.0 | LizyStudio integration |
 | v1.0.0 | API stabilization |
 
 Full roadmap: [PLAN.md](PLAN.md) · [Meta Issue #11](https://github.com/nbx-liz/pycatdap/issues/11)
