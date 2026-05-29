@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] — 2026-05-30
+
 このリリースは **H-0015 Phase M** に対応し、v0.12.0 の LizyStudio 統合
 イネーブルメントと、誤差分析 arc の積み残しを解消する。BLUEPRINT.md §5.7 / §5.8、
 HISTORY.md H-0015、Issue #21 を参照。
