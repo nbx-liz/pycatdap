@@ -95,6 +95,14 @@ def test_regression_constant_predictions_collapse() -> None:
     assert table.iloc[0]["actual_mean"] == pytest.approx(7.0)
 
 
+def test_regression_n_quantiles_one() -> None:
+    table = regression_calibration_table(
+        [1.0, 2.0, 3.0], [1.0, 2.0, 3.0], n_quantiles=1
+    )
+    assert len(table) == 1
+    assert table.iloc[0]["n"] == 3
+
+
 def test_regression_pandas_series_input() -> None:
     s_pred = pd.Series(np.linspace(0, 1, 50))
     s_true = pd.Series(np.linspace(0, 1, 50))

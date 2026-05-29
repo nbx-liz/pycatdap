@@ -498,6 +498,8 @@ def regression_calibration_table(
     codes = np.clip(np.digitize(yp, edges[1:-1]), 0, len(edges) - 2)
 
     rows: list[dict[str, float]] = []
+    # Only occupied codes are iterated, so every band has n >= 1 — no
+    # empty bins, no divide-by-zero.
     for code in np.unique(codes):
         mask = codes == code
         pred_bin = yp[mask]
@@ -506,7 +508,7 @@ def regression_calibration_table(
         actual_mean = float(true_bin.mean())
         # Normal CI on the outcome mean (pure-numpy; 0-width when n == 1).
         std = float(true_bin.std(ddof=1)) if pred_bin.size > 1 else 0.0
-        half = _WILSON_Z * std / np.sqrt(n) if n > 0 else 0.0
+        half = _WILSON_Z * std / np.sqrt(n)
         rows.append(
             {
                 "bin_low": float(pred_bin.min()),
@@ -621,8 +623,12 @@ def multiclass_calibration_table(
     y_proba : array-like, shape (n_samples, n_classes)
         Per-class probabilities; column ``j`` corresponds to ``classes[j]``.
     classes : list or None
-        Class label order matching the probability columns. ``None`` uses the
-        sorted unique values of ``y_true``.
+        Class label order matching the probability columns. When ``None``,
+        the column order of ``y_proba`` is assumed to match
+        ``sorted(np.unique(y_true))``. Pass ``classes`` explicitly (e.g.
+        ``clf.classes_.tolist()``) whenever the column order is not
+        guaranteed — a mismatch silently mis-scores every class rather
+        than raising.
     strategy : {"aic", "equal_width", "quantile"}
         Probability-axis binning (see :func:`calibration_table`).
     n_bins : int
@@ -631,7 +637,9 @@ def multiclass_calibration_table(
     Returns
     -------
     Mapping[class_label, pd.DataFrame]
-        Read-only mapping of class label to its OvR reliability table.
+        Read-only mapping of class label to its OvR reliability table. A
+        class absent from ``y_true`` yields an all-negative OvR column, so
+        its table rows all carry ``prob_true = 0``.
 
     Raises
     ------
