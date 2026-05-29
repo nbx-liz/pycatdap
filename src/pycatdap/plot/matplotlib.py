@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
     from pycatdap.catdap1 import Catdap1Result
     from pycatdap.catdap2 import Catdap2Result
+    from pycatdap.error.calibration import Strategy
 
 
 def _import_matplotlib() -> Any:
@@ -1446,5 +1447,122 @@ def calibration_curve(
     ax.set_xlabel("Mean predicted probability")
     ax.set_ylabel("Observed frequency")
     ax.set_title(f"Reliability diagram ({strategy})")
+    ax.legend(loc="best")
+    return ax
+
+
+def regression_calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    n_quantiles: int = 10,
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Regression calibration diagram (H-0015 PR-M3, matplotlib backend).
+
+    Plots per-band ``pred_mean`` vs ``actual_mean`` with a ``y = x`` reference
+    spanning the data range (not clamped to ``[0, 1]``) and a normal CI on the
+    outcome mean. See :func:`pycatdap.error.regression_calibration_curve`.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+    from pycatdap.error.calibration import regression_calibration_table
+
+    table = regression_calibration_table(y_true, y_pred, n_quantiles=n_quantiles)
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    if not table.empty:
+        pred = table["pred_mean"].to_numpy(dtype=np.float64)
+        obs = table["actual_mean"].to_numpy(dtype=np.float64)
+        lower = np.clip(obs - table["ci_low"].to_numpy(dtype=np.float64), 0.0, None)
+        upper = np.clip(table["ci_high"].to_numpy(dtype=np.float64) - obs, 0.0, None)
+        lo = float(min(pred.min(), obs.min()))
+        hi = float(max(pred.max(), obs.max()))
+        ax.plot(
+            [lo, hi],
+            [lo, hi],
+            linestyle="--",
+            color="black",
+            linewidth=1,
+            label="perfect",
+        )
+        errorbar_kwargs: dict[str, Any] = {
+            "fmt": "o-",
+            "capsize": 3,
+            "color": "#1f77b4",
+            "label": "model",
+        }
+        errorbar_kwargs.update(kwargs)
+        ax.errorbar(pred, obs, yerr=np.vstack([lower, upper]), **errorbar_kwargs)
+
+    ax.set_xlabel("Mean predicted value")
+    ax.set_ylabel("Mean actual value")
+    ax.set_title("Regression calibration")
+    ax.legend(loc="best")
+    return ax
+
+
+def multiclass_calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    *,
+    classes: list[Any] | None = None,
+    strategy: Strategy = "aic",
+    n_bins: int = 10,
+    ax: Axes | None = None,
+    **kwargs: Any,
+) -> Axes:
+    """Multi-class one-vs-rest reliability diagram (H-0015 PR-M3, matplotlib).
+
+    Overlays one reliability curve per class on a shared ``[0, 1]`` square
+    with a single ``y = x`` reference. See
+    :func:`pycatdap.error.multiclass_calibration_curve`.
+
+    Returns
+    -------
+    Axes
+    """
+    plt = _import_matplotlib()
+    from pycatdap.error.calibration import multiclass_calibration_table
+
+    tables = multiclass_calibration_table(
+        y_true, y_proba, classes=classes, strategy=strategy, n_bins=n_bins
+    )
+
+    if ax is None:
+        _fig: Figure
+        _fig, ax = plt.subplots()
+
+    ax.plot(
+        [0.0, 1.0],
+        [0.0, 1.0],
+        linestyle="--",
+        color="black",
+        linewidth=1,
+        label="perfect",
+    )
+
+    line_kwargs: dict[str, Any] = {"marker": "o", "linestyle": "-"}
+    line_kwargs.update(kwargs)
+    line_kwargs.pop("label", None)
+    for cls, table in tables.items():
+        if table.empty:
+            continue
+        pred = table["prob_pred"].to_numpy(dtype=np.float64)
+        obs = table["prob_true"].to_numpy(dtype=np.float64)
+        ax.plot(pred, obs, label=f"class {cls}", **line_kwargs)
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("Mean predicted probability")
+    ax.set_ylabel("Observed frequency")
+    ax.set_title("Multi-class calibration (one-vs-rest)")
     ax.legend(loc="best")
     return ax

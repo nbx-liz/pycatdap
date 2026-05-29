@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
     from pycatdap.catdap1 import Catdap1Result
     from pycatdap.catdap2 import Catdap2Result
+    from pycatdap.error.calibration import Strategy
 
 
 def _import_plotly() -> Any:
@@ -1271,6 +1272,118 @@ def calibration_curve(
 
     fig.update_layout(
         title=f"Reliability diagram ({strategy})",
+        xaxis={"title": "Mean predicted probability", "range": [0.0, 1.0]},
+        yaxis={"title": "Observed frequency", "range": [0.0, 1.0]},
+    )
+    return fig
+
+
+def regression_calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    n_quantiles: int = 10,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Regression calibration diagram (H-0015 PR-M3, Plotly backend).
+
+    Plots per-band ``pred_mean`` vs ``actual_mean`` with a ``y = x`` reference
+    over the data range (not clamped to ``[0, 1]``) and a normal CI on the
+    outcome mean. See :func:`pycatdap.error.regression_calibration_curve`.
+    """
+    go = _import_plotly()
+    from pycatdap.error.calibration import regression_calibration_table
+
+    table = regression_calibration_table(y_true, y_pred, n_quantiles=n_quantiles)
+
+    fig = go.Figure()
+    if not table.empty:
+        pred = table["pred_mean"].to_numpy(dtype=np.float64)
+        obs = table["actual_mean"].to_numpy(dtype=np.float64)
+        upper = np.clip(table["ci_high"].to_numpy(dtype=np.float64) - obs, 0.0, None)
+        lower = np.clip(obs - table["ci_low"].to_numpy(dtype=np.float64), 0.0, None)
+        lo = float(min(pred.min(), obs.min()))
+        hi = float(max(pred.max(), obs.max()))
+        fig.add_trace(
+            go.Scatter(
+                x=[lo, hi],
+                y=[lo, hi],
+                mode="lines",
+                line={"dash": "dash", "color": "black", "width": 1},
+                name="perfect",
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=pred.tolist(),
+                y=obs.tolist(),
+                mode="markers+lines",
+                name="model",
+                error_y={
+                    "type": "data",
+                    "symmetric": False,
+                    "array": upper.tolist(),
+                    "arrayminus": lower.tolist(),
+                },
+            )
+        )
+
+    fig.update_layout(
+        title="Regression calibration",
+        xaxis={"title": "Mean predicted value"},
+        yaxis={"title": "Mean actual value"},
+    )
+    return fig
+
+
+def multiclass_calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    *,
+    classes: list[Any] | None = None,
+    strategy: Strategy = "aic",
+    n_bins: int = 10,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Multi-class one-vs-rest reliability diagram (H-0015 PR-M3, Plotly).
+
+    Overlays one reliability curve per class on a shared ``[0, 1]`` square with
+    a single ``y = x`` reference. See
+    :func:`pycatdap.error.multiclass_calibration_curve`.
+    """
+    go = _import_plotly()
+    from pycatdap.error.calibration import multiclass_calibration_table
+
+    tables = multiclass_calibration_table(
+        y_true, y_proba, classes=classes, strategy=strategy, n_bins=n_bins
+    )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[0.0, 1.0],
+            y=[0.0, 1.0],
+            mode="lines",
+            line={"dash": "dash", "color": "black", "width": 1},
+            name="perfect",
+        )
+    )
+    for cls, table in tables.items():
+        if table.empty:
+            continue
+        pred = table["prob_pred"].to_numpy(dtype=np.float64)
+        obs = table["prob_true"].to_numpy(dtype=np.float64)
+        fig.add_trace(
+            go.Scatter(
+                x=pred.tolist(),
+                y=obs.tolist(),
+                mode="markers+lines",
+                name=f"class {cls}",
+            )
+        )
+
+    fig.update_layout(
+        title="Multi-class calibration (one-vs-rest)",
         xaxis={"title": "Mean predicted probability", "range": [0.0, 1.0]},
         yaxis={"title": "Observed frequency", "range": [0.0, 1.0]},
     )
