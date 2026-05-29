@@ -173,6 +173,21 @@ pycatdap.error.residual_pool_plot(y_true, y_pred, n_bins=4)
 
 See [`docs/tutorials/12-phase-i-j-error-visualization.ipynb`](docs/tutorials/12-phase-i-j-error-visualization.ipynb).
 
+### ML calibration — Phase K (v0.10.0)
+
+```python
+r = pycatdap.error_analysis(df, y_true, y_pred, y_proba=proba)  # binary classification
+r.calibration_curve(strategy="aic")                 # reliability diagram (AIC-binned)
+
+# Or call the standalone functions
+pycatdap.error.calibration_curve(y_true, proba, strategy="aic", backend="plotly")
+pycatdap.error.brier_score(y_true, proba)
+pycatdap.error.expected_calibration_error(y_true, proba)   # ECE
+pycatdap.error.maximum_calibration_error(y_true, proba)    # MCE
+```
+
+`strategy="aic"` bins the probability axis where the observed positive-rate shifts — sharper than equal-width / quantile bins on skewed predictions. See [`docs/tutorials/13-phase-k-calibration.ipynb`](docs/tutorials/13-phase-k-calibration.ipynb).
+
 ## Status & Roadmap
 
 | Version | Theme |
@@ -182,7 +197,7 @@ See [`docs/tutorials/12-phase-i-j-error-visualization.ipynb`](docs/tutorials/12-
 | v0.7.0 ✅ | Phase G error labelling building blocks |
 | v0.8.0 ✅ | Phase H `error_analysis()` one-call + D4 benchmarks |
 | v0.9.0 ✅ | Phase I+J error visualisation (confusion + residual) |
-| v0.10.0 | Phase K calibration |
+| v0.10.0 ✅ | Phase K calibration (AIC-binned reliability diagram + Brier/ECE/MCE) |
 | v0.11.0 — v0.12.0 | Phase L slice discovery + LizyStudio integration |
 | v1.0.0 | API stabilization |
 

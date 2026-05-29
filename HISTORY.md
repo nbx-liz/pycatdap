@@ -2915,7 +2915,7 @@ cross-check で「`tests/test_error_analysis_result.py` に 12 箇所の直接�
 ## 2026-05-29: Phase K calibration(AIC binning による信頼性診断)
 
 - ID: `H-0013`
-- Status: `proposed`
+- Status: `accepted`
 - Scope: `API | plot | data-contract`
 - Related: `H-0001 Phase K`, `H-0012 Phase I+J`, `BLUEPRINT.md §5.8`, Issue #19 / #11
 
@@ -3123,9 +3123,9 @@ sklearn には ECE/MCE の直接関数が無い(netcal にある)。テストは
 
 ### Decision
 
-- Date: `TBD`
-- Result: `pending`
-- Notes: PR-K0(本 PR)で Proposal 承認待ち。merge 前に cross-check 実施。
+- Date: `2026-05-29`
+- Result: `accepted`
+- Notes: PR-K0 で Proposal 承認。merge 前 cross-check で §B-bis(AIC accuracy 有界化 / 空ビン skip)を反映。PR-K1〜K3 で実装・出荷(v0.10.0)。
 
 ### Migration
 

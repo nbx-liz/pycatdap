@@ -604,7 +604,7 @@ pycatdap.association_plot(table, *, threshold=2.0, backend=...)
 
 全結果オブジェクトに `.to_plotly_json()` を実装し、LizyStudio など Web フロントが直接消費可能（DP-4）。
 
-### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase I+J まで実装 v0.9.0）
+### 5.8 `error/` — ML 誤差分析サブモジュール（H-0002 で追加、Phase K まで実装 v0.10.0）
 
 ```python
 # 誤差ラベリング（Phase G、v0.7.0 で実装済）
@@ -672,10 +672,20 @@ pycatdap.error.residual_pool_plot(
 result.plot_confusion(*, backend=..., **kwargs)     # binary OR multi-class
 result.residual_plot(*, backend=..., **kwargs)      # regression 専用
 
-# キャリブレーション（分類+回帰両対応、AIC binning）
-pycatdap.error.calibration_curve(y_true, y_proba, n_bins="aic"|int, backend=...)
+# キャリブレーション（Phase K、H-0013、v0.10.0 で実装済 — 二値分類のみ。回帰/multi-class は v0.11.0）
+pycatdap.error.calibration_curve(
+    y_true, y_proba,
+    *,
+    strategy: Literal["aic", "equal_width", "quantile"] = "aic",  # aic: 確率軸を AIC 最適 binning
+    n_bins=10,                                                     # equal_width/quantile 用（aic では無視）
+    backend=..., **kwargs,
+) -> Axes | Figure                                  # reliability diagram + Wilson 95% CI
+pycatdap.error.calibration_table(y_true, y_proba, *, strategy="aic", n_bins=10) -> pd.DataFrame
+                                                    # cols: bin_low/bin_high/n/prob_pred/prob_true/ci_low/ci_high
 pycatdap.error.brier_score(y_true, y_proba) -> float
-pycatdap.error.expected_calibration_error(y_true, y_proba) -> float
+pycatdap.error.expected_calibration_error(y_true, y_proba, *, strategy="aic", n_bins=10) -> float
+pycatdap.error.maximum_calibration_error(y_true, y_proba, *, strategy="aic", n_bins=10) -> float
+result.calibration_curve(*, strategy="aic", n_bins=10, backend=..., **kwargs)  # delegation（二値分類）
 
 # スライス発見・コホート比較・ドリフト
 pycatdap.error.discover_error_slices(
