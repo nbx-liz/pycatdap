@@ -1213,3 +1213,65 @@ def residual_pool_plot(
         yaxis={"title": "Count"},
     )
     return fig
+
+
+# ---------------------------------------------------------------------------
+# Phase K (H-0013): calibration reliability diagram
+# ---------------------------------------------------------------------------
+
+
+def calibration_curve(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    *,
+    strategy: str = "aic",
+    n_bins: int = 10,
+    **kwargs: Any,  # noqa: ARG001
+) -> _go.Figure:
+    """Reliability diagram (H-0013 Phase K, Plotly backend).
+
+    See :func:`pycatdap.error.calibration_curve` for the parameter contract.
+    Wilson 95% CIs render as asymmetric ``error_y`` bars.
+    """
+    go = _import_plotly()
+    from pycatdap.error.calibration import _calibration_table
+
+    table = _calibration_table(y_true, y_proba, strategy=strategy, n_bins=n_bins)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=[0.0, 1.0],
+            y=[0.0, 1.0],
+            mode="lines",
+            line={"dash": "dash", "color": "black", "width": 1},
+            name="perfect",
+        )
+    )
+
+    if not table.empty:
+        pred = table["prob_pred"].to_numpy(dtype=np.float64)
+        obs = table["prob_true"].to_numpy(dtype=np.float64)
+        upper = np.clip(table["ci_high"].to_numpy(dtype=np.float64) - obs, 0.0, None)
+        lower = np.clip(obs - table["ci_low"].to_numpy(dtype=np.float64), 0.0, None)
+        fig.add_trace(
+            go.Scatter(
+                x=pred.tolist(),
+                y=obs.tolist(),
+                mode="markers+lines",
+                name="model",
+                error_y={
+                    "type": "data",
+                    "symmetric": False,
+                    "array": upper.tolist(),
+                    "arrayminus": lower.tolist(),
+                },
+            )
+        )
+
+    fig.update_layout(
+        title=f"Reliability diagram ({strategy})",
+        xaxis={"title": "Mean predicted probability", "range": [0.0, 1.0]},
+        yaxis={"title": "Observed frequency", "range": [0.0, 1.0]},
+    )
+    return fig
