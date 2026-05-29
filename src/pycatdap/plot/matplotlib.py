@@ -1104,4 +1104,4 @@ def plot_confusion_by_slice(
         axes[row][col].axis("off")
 
     fig.tight_layout()
-    return fig
+    return fig  # type: ignore[no-any-return]
