@@ -30,6 +30,8 @@ convention. Use :func:`calibration_table` for the numeric curve data.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any, Literal
 
 import numpy as np
@@ -421,10 +423,278 @@ def calibration_curve(
     )
 
 
+# ---------------------------------------------------------------------------
+# Regression calibration (H-0014 Phase L, PR-L5)
+#
+# Predicted-vs-actual quantile calibration: a regressor is "calibrated" when,
+# within each predicted-value band, the mean prediction matches the mean
+# outcome. This is a distinct concept from binary probability calibration —
+# the binary functions above are untouched.
+# ---------------------------------------------------------------------------
+
+
+def _validate_regression(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    """Coerce to finite float arrays of equal length."""
+    yt = np.asarray(y_true, dtype=np.float64)
+    yp = np.asarray(y_pred, dtype=np.float64)
+    if yt.shape[0] != yp.shape[0]:
+        msg = (
+            f"y_true and y_pred must have the same length "
+            f"(got {yt.shape[0]} and {yp.shape[0]})"
+        )
+        raise ValueError(msg)
+    finite = np.isfinite(yt) & np.isfinite(yp)
+    yt, yp = yt[finite], yp[finite]
+    if yp.size == 0:
+        msg = "regression calibration requires at least one finite pair"
+        raise ValueError(msg)
+    return yt, yp
+
+
+def regression_calibration_table(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    n_quantiles: int = 10,
+) -> pd.DataFrame:
+    """Predicted-vs-actual quantile calibration table (regression).
+
+    Predictions are split into ``n_quantiles`` equal-frequency bands; each
+    band reports the mean prediction vs the mean outcome, with a normal
+    confidence interval on the outcome mean. A well-calibrated regressor has
+    ``pred_mean ≈ actual_mean`` in every band (the ``y = x`` line).
+
+    Parameters
+    ----------
+    y_true, y_pred : array-like
+        Aligned numeric outcomes and predictions.
+    n_quantiles : int, default 10
+        Number of equal-frequency prediction bands. Collapses gracefully
+        when predictions are near-constant.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns ``bin_low, bin_high, n, pred_mean, actual_mean, ci_low,
+        ci_high`` (CI on ``actual_mean``), ordered by ``bin_low`` ascending.
+        Pure-numpy; no scipy.
+
+    Raises
+    ------
+    ValueError
+        On length mismatch, no finite pairs, or ``n_quantiles < 1``.
+    """
+    if n_quantiles < 1:
+        msg = f"n_quantiles must be >= 1 (got {n_quantiles})"
+        raise ValueError(msg)
+    yt, yp = _validate_regression(y_true, y_pred)
+
+    edges = np.unique(np.quantile(yp, np.linspace(0.0, 1.0, n_quantiles + 1)))
+    if edges.size < 2:
+        edges = np.array([float(yp.min()), float(yp.max()) + 1e-12])
+    codes = np.clip(np.digitize(yp, edges[1:-1]), 0, len(edges) - 2)
+
+    rows: list[dict[str, float]] = []
+    for code in np.unique(codes):
+        mask = codes == code
+        pred_bin = yp[mask]
+        true_bin = yt[mask]
+        n = float(pred_bin.size)
+        actual_mean = float(true_bin.mean())
+        # Normal CI on the outcome mean (pure-numpy; 0-width when n == 1).
+        std = float(true_bin.std(ddof=1)) if pred_bin.size > 1 else 0.0
+        half = _WILSON_Z * std / np.sqrt(n) if n > 0 else 0.0
+        rows.append(
+            {
+                "bin_low": float(pred_bin.min()),
+                "bin_high": float(pred_bin.max()),
+                "n": n,
+                "pred_mean": float(pred_bin.mean()),
+                "actual_mean": actual_mean,
+                "ci_low": actual_mean - half,
+                "ci_high": actual_mean + half,
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "bin_low",
+            "bin_high",
+            "n",
+            "pred_mean",
+            "actual_mean",
+            "ci_low",
+            "ci_high",
+        ],
+    )
+
+
+def regression_calibration_error(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_pred: npt.NDArray[Any] | pd.Series,
+    *,
+    n_quantiles: int = 10,
+) -> float:
+    r"""Frequency-weighted mean ``|pred_mean - actual_mean|`` over bands.
+
+    The regression analogue of ECE: lower is better (``0`` = the prediction
+    band means track the outcome band means perfectly).
+
+    Parameters
+    ----------
+    y_true, y_pred : array-like
+        Aligned numeric outcomes and predictions.
+    n_quantiles : int, default 10
+        Number of prediction bands.
+
+    Returns
+    -------
+    float
+    """
+    table = regression_calibration_table(y_true, y_pred, n_quantiles=n_quantiles)
+    if table.empty:  # pragma: no cover - unreachable post-validation
+        return 0.0
+    n_total = float(table["n"].sum())
+    gaps = (table["pred_mean"] - table["actual_mean"]).abs().to_numpy(dtype=np.float64)
+    weights = table["n"].to_numpy(dtype=np.float64) / n_total
+    return float(np.sum(weights * gaps))
+
+
+# ---------------------------------------------------------------------------
+# Multi-class calibration (one-vs-rest) (H-0014 Phase L, PR-L5)
+#
+# Each class is reduced to a binary OvR problem (``y_true == k`` vs the
+# probability column for ``k``) and scored by the EXISTING binary core, so the
+# binary path is reused verbatim — the strongest guarantee it stays intact.
+# ---------------------------------------------------------------------------
+
+
+def _validate_multiclass_proba(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    classes: list[Any] | None,
+) -> tuple[npt.NDArray[Any], npt.NDArray[np.float64], list[Any]]:
+    """Resolve ``(y_true, proba_2d, classes)`` for one-vs-rest scoring."""
+    yt = np.asarray(y_true)
+    proba = np.asarray(y_proba, dtype=np.float64)
+    if proba.ndim != 2:
+        msg = f"y_proba must be 2D (n_samples, n_classes); got shape {proba.shape}"
+        raise ValueError(msg)
+    if proba.shape[0] != yt.shape[0]:
+        msg = (
+            f"y_true and y_proba must have the same length "
+            f"(got {yt.shape[0]} and {proba.shape[0]})"
+        )
+        raise ValueError(msg)
+    resolved = sorted(np.unique(yt).tolist()) if classes is None else list(classes)
+    if len(resolved) != proba.shape[1]:
+        msg = (
+            f"number of classes ({len(resolved)}) must equal the number of "
+            f"y_proba columns ({proba.shape[1]})"
+        )
+        raise ValueError(msg)
+    return yt, proba, resolved
+
+
+def multiclass_calibration_table(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    *,
+    classes: list[Any] | None = None,
+    strategy: Strategy = "aic",
+    n_bins: int = 10,
+) -> Mapping[Any, pd.DataFrame]:
+    """Per-class one-vs-rest reliability tables (multi-class calibration).
+
+    For each class ``k`` the problem is reduced to binary — ``(y_true == k)``
+    against the ``k``-th probability column — and scored by the existing
+    binary :func:`calibration_table` core. On a 2-class problem this reduces
+    exactly to the binary table for the second class.
+
+    Parameters
+    ----------
+    y_true : array-like
+        Integer / label ground truth, length ``n_samples``.
+    y_proba : array-like, shape (n_samples, n_classes)
+        Per-class probabilities; column ``j`` corresponds to ``classes[j]``.
+    classes : list or None
+        Class label order matching the probability columns. ``None`` uses the
+        sorted unique values of ``y_true``.
+    strategy : {"aic", "equal_width", "quantile"}
+        Probability-axis binning (see :func:`calibration_table`).
+    n_bins : int
+        Bin count for ``equal_width`` / ``quantile``.
+
+    Returns
+    -------
+    Mapping[class_label, pd.DataFrame]
+        Read-only mapping of class label to its OvR reliability table.
+
+    Raises
+    ------
+    ValueError
+        If ``y_proba`` is not 2D or its column count disagrees with the
+        class count.
+    """
+    yt, proba, resolved = _validate_multiclass_proba(y_true, y_proba, classes)
+    tables = {
+        cls: _calibration_table(
+            (yt == cls).astype(np.int64),
+            proba[:, j],
+            strategy=strategy,
+            n_bins=n_bins,
+        )
+        for j, cls in enumerate(resolved)
+    }
+    return MappingProxyType(tables)
+
+
+def multiclass_expected_calibration_error(
+    y_true: npt.NDArray[Any] | pd.Series,
+    y_proba: npt.NDArray[Any] | pd.Series,
+    *,
+    classes: list[Any] | None = None,
+    strategy: Strategy = "aic",
+    n_bins: int = 10,
+) -> float:
+    """Macro-averaged one-vs-rest ECE across classes.
+
+    The unweighted mean of each class's binary
+    :func:`expected_calibration_error`. Lower is better.
+
+    Parameters
+    ----------
+    y_true, y_proba, classes, strategy, n_bins
+        See :func:`multiclass_calibration_table`.
+
+    Returns
+    -------
+    float
+    """
+    yt, proba, resolved = _validate_multiclass_proba(y_true, y_proba, classes)
+    per_class = [
+        expected_calibration_error(
+            (yt == cls).astype(np.int64),
+            proba[:, j],
+            strategy=strategy,
+            n_bins=n_bins,
+        )
+        for j, cls in enumerate(resolved)
+    ]
+    return float(np.mean(per_class)) if per_class else 0.0
+
+
 __all__ = [
     "brier_score",
     "calibration_curve",
     "calibration_table",
     "expected_calibration_error",
     "maximum_calibration_error",
+    "multiclass_calibration_table",
+    "multiclass_expected_calibration_error",
+    "regression_calibration_error",
+    "regression_calibration_table",
 ]
