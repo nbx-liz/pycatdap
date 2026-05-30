@@ -111,7 +111,16 @@ def _prepare_frame(
 
 
 def _is_continuous(series: pd.Series) -> bool:
-    if not pd.api.types.is_numeric_dtype(series):
+    if isinstance(series.dtype, pd.CategoricalDtype):
+        # A numeric column shipped as ``category`` (e.g. read_csv(dtype=
+        # "category"), sklearn pipelines) is still a continuous variable and
+        # must be AIC-binned. Without this branch it escapes binning and is
+        # treated as a raw high-cardinality categorical, combinatorially
+        # exploding the slice search (the 2026-05-30 OOM trigger; H-0016
+        # follow-up). String categories remain genuine categoricals.
+        if not pd.api.types.is_numeric_dtype(series.cat.categories):
+            return False
+    elif not pd.api.types.is_numeric_dtype(series):
         return False
     return int(series.nunique(dropna=True)) > _MAX_DISCRETE_CARD
 
