@@ -122,7 +122,8 @@ def enumerate_cells(
     max_vars: int,
     min_support: int,
     prune: bool = True,
-) -> tuple[list[CellStat], int, int]:
+    max_candidates: int | None = None,
+) -> tuple[list[CellStat], int, int, bool]:
     """Enumerate cells up to ``max_vars`` conditions.
 
     Parameters
@@ -143,6 +144,10 @@ def enumerate_cells(
     prune : bool, default True
         ``True`` runs Apriori (returns only frequent cells);
         ``False`` returns every cell with its support (the oracle).
+    max_candidates : int or None, default None
+        Cap on the number of candidate cells evaluated (Apriori path only).
+        When reached, the search stops early and ``truncated`` is ``True``.
+        ``None`` means unbounded. Ignored for ``prune=False``.
 
     Returns
     -------
@@ -157,6 +162,10 @@ def enumerate_cells(
         evaluated but fell below ``min_support`` (i.e. every cell whose
         support was not computed because a parent was infrequent).
         ``prune=False`` -> ``0``.
+    truncated : bool
+        ``True`` if the Apriori search hit ``max_candidates`` and stopped
+        early (a sound subset, not exhaustive). Always ``False`` for the
+        exhaustive path.
     """
     by_col = _condition_masks(frame, columns)
     card_by_col = {col: len(by_col[col]) for col in columns}
@@ -165,14 +174,16 @@ def enumerate_cells(
     if not prune:
         return _enumerate_exhaustive(by_col, error_mask, eff_max)
 
-    return _enumerate_apriori(by_col, card_by_col, error_mask, eff_max, min_support)
+    return _enumerate_apriori(
+        by_col, card_by_col, error_mask, eff_max, min_support, max_candidates
+    )
 
 
 def _enumerate_exhaustive(
     by_col: dict[str, list[tuple[Condition, npt.NDArray[np.bool_]]]],
     error_mask: npt.NDArray[np.bool_],
     eff_max: int,
-) -> tuple[list[CellStat], int, int]:
+) -> tuple[list[CellStat], int, int, bool]:
     """Every conjunction across distinct columns, each with its support."""
     cells: list[CellStat] = []
     cols = list(by_col)
@@ -185,7 +196,7 @@ def _enumerate_exhaustive(
                 for _, m in picks[1:]:
                     mask &= m
                 cells.append(_stat(conditions, mask, error_mask))
-    return cells, len(cells), 0
+    return cells, len(cells), 0, False
 
 
 def _enumerate_apriori(
@@ -194,7 +205,8 @@ def _enumerate_apriori(
     error_mask: npt.NDArray[np.bool_],
     eff_max: int,
     min_support: int,
-) -> tuple[list[CellStat], int, int]:
+    max_candidates: int | None = None,
+) -> tuple[list[CellStat], int, int, bool]:
     """Apriori: only extend cells that are themselves frequent.
 
     A candidate ``k``-cell is generated only when all of its
@@ -207,24 +219,39 @@ def _enumerate_apriori(
 
     all_frequent: list[CellStat] = []
     n_evaluated = 0
+    truncated = False
 
     # Level 1.
     prev_level: list[tuple[Condition, ...]] = []
     for col_masks in by_col.values():
         for cond, m in col_masks:
+            if max_candidates is not None and n_evaluated >= max_candidates:
+                truncated = True
+                break
             n_evaluated += 1
             stat = _stat((cond,), m, error_mask)
             if stat.size >= min_support:
                 all_frequent.append(stat)
                 prev_level.append((cond,))
+        if truncated:
+            break
 
     frequent_set = set(prev_level)
 
     # Levels 2..eff_max via candidate generation from frequent (k-1)-cells.
     for _k in range(2, eff_max + 1):
-        candidates = _generate_candidates(prev_level, frequent_set)
+        if truncated:
+            break
+        if max_candidates is not None and n_evaluated >= max_candidates:
+            truncated = True
+            break
+        remaining = None if max_candidates is None else max_candidates - n_evaluated
+        candidates = _generate_candidates(prev_level, frequent_set, limit=remaining)
         next_level: list[tuple[Condition, ...]] = []
         for conditions in candidates:
+            if max_candidates is not None and n_evaluated >= max_candidates:
+                truncated = True
+                break
             n_evaluated += 1
             mask = mask_of[conditions[0]].copy()
             for cond in conditions[1:]:
@@ -240,12 +267,14 @@ def _enumerate_apriori(
 
     total = _total_candidates(card_by_col, eff_max)
     n_pruned = total - n_evaluated
-    return all_frequent, n_evaluated, n_pruned
+    return all_frequent, n_evaluated, n_pruned, truncated
 
 
 def _generate_candidates(
     prev_level: list[tuple[Condition, ...]],
     frequent_set: set[tuple[Condition, ...]],
+    *,
+    limit: int | None = None,
 ) -> list[tuple[Condition, ...]]:
     """Join frequent ``(k-1)``-cells into ``k``-cell candidates.
 
@@ -253,12 +282,20 @@ def _generate_candidates(
     conditions and differ in the last (canonical-order join). A
     candidate survives only if every one of its ``(k-1)``-subsets is
     frequent (Apriori pruning).
+
+    ``limit`` caps the number of candidates produced, stopping the
+    ``O(N^2)`` join early so a huge frequent set cannot explode memory /
+    time (H-0016). ``None`` means unbounded.
     """
     candidates: list[tuple[Condition, ...]] = []
     seen: set[tuple[Condition, ...]] = set()
     n = len(prev_level)
     for i in range(n):
+        if limit is not None and len(candidates) >= limit:
+            break
         for j in range(i + 1, n):
+            if limit is not None and len(candidates) >= limit:
+                break
             a, b = prev_level[i], prev_level[j]
             if a[:-1] != b[:-1]:
                 continue

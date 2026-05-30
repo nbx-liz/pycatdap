@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-05-30
+
+### Added
+
+- `pycatdap.error.discover_error_slices` に `max_candidates` パラメータ
+  (デフォルト 200,000) と `SliceDiscoveryResult.truncated` フィールドを追加。
+  support 枝刈りはセルの**サイズ**を制限するが**個数**は制限しないため、大規模・
+  高カーディナリティデータで候補が組合せ爆発しメモリ/時間を使い尽くす恐れがあった
+  (2026-05-30 の OOM インシデント)。上限到達時は探索を打ち切り `truncated=True` を
+  立てて警告する (サイレント打ち切りなし)。閾値未満では結果は従来と完全一致
+  (HISTORY H-0016)。
+
+### Fixed
+
+- `discover_error_slices`: `category` dtype で渡された**数値列**(例
+  `read_csv(dtype="category")`)が連続値として AIC binning されず、生の
+  高カーディナリティカテゴリ扱いになって候補が組合せ爆発する不具合を修正
+  (H-0016 follow-up、2026-05-30 OOM の根本トリガー)。`_is_continuous` が
+  数値カテゴリの `category` dtype を連続値として検出するようになった。文字列
+  カテゴリは従来どおりカテゴリ変数のまま。
+
+### CI
+
+- `actions/upload-pages-artifact` を v3→v5、`actions/deploy-pages` を v4→v5 に
+  更新 (Dependabot #136 / #137 を develop へ統合)。
+
 ## [0.12.0] — 2026-05-30
 
 このリリースは **H-0015 Phase M** に対応し、v0.12.0 の LizyStudio 統合
