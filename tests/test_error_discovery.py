@@ -244,6 +244,57 @@ def test_to_divexplorer_and_dict_roundtrip() -> None:
 
 
 # ---------------------------------------------------------------------------
+# H-0016: candidate cap (memory/time guard)
+# ---------------------------------------------------------------------------
+
+
+def test_max_candidates_truncates_and_warns() -> None:
+    """A small max_candidates stops the search early, flags truncated, and
+    warns (no silent cap). Memory-safe: small data, the cap prevents blow-up."""
+    rng = np.random.default_rng(0)
+    n = 400
+    df = pd.DataFrame(
+        {f"c{i}": rng.integers(0, 4, size=n).astype(str) for i in range(6)}
+    )
+    yt = rng.integers(0, 2, size=n)
+    yp = np.where(rng.random(n) < 0.3, 1 - yt, yt)
+    with pytest.warns(UserWarning, match="max_candidates"):
+        result = discover_error_slices(
+            df, yt, yp, max_vars=3, min_support=5, max_candidates=10
+        )
+    assert result.truncated is True
+    assert result.n_evaluated <= 10
+    # The slices returned are still sound (real, support-respecting).
+    assert all(s.size >= 5 for s in result.slices)
+
+
+def test_max_candidates_large_is_identical_to_uncapped() -> None:
+    """INV-C1: under a cap that is never hit, results are byte-identical to
+    the uncapped search and truncated is False."""
+    rng = np.random.default_rng(1)
+    n = 300
+    df = pd.DataFrame(
+        {
+            "a": rng.integers(0, 3, size=n).astype(str),
+            "b": rng.integers(0, 3, size=n).astype(str),
+        }
+    )
+    yt = rng.integers(0, 2, size=n)
+    yp = np.where(rng.random(n) < 0.25, 1 - yt, yt)
+    capped = discover_error_slices(
+        df, yt, yp, max_vars=2, min_support=10, max_candidates=10_000
+    )
+    uncapped = discover_error_slices(
+        df, yt, yp, max_vars=2, min_support=10, max_candidates=200_000
+    )
+    assert capped.truncated is False
+    assert capped.n_evaluated == uncapped.n_evaluated
+    assert [s.description for s in capped.slices] == [
+        s.description for s in uncapped.slices
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Acceptance: Adult Income (slow + sklearn-gated)
 # ---------------------------------------------------------------------------
 
