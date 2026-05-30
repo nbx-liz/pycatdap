@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.1] — 2026-05-30
+
 ### Added
 
 - `pycatdap.error.discover_error_slices` に `max_candidates` パラメータ
