@@ -745,7 +745,8 @@ pycatdap.error.discover_error_slices(
     min_support=30,                                 # support(Apriori)枝刈り床。ΔAIC ではない
     columns=None,
     n_bins=4,                                       # 回帰のみ: |residual| AIC pooling の初期ビン数
-) -> SliceDiscoveryResult
+    max_candidates=200_000,                         # 候補数上限ガード。超過で truncated=True + 警告（H-0016）
+) -> SliceDiscoveryResult                           # .truncated: 上限到達で打ち切ったか（健全な subset）
 # 分類: error_label。回帰（H-0015 v0.12.0、設計 D1）: |y_true-y_pred| を abs_residual_pool で
 # AIC binning し、最大平均 |residual| ビンを binary "high_residual" 誤差カテゴリに（2 カテゴリ機構を共有）
 pycatdap.error.compare_cohorts(df_a, df_b, *, response=None) -> CohortComparison

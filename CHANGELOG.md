@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `pycatdap.error.discover_error_slices` に `max_candidates` パラメータ
+  (デフォルト 200,000) と `SliceDiscoveryResult.truncated` フィールドを追加。
+  support 枝刈りはセルの**サイズ**を制限するが**個数**は制限しないため、大規模・
+  高カーディナリティデータで候補が組合せ爆発しメモリ/時間を使い尽くす恐れがあった
+  (2026-05-30 の OOM インシデント)。上限到達時は探索を打ち切り `truncated=True` を
+  立てて警告する (サイレント打ち切りなし)。閾値未満では結果は従来と完全一致
+  (HISTORY H-0016)。
+
 ## [0.12.0] — 2026-05-30
 
 このリリースは **H-0015 Phase M** に対応し、v0.12.0 の LizyStudio 統合
