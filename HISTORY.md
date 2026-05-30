@@ -3503,3 +3503,91 @@ LizyStudio (FastAPI + react-plotly.js) が依存できる **バージョン付�
 - OvR 先例: `calibration.py:577-695` (`multiclass_calibration_table`)
 - backend dispatch: `error/_backend.py`
 - to_plotly_json 契約 (現状実装): `catdap1.py:49`, `catdap2.py:59`, `profile.py:265`, `error/_result.py:289`, ほか
+
+## 2026-05-30: discover_error_slices 候補数キャップ（メモリ/時間ガード）
+
+- ID: `H-0016`
+- Status: `proposed`
+- Scope: `API | data-contract | types`
+- Related: `H-0014 §C`(support 枝刈り設計), incident 2026-05-30 (WSL OOM), Issue #20 / #29
+
+### Context
+
+2026-05-30 に、孤児化した `discover_error_slices(max_vars=3)` が Adult Income (32k×14、高カーディナリティ) で ~64GB を確保し WSL を OOM クラッシュさせた。根本原因: **support 枝刈り (`min_support`) は各セルの「サイズ」を下限保証するが、frequent cell の「個数」を一切制限しない**。個別に頻出する値が多い場合 (例: category dtype で binning をすり抜けた中カーディナリティ数値列 `age`〜73 値・`hours`〜94 値など、各値が >min_support)、frequent 2-cell が大量に残り、`_generate_candidates` の O(N²) join と level-3 評価が時間・メモリともに爆発する。暫定対策として Adult テストは `max_vars=2`+列限定で有界化済 (PR-M5) だが、**ライブラリ本体に普遍的なガードが無い**。
+
+### Proposal
+
+#### A. 公開 API
+
+```python
+pycatdap.error.discover_error_slices(
+    df, y_true, y_pred,
+    *, max_vars=3, measure="aic", top_k=10, min_support=30, columns=None, n_bins=4,
+    max_candidates: int = 200_000,   # 新規: 評価する候補セル数の上限
+) -> SliceDiscoveryResult
+```
+
+`SliceDiscoveryResult` に **`truncated: bool = False`** フィールドを追加。上限到達で探索を打ち切った場合 `True`。
+
+#### B. アルゴリズム (`_enumerate.py`)
+
+- `enumerate_cells(..., max_candidates: int)` を追加。`_enumerate_apriori` で `n_evaluated` が `max_candidates` に達したら、それ以降の候補生成・評価を停止し `truncated=True` を返す。
+- `_generate_candidates(prev_level, frequent_set, *, limit)` に上限を渡し、候補リストが `limit` に達した時点で O(N²) join を early-break (生成段階での爆発も抑止)。
+- 返り値を `(cells, n_evaluated, n_pruned, truncated)` の 4-tuple に拡張 (内部 API)。
+- **exhaustive パス (`prune=False`) は無制限** — 正当性オラクル (等価テスト) を壊さないため。
+
+#### C. 非サイレント (rule: no silent caps)
+
+`discover_error_slices` は `truncated=True` のとき `warnings.warn(...)` で打ち切りを明示通知し、`SliceDiscoveryResult.truncated` で機械可読に公開。`to_dict()` にも含める。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/error/_enumerate.py` | `max_candidates` + `truncated`、`_generate_candidates` の `limit` early-break |
+| `src/pycatdap/error/discovery.py` | `max_candidates` パラメータ、`truncated` 受領 + `warnings.warn` |
+| `src/pycatdap/error/_slice.py` | `SliceDiscoveryResult.truncated: bool`、`to_dict` 反映 |
+| `BLUEPRINT.md §5.8` / `CHANGELOG` | API 追記 |
+
+### Compatibility
+
+**破壊的変更なし**。`max_candidates` はデフォルト付き追加パラメータ、`truncated` はデフォルト `False` の追加フィールド。デフォルト `200_000` は通常の探索 (Adult `max_vars=2` 等) では到達しないため、既存挙動は不変。
+
+### Alternatives Considered
+
+- **A1: `_is_continuous` を category-dtype 数値列対応に修正** — Adult の特定トリガー (binning すり抜け) は解消するが、一般の組合せ爆発は防げない。候補キャップが普遍的ガード。**併用可 (別 follow-up)**。
+- **A2: 上限超過で例外 raise** — 却下。診断ツールは「打ち切った部分結果 + 警告」を返す方が有用 (sound な subset)。
+- **A3: ΔAIC で枝刈り** — 却下済 (H-0014 §C、健全な上界なし)。
+
+### Invariants
+
+- **INV-C1**: `max_candidates` 未到達時、結果は無制限時と完全一致 (キャップは閾値未満で no-op)。
+- **INV-C2**: 打ち切り時も返る slice はすべて sound (実在の frequent cell、support 正確)。完全性のみ失われ、`truncated=True` で明示。
+- **INV-C3**: exhaustive パスは無制限 → 既存の `pruned == exhaustive ∩ {size≥min_support}` 等価テストは小データで不変。
+- **INV-C4**: 分類・回帰いずれの経路でもキャップは label 非依存に作用 (enumerate は response 非依存)。
+
+### Acceptance Criteria
+
+- [ ] 高カーディナリティ合成データ + 小さい `max_candidates` → `truncated=True` かつ `warnings.warn` 発火、`n_evaluated <= max_candidates`。
+- [ ] 大きい `max_candidates` (デフォルト) → `truncated=False`、結果が無制限時と一致 (INV-C1)。
+- [ ] 打ち切り結果の全 slice が `size >= min_support` (INV-C2)。
+- [ ] 既存 `test_error_enumerate.py` 等価テスト・全 discovery テストが pass (回帰なし)。
+- [ ] メモリ安全に検証 (小規模合成データ・`max_vars<=2`、Adult は走らせない)。
+- [ ] ruff / mypy strict clean、non-slow suite green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: incident 2026-05-30 (memory `incident_discover_slices_oom`) の恒久対策。実装は memory-safe TDD で行う (キャップ検証は小規模合成データのみ)。
+
+### Migration
+
+なし (純粋な追加、デフォルトで既存挙動不変)。
+
+### Related References
+
+- incident: memory `incident_discover_slices_oom`(OOM の機序・kern.log 証跡)
+- 枝刈り設計: H-0014 §C、`src/pycatdap/error/_enumerate.py`
+- 暫定対策: PR-M5 `fix(test): bound Adult Income slow test for memory safety`
+- 性能ベンチ (関連): Issue #29
