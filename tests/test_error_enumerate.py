@@ -49,10 +49,10 @@ def test_pruned_equals_exhaustive_above_support(
     df, error_mask = _frame(seed)
     cols = ["a", "b", "c"]
 
-    exhaustive, _, n_pruned_exh = enumerate_cells(
+    exhaustive, _, n_pruned_exh, _ = enumerate_cells(
         df, cols, error_mask, max_vars=max_vars, min_support=min_support, prune=False
     )
-    pruned, _, _ = enumerate_cells(
+    pruned, _, _, _ = enumerate_cells(
         df, cols, error_mask, max_vars=max_vars, min_support=min_support, prune=True
     )
 
@@ -62,7 +62,7 @@ def test_pruned_equals_exhaustive_above_support(
 
 def test_pruned_cells_all_meet_support() -> None:
     df, error_mask = _frame(3)
-    pruned, _, _ = enumerate_cells(
+    pruned, _, _, _ = enumerate_cells(
         df, ["a", "b", "c"], error_mask, max_vars=3, min_support=25, prune=True
     )
     assert all(c.size >= 25 for c in pruned)
@@ -71,7 +71,7 @@ def test_pruned_cells_all_meet_support() -> None:
 def test_support_and_error_counts_correct() -> None:
     df = pd.DataFrame({"a": ["x", "x", "y", "x"], "b": ["p", "p", "p", "q"]})
     error_mask = np.array([True, False, True, False])
-    cells, _, _ = enumerate_cells(
+    cells, _, _, _ = enumerate_cells(
         df, ["a", "b"], error_mask, max_vars=2, min_support=1, prune=False
     )
     by_key = {c.conditions: c for c in cells}
@@ -87,7 +87,7 @@ def test_support_and_error_counts_correct() -> None:
 
 def test_conditions_are_canonically_sorted() -> None:
     df, error_mask = _frame(1, n=60)
-    cells, _, _ = enumerate_cells(
+    cells, _, _, _ = enumerate_cells(
         df, ["c", "a", "b"], error_mask, max_vars=3, min_support=1, prune=False
     )
     for c in cells:
@@ -97,7 +97,7 @@ def test_conditions_are_canonically_sorted() -> None:
 def test_pruning_reduces_search_space() -> None:
     """With a real support floor, the pruned run skips a large fraction."""
     df, error_mask = _frame(5, n=400)
-    _, n_eval, n_pruned = enumerate_cells(
+    _, n_eval, n_pruned, _ = enumerate_cells(
         df, ["a", "b", "c"], error_mask, max_vars=3, min_support=50, prune=True
     )
     total = n_eval + n_pruned
@@ -116,7 +116,7 @@ def test_total_candidates_formula() -> None:
 def test_max_vars_capped_to_columns() -> None:
     df, error_mask = _frame(2, n=50)
     # max_vars larger than #columns must not error
-    cells, _, _ = enumerate_cells(
+    cells, _, _, _ = enumerate_cells(
         df, ["a", "b"], error_mask, max_vars=9, min_support=1, prune=True
     )
     assert all(len(c.conditions) <= 2 for c in cells)
