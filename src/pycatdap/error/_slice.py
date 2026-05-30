@@ -134,6 +134,10 @@ class SliceDiscoveryResult:
     label_kind : str
         Which Phase G labeller produced the synthetic response
         (``"error_label"`` etc.).
+    truncated : bool
+        ``True`` if the search hit ``max_candidates`` and stopped early.
+        The returned slices are still a sound subset (real frequent cells
+        with correct support), just not exhaustive (H-0016).
     """
 
     slices: tuple[ErrorSlice, ...]
@@ -143,6 +147,7 @@ class SliceDiscoveryResult:
     n_evaluated: int
     n_pruned: int
     label_kind: str = field(default="error_label")
+    truncated: bool = field(default=False)
 
     # ------------------------------------------------------------------
     # to_divexplorer_format()
@@ -219,6 +224,7 @@ class SliceDiscoveryResult:
             "n_evaluated": int(self.n_evaluated),
             "n_pruned": int(self.n_pruned),
             "label_kind": self.label_kind,
+            "truncated": bool(self.truncated),
             "slices": [
                 {
                     "conditions": [list(c) for c in s.conditions],

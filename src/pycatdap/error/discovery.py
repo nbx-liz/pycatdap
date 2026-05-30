@@ -29,6 +29,7 @@ registry measures are taken as-is (higher = better, documented).
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -236,6 +237,7 @@ def discover_error_slices(
     min_support: int | float = 30,
     columns: list[str] | None = None,
     n_bins: int = 4,
+    max_candidates: int = 200_000,
 ) -> SliceDiscoveryResult:
     """Discover multivariable subgroups where prediction errors concentrate.
 
@@ -276,6 +278,12 @@ def discover_error_slices(
     n_bins : int, default 4
         Regression only: initial bin count for AIC-pooling ``|residual|``
         into the high/low-residual response. Ignored for classification.
+    max_candidates : int, default 200_000
+        Upper bound on candidate cells evaluated, guarding against memory /
+        time blow-up on large high-cardinality data (support pruning bounds
+        cell size, not count; H-0016). On overflow the search stops early,
+        ``SliceDiscoveryResult.truncated`` becomes ``True``, and a warning is
+        emitted. Not reached by typical searches.
 
     Returns
     -------
@@ -318,14 +326,22 @@ def discover_error_slices(
     # base AIC of the null model (error label with no explanatory variable).
     base_aic = _null_aic(error_mask, n_rows)
 
-    cells, n_evaluated, n_pruned = enumerate_cells(
+    cells, n_evaluated, n_pruned, truncated = enumerate_cells(
         prepared,
         cols,
         error_mask,
         max_vars=max_vars,
         min_support=support_floor,
         prune=True,
+        max_candidates=max_candidates,
     )
+    if truncated:
+        warnings.warn(
+            f"discover_error_slices: search hit max_candidates={max_candidates} "
+            "and stopped early; results are a sound subset, not exhaustive. "
+            "Raise max_candidates, lower max_vars, or pass a narrower `columns`.",
+            stacklevel=2,
+        )
 
     prepared_with_error = prepared.copy()
     prepared_with_error[_RESPONSE_COL] = labels.to_numpy()
@@ -370,6 +386,7 @@ def discover_error_slices(
         n_evaluated=n_evaluated,
         n_pruned=n_pruned,
         label_kind=label_kind,
+        truncated=truncated,
     )
 
 
