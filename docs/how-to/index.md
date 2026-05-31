@@ -3,7 +3,8 @@
 Task-oriented guides that solve specific problems.
 
 !!! note "Coming soon"
-    How-to guides are added as Phases land. Track [Issue #27](https://github.com/nbx-liz/pycatdap/issues/27) for progress.
+    Task-oriented how-to guides are being written. In the meantime, the
+    [Tutorials](../tutorials/index.md) cover the full feature set end to end.
 
 ## Planned topics
 

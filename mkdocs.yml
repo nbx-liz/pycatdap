@@ -59,14 +59,14 @@ nav:
       - Multivariate HelloGoodbye: tutorials/04-hellogoodbye-multivariate.ipynb
       - Real-world EDA on seaborn Titanic: tutorials/05-real-world-eda.ipynb
       - Target-pair analysis: tutorials/06-target-pair-titanic.ipynb
-      - Bivariate Phase B APIs: tutorials/07-bivariate-phase-b.ipynb
+      - Bivariate association analysis: tutorials/07-bivariate-association.ipynb
       - One-call profile() report: tutorials/08-profile-titanic.ipynb
-      - Phase D APIs (target_analysis / quality_report / measures / suite): tutorials/09-phase-d-target-analysis-and-suite.ipynb
-      - Phase G error labelling: tutorials/10-phase-g-error-labeling.ipynb
-      - Phase H error_analysis() one-call: tutorials/11-phase-h-error-analysis.ipynb
-      - Phase I+J error visualisation: tutorials/12-phase-i-j-error-visualization.ipynb
-      - Phase K calibration: tutorials/13-phase-k-calibration.ipynb
-      - Phase L slice discovery & drift: tutorials/14-phase-l-slice-discovery.ipynb
+      - Target analysis & quality suite: tutorials/09-target-analysis-and-quality-suite.ipynb
+      - ML error labelling: tutorials/10-ml-error-labeling.ipynb
+      - One-call ML error analysis: tutorials/11-ml-error-analysis-one-call.ipynb
+      - ML error visualisation: tutorials/12-ml-error-visualization.ipynb
+      - ML calibration: tutorials/13-ml-calibration.ipynb
+      - ML slice discovery & drift: tutorials/14-ml-slice-discovery-and-drift.ipynb
   - How-to Guides:
       - how-to/index.md
   - API Reference:
