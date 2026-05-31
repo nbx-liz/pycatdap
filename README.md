@@ -102,9 +102,9 @@ m = pycatdap.association_matrix(df, measure="cramers_v")
 pycatdap.measures.register("my_measure", my_fn)  # pluggable per pysubgroup convention
 ```
 
-See [`docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb`](docs/tutorials/09-phase-d-target-analysis-and-suite.ipynb).
+See [`docs/tutorials/09-target-analysis-and-quality-suite.ipynb`](docs/tutorials/09-target-analysis-and-quality-suite.ipynb).
 
-### ML error analysis — Phase G (v0.7.0)
+### ML error labelling (v0.7.0)
 
 ```python
 from pycatdap.datasets import load_german_credit
@@ -119,14 +119,14 @@ labels = pycatdap.error.error_label(y_true, y_pred)
 # Or get fine-grained TP / FP / FN / TN (binary classification only)
 conf = pycatdap.error.confusion_label(y_true, y_pred, positive="bad")
 
-# Feed the error label back into Phase D to discover which columns
+# Feed the error label back into target_analysis to discover which columns
 # explain the errors — foundation for v0.8.0 `error_analysis()`
 ta = pycatdap.target_analysis(df.assign(was_correct=labels), response="was_correct")
 ```
 
-See [`docs/tutorials/10-phase-g-error-labeling.ipynb`](docs/tutorials/10-phase-g-error-labeling.ipynb).
+See [`docs/tutorials/10-ml-error-labeling.ipynb`](docs/tutorials/10-ml-error-labeling.ipynb).
 
-### ML error analysis — Phase H one-call (v0.8.0)
+### One-call ML error analysis (v0.8.0)
 
 ```python
 # task auto-detected from y_true / y_pred dtypes
@@ -149,9 +149,9 @@ df = pycatdap.datasets.fetch_adult_income()         # fairness demo
 df = pycatdap.datasets.fetch_compas()               # fairness demo
 ```
 
-See [`docs/tutorials/11-phase-h-error-analysis.ipynb`](docs/tutorials/11-phase-h-error-analysis.ipynb).
+See [`docs/tutorials/11-ml-error-analysis-one-call.ipynb`](docs/tutorials/11-ml-error-analysis-one-call.ipynb).
 
-### ML error visualisation — Phase I+J (v0.9.0)
+### ML error visualisation (v0.9.0)
 
 ```python
 r = pycatdap.error_analysis(df, y_true, y_pred)
@@ -171,9 +171,9 @@ pycatdap.error.residual_by_category(df, y_true, y_pred, "feature")
 pycatdap.error.residual_pool_plot(y_true, y_pred, n_bins=4)
 ```
 
-See [`docs/tutorials/12-phase-i-j-error-visualization.ipynb`](docs/tutorials/12-phase-i-j-error-visualization.ipynb).
+See [`docs/tutorials/12-ml-error-visualization.ipynb`](docs/tutorials/12-ml-error-visualization.ipynb).
 
-### ML calibration — Phase K (v0.10.0)
+### ML calibration (v0.10.0)
 
 ```python
 r = pycatdap.error_analysis(df, y_true, y_pred, y_proba=proba)  # binary classification
@@ -186,9 +186,9 @@ pycatdap.error.expected_calibration_error(y_true, proba)   # ECE
 pycatdap.error.maximum_calibration_error(y_true, proba)    # MCE
 ```
 
-`strategy="aic"` bins the probability axis where the observed positive-rate shifts — sharper than equal-width / quantile bins on skewed predictions. See [`docs/tutorials/13-phase-k-calibration.ipynb`](docs/tutorials/13-phase-k-calibration.ipynb).
+`strategy="aic"` bins the probability axis where the observed positive-rate shifts — sharper than equal-width / quantile bins on skewed predictions. See [`docs/tutorials/13-ml-calibration.ipynb`](docs/tutorials/13-ml-calibration.ipynb).
 
-### ML slice discovery, cohort comparison & drift — Phase L (v0.11.0)
+### ML slice discovery, cohort comparison & drift (v0.11.0)
 
 ```python
 # Auto-discover the multivariable cohorts where the model fails most
@@ -205,12 +205,12 @@ pycatdap.error.compare_cohorts(df_a, df_b).to_html("comparison.html")
 # Detect train→prod drift, ranked by ΔAIC magnitude
 pycatdap.error.detect_drift(df_train, df_prod, y_true=y, y_pred=yhat)
 
-# Calibration beyond binary (deferred from Phase K)
+# Calibration beyond binary classification
 pycatdap.error.regression_calibration_table(y_true, y_pred)          # regression
 pycatdap.error.multiclass_calibration_table(y_true, y_proba)         # one-vs-rest
 ```
 
-Slice discovery prunes the search space on **support** (Apriori, anti-monotone) rather than ΔAIC — sound, and >50% reduction on wide datasets. The interestingness measure is pluggable (`"aic"`, `"cramers_v"`, `"mutual_info"`, or any registered callable). See [`docs/tutorials/14-phase-l-slice-discovery.ipynb`](docs/tutorials/14-phase-l-slice-discovery.ipynb).
+Slice discovery prunes the search space on **support** (Apriori, anti-monotone) rather than ΔAIC — sound, and >50% reduction on wide datasets. The interestingness measure is pluggable (`"aic"`, `"cramers_v"`, `"mutual_info"`, or any registered callable). See [`docs/tutorials/14-ml-slice-discovery-and-drift.ipynb`](docs/tutorials/14-ml-slice-discovery-and-drift.ipynb).
 
 ## Status & Roadmap
 
@@ -218,11 +218,11 @@ Slice discovery prunes the search space on **support** (Apriori, anti-monotone) 
 |---|---|
 | v0.2.0 ✅ | Core CATDAP-01/02 (released) |
 | v0.3.0 — v0.6.0 ✅ | EDA workflow (Plotly backend, profile, target analysis) |
-| v0.7.0 ✅ | Phase G error labelling building blocks |
-| v0.8.0 ✅ | Phase H `error_analysis()` one-call + D4 benchmarks |
-| v0.9.0 ✅ | Phase I+J error visualisation (confusion + residual) |
-| v0.10.0 ✅ | Phase K calibration (AIC-binned reliability diagram + Brier/ECE/MCE) |
-| v0.11.0 ✅ | Phase L slice discovery + cohort comparison + drift + regression/multi-class calibration |
+| v0.7.0 ✅ | error labelling building blocks |
+| v0.8.0 ✅ | one-call `error_analysis()` + benchmark datasets |
+| v0.9.0 ✅ | error visualisation (confusion + residual) |
+| v0.10.0 ✅ | calibration (AIC-binned reliability diagram + Brier/ECE/MCE) |
+| v0.11.0 ✅ | slice discovery + cohort comparison + drift + regression/multi-class calibration |
 | v0.12.0 | LizyStudio integration |
 | v1.0.0 | API stabilization |
 

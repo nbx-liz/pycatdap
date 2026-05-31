@@ -9,12 +9,12 @@ Complete API documentation, automatically generated from docstrings.
 - **[plotting](plotting.md)** — Visualization functions (v0.2 API)
 - **[datasets](datasets.md)** — Sample datasets
 
-## Future modules
+## More modules
 
-As Phases land, additional reference pages will be added:
+The package also ships these modules (reference pages are being expanded):
 
-- `plot.matplotlib` / `plot.plotly` — modern dual-backend visualization (Phase A/B)
-- `profile` — one-call EDA report (Phase C)
-- `suite` — CI-integrable test suites (Phase D)
-- `error` — ML error analysis (Phase G-L)
-- `measures` — pluggable interestingness measures (Phase L)
+- `plot.matplotlib` / `plot.plotly` — dual-backend visualization
+- `profile` — one-call EDA report
+- `target_analysis` / `quality_report` / `suite` — target-driven analysis and CI-integrable checks
+- `measures` — pluggable interestingness measures (AIC / Cramér's V / mutual information)
+- `error` — ML error analysis (labelling, `error_analysis()`, visualisation, calibration, slice discovery, cohort comparison & drift)
