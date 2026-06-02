@@ -79,6 +79,8 @@ nav:
       - explanation/index.md
       - AIC Foundations: explanation/aic-foundations.md
       - Architecture: explanation/architecture.md
+  - Interop:
+      - DivExplorer: interop/divexplorer.md
   - Project:
       - Roadmap: project/roadmap.md
       - Changelog: project/changelog.md
