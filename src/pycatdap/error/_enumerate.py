@@ -1,5 +1,4 @@
-"""Combinatorial slice enumeration with sound support pruning
-(H-0014 Phase L, PR-L3).
+"""Combinatorial slice enumeration with sound support pruning (H-0014 PR-L3).
 
 The discovery engine surfaces multivariable *cells* — conjunctions of
 ``(column, value)`` conditions — where prediction errors concentrate.

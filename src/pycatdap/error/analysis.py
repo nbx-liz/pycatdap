@@ -260,8 +260,7 @@ def _resolve_label_arrays(
     y_true: str | pd.Series | npt.NDArray[Any] | Sequence[Any],
     y_pred: str | pd.Series | npt.NDArray[Any] | Sequence[Any],
 ) -> tuple[npt.NDArray[Any], npt.NDArray[Any]]:
-    """Normalise y_true / y_pred to numpy arrays, dereferencing column
-    names against ``df`` where appropriate."""
+    """Normalise y_true / y_pred to numpy arrays, resolving names via ``df``."""
     y_true_arr = _resolve_one(df, y_true, "y_true")
     y_pred_arr = _resolve_one(df, y_pred, "y_pred")
     return y_true_arr, y_pred_arr
@@ -321,9 +320,9 @@ def _extract_slices(
     label_kind: str,
     top_k: int,
 ) -> tuple[Slice, ...]:
-    """Surface single-variable slices where one error category
-    concentrates with ``|pearson_residual| >= 2.0``.
+    """Surface single-variable slices with ``|pearson_residual| >= 2.0``.
 
+    Each slice is a category where one error type concentrates.
     Strategy per ``label_kind``:
 
     - ``error_label`` → look at the ``"incorrect"`` row only

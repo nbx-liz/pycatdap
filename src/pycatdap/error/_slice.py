@@ -1,5 +1,4 @@
-"""Result containers for multivariable error-slice discovery
-(H-0014 Phase L, PR-L2).
+"""Result containers for multivariable error-slice discovery (H-0014 PR-L2).
 
 Introduces :class:`ErrorSlice` (a multivariable subgroup where an error
 category concentrates) and :class:`SliceDiscoveryResult` (the immutable
@@ -83,7 +82,7 @@ class ErrorSlice:
         measure_value: float,
         n_error_in_slice: int,
     ) -> ErrorSlice:
-        """Convenience factory with keyword-only metrics + numeric coercion.
+        """Build an ErrorSlice with keyword-only metrics + numeric coercion.
 
         ``description`` is always derived from ``conditions`` (see
         ``__post_init__``); callers never supply it.

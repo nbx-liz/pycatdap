@@ -125,14 +125,14 @@ def confusion_aic(
     y_true: npt.NDArray[Any] | pd.Series,
     y_pred: npt.NDArray[Any] | pd.Series,
 ) -> float:
-    """ΔAIC of the predictions against the true labels (H-0012 Phase I).
+    r"""Return ΔAIC of the predictions against the true labels (H-0012 Phase I).
 
     Implements the sign convention of pycatdap's existing
     :func:`pycatdap._aic.compute_delta_aic`:
 
     .. math::
 
-        \\Delta AIC = AIC(y_{true} \\sim y_{pred}) - AIC(y_{true} \\sim \\phi)
+        \Delta AIC = AIC(y_{true} \sim y_{pred}) - AIC(y_{true} \sim \phi)
 
     A **negative** return value indicates that the predictions are
     informative about the true labels (matching the convention used by

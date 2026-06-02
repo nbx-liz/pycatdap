@@ -1,5 +1,4 @@
-"""Natural-language description builders for discovered error slices
-(H-0014 PR-L2).
+"""Natural-language description builders for error slices (H-0014 PR-L2).
 
 Pure, side-effect-free string helpers shared by :mod:`pycatdap.error._slice`
 (the ``ErrorSlice.description`` field) and the discovery engine
