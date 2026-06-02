@@ -41,10 +41,14 @@ make ci    # lint, format-check, typecheck, test を一括実行
 
 | チェック | コマンド | 基準 |
 |---------|---------|------|
-| Lint | `uv run ruff check .` | エラーなし |
+| Lint | `uv run ruff check .` | エラーなし（`D` で public 関数の docstring 欠落も検出） |
 | Format | `uv run ruff format --check .` | 差分なし |
-| Type | `uv run mypy src/pycatdap/` | strict, エラーなし |
+| Type | `uv run mypy src/pycatdap/` | strict, エラーなし（型注釈欠落を検出） |
 | Test | `uv run pytest --cov-fail-under=80` | カバレッジ 80%+ |
+
+`pre-commit install` 済みなら、上記の `ruff`（lint + format）と `mypy --strict`
+は push 前のフックで自動実行される。docstring 規約は NumPy convention
+（`[tool.ruff.lint.pydocstyle]`）に従う。
 
 ### 3. コミット
 

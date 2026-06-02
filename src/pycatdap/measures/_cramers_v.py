@@ -1,10 +1,10 @@
-"""Cramér's V measure for a 2D contingency table (H-0008 PR-D4).
+r"""Cramér's V measure for a 2D contingency table (H-0008 PR-D4).
 
 Pure-numpy implementation — no scipy dependency. The formula is
 
 .. math::
 
-    V = \\sqrt{\\frac{\\chi^2}{n \\cdot \\min(r-1,\\ c-1)}}
+    V = \sqrt{\frac{\chi^2}{n \cdot \min(r-1,\ c-1)}}
 
 where ``chi^2`` is computed from observed vs expected under
 independence. V ranges in ``[0, 1]``: 0 for independence, 1 for

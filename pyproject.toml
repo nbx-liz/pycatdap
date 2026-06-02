@@ -111,7 +111,21 @@ line-length = 88
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY"]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "NPY", "D"]
+# D105: magic-method docstrings are not "public functions" in the sense of
+# CLAUDE.md's gate; requiring them adds noise without value.
+ignore = ["D105"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.per-file-ignores]
+# Docstring rules apply to the package surface only. Tests, the build-generated
+# version file, tutorial notebooks, and internal scripts are exempt.
+"tests/**" = ["D"]
+"src/pycatdap/_version.py" = ["D"]
+"docs/**" = ["D"]
+"scripts/**" = ["D"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -124,7 +138,16 @@ warn_unused_configs = true
 module = [
     "plotly.*",
     "statsmodels.*",
-    "IPython.*",
     "sklearn.*",
 ]
 ignore_missing_imports = true
+
+# IPython is an interactive-only optional dep. When installed locally it resolves
+# to untyped functions (e.g. ``display``) and trips ``no-untyped-call`` under
+# --strict, but in CI it is absent and becomes ``Any``. ``follow_imports = skip``
+# makes mypy treat it as ``Any`` in BOTH environments so the gate is consistent.
+# (Do not use per-call ``# type: ignore``: it is flagged as unused in CI.)
+[[tool.mypy.overrides]]
+module = ["IPython.*"]
+ignore_missing_imports = true
+follow_imports = "skip"

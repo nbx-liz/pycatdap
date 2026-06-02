@@ -141,7 +141,7 @@ def _generic_measure_matrix(
     *,
     bins: int | None,
 ) -> pd.DataFrame:
-    """Generic measure matrix via qcut binning + crosstab.
+    """Compute a measure matrix via qcut binning + crosstab.
 
     Both columns are coerced to categorical via :func:`_binize` so the
     same measure callable works regardless of the input dtypes. The

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- 開発品質ゲートを整備 (#34)。ユーザー向け API への影響はなし。
+  - `mypy --strict` を `IPython.*` の `follow_imports = "skip"` 化により、IPython
+    のインストール有無にかかわらず同一結果 (0 エラー) に統一。
+  - ruff に pydocstyle (`D`, numpy convention) を追加し、public モジュールの
+    docstring 規約を強制。既存の docstring 違反 17 件を修正。
+  - pre-commit に `mypy --strict` のローカルフックを追加。
+  - `make test` / `make ci` を develop CI と同じく slow テスト除外に変更し、
+    ローカルでネットワーク依存の D4 fetcher がハングする問題を解消。フル実行は
+    `make test-all` に分離。
+
 ## [0.12.1] — 2026-05-30
 
 ### Added

@@ -91,10 +91,10 @@ def _prepare_frame(
     columns: list[str],
     response: npt.NDArray[np.object_],
 ) -> pd.DataFrame:
-    """Return a copy of ``df[columns]`` with continuous columns AIC-binned
-    to interval-label strings. Input ``df`` is never mutated.
+    """Return a copy of ``df[columns]`` with continuous columns AIC-binned.
 
-    Continuous columns are binned **against the error-label response** so
+    Continuous columns become interval-label strings; input ``df`` is never
+    mutated. Continuous columns are binned **against the error-label response** so
     AIC places cuts where the error rate shifts — coarse, well-populated,
     diagnostically meaningful bins (the pycatdap value proposition). A
     constant placeholder response would instead leave a fine initial grid

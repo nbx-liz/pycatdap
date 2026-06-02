@@ -1,10 +1,10 @@
-"""Mutual information measure for a 2D contingency table (H-0008 PR-D4).
+r"""Mutual information measure for a 2D contingency table (H-0008 PR-D4).
 
 Pure-numpy implementation in **nats** (natural log). The formula is
 
 .. math::
 
-    I(X; Y) = \\sum_{i, j} p(i, j) \\log \\frac{p(i, j)}{p(i)\\, p(j)}
+    I(X; Y) = \sum_{i, j} p(i, j) \log \frac{p(i, j)}{p(i)\, p(j)}
 
 with the convention ``0 * log(0/0) = 0`` for zero cells, applied via
 masked indexing (no scipy dependency).

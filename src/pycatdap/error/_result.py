@@ -37,8 +37,10 @@ from pycatdap._target_pair import RegressionTargetSummary, TargetSummary
 
 @dataclass(frozen=True)
 class Slice:
-    """A single (variable, category) cell where one error category is
-    disproportionately concentrated.
+    """A (variable, category) cell where one error category concentrates.
+
+    It captures where a single error category is disproportionately
+    concentrated.
 
     Phase H surfaces single-variable slices only; multivariable subgroup
     discovery is the responsibility of Phase L
@@ -454,8 +456,8 @@ class ErrorAnalysisResult:
         """Plot the confusion matrix using the stored ``y_true`` / ``y_pred``.
 
         Works for both binary and multi-class classification (per
-        H-0012 §F-ter: \"the wrapper falls back to ``error_label`` on
-        multi-class, but the heatmap renders any N×N matrix\").
+        H-0012 §F-ter: "the wrapper falls back to ``error_label`` on
+        multi-class, but the heatmap renders any N×N matrix").
 
         Parameters
         ----------
