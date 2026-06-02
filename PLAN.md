@@ -55,7 +55,7 @@ EDA + ML 誤差分析アーク(Phase A→M)は **全て出荷済み**。最新�
 
 | Version | テーマ | 主要 Issue | Change Gate | 状態 |
 |---|---|---|---|---|
-| v0.12.2 | Housekeeping: mypy IPython shim + #32 docs整合 + PLAN/issue 整合 | [#34](https://github.com/nbx-liz/pycatdap/issues/34), [#32](https://github.com/nbx-liz/pycatdap/issues/32)(docs), 本 PLAN | 不要 | 🟡 next |
+| v0.12.2 | Housekeeping: 品質ゲート整備 + DivExplorer interop docs + PLAN/issue 整合 | [#34](https://github.com/nbx-liz/pycatdap/issues/34)✅, [#32](https://github.com/nbx-liz/pycatdap/issues/32)(docs)✅, 本 PLAN | 不要 | 🟢 in progress(develop, 未リリース): #34=PR #145, #32 docs=PR #146 マージ済、PLAN/issue 整合=本 PR |
 | v0.13.0 | Datasets D5 + JNcharacter + interop(pysubgroup / DivExplorer 真スキーマ) | [#25](https://github.com/nbx-liz/pycatdap/issues/25), [#47](https://github.com/nbx-liz/pycatdap/issues/47), [#31](https://github.com/nbx-liz/pycatdap/issues/31), [#32](https://github.com/nbx-liz/pycatdap/issues/32) | 要(各 Proposal 先行) | 🟡 planned |
 | v0.14.0 | R cross-validation 実照合の有効化 + 性能ベンチ | [#10](https://github.com/nbx-liz/pycatdap/issues/10), [#30](https://github.com/nbx-liz/pycatdap/issues/30), [#29](https://github.com/nbx-liz/pycatdap/issues/29) | 一部(#29 dep+CI) | 🟡 planned(R環境依存) |
 | v1.0.0 | API 整理(`plotting.*` → `plot.matplotlib.*` deprecation) | [#33](https://github.com/nbx-liz/pycatdap/issues/33) | 要(公開 API) | 🟡 planned |
@@ -135,14 +135,14 @@ EDA + ML 誤差分析アーク(Phase A→M)は **全て出荷済み**。最新�
 |---|---|---|
 | [#29](https://github.com/nbx-liz/pycatdap/issues/29) | パフォーマンスベンチマーク (pytest-benchmark) | 🟡 未着手(L)。H-0016 OOM の再発防止になるため価値↑。Adult Income ケースは `max_candidates` で要 cap |
 | [#30](https://github.com/nbx-liz/pycatdap/issues/30) | CI ワークフロー更新(slow tests を release CI に昇格) | 🟢 ほぼ完了(S)。CI 配線・Makefile・CONTRIBUTING 済。残=#10 と同じ参照 CSV 同梱 |
-| [#34](https://github.com/nbx-liz/pycatdap/issues/34) | mypy strict + ruff の品質ゲート整備 | 🟢 ほぼ完了(S)。残=IPython `display` 23 no-untyped-call の typed shim のみ |
+| [#34](https://github.com/nbx-liz/pycatdap/issues/34) | mypy strict + ruff の品質ゲート整備 | ✅ DONE(PR #145, 2026-06-02 closed)。IPython `display` の no-untyped-call は `follow_imports="skip"` で環境差を解消(typed shim 不要)、ruff pydocstyle(`D`)導入 + docstring 17 件修正、pre-commit に mypy フック追加、`make ci` の D4 ネットワークハングを `-m "not slow"` で解消(フル実行は `make test-all`) |
 
 ### 3.6 互換性・相互運用
 
 | Issue | テーマ | 監査時の実態(2026-05-31) |
 |---|---|---|
 | [#31](https://github.com/nbx-liz/pycatdap/issues/31) | pysubgroup 互換 (AIC measure 登録) | 🟡 基盤のみ(M)。measures registry 出荷済だが `AICMeasure` クラス・optional dep・cross-test・docs 未着手。外部 dep → Change Gate |
-| [#32](https://github.com/nbx-liz/pycatdap/issues/32) | DivExplorer 出力フォーマットアダプタ | 🟢 コア出荷済 v0.8.0(S)。残=真の DivExplorer スキーマ整合(option a/b 判断)+ docs + cross-test。本文 checklist 要更新 |
+| [#32](https://github.com/nbx-liz/pycatdap/issues/32) | DivExplorer 出力フォーマットアダプタ | 🟢 コア出荷済 v0.8.0 + interop docs 出荷済(PR #146 `docs/interop/divexplorer.md`: 両世代スキーマをソース照合 + AIC↔divergence 対応 + 検証済み adapter)。残=`to_divexplorer_format()` 自体の真スキーマ列互換(データ契約 → Change Gate)+ cross-test(optional `divexplorer` dep)→ v0.13.0 |
 
 ### 3.7 LizyStudio 統合
 
@@ -337,3 +337,18 @@ Phase A→M が出荷済みのため、旧来の Phase 間直列依存は解消�
   - #21 本体側 / #32 コアメソッドは既に出荷済み。残作業は downstream / スキーマ
     整合 + docs のみ。
   - ゼロ着手が必要な真の未着手は #25 / #29 / #31 具体物 / #47 の 4 件。
+- **2026-06-02**: v0.12.2 housekeeping トラックを実施(develop、未リリース)。
+  - **#34 CLOSED**(PR #145): 品質ゲート整備。mypy を `IPython.*` の
+    `follow_imports="skip"` で環境非依存化(typed shim 不要)、ruff pydocstyle(`D`)
+    導入 + docstring 17 件修正、pre-commit に mypy フック追加、`make test`/`make ci`
+    を `-m "not slow"` に変更し D4 ネットワークテストのローカルハングを解消
+    (フル実行は新設 `make test-all`)。
+  - **#32 scope A**(PR #146, issue は OPEN 継続): DivExplorer interop ガイド
+    `docs/interop/divexplorer.md` を追加。両世代(0.1.x/0.2.x)の出力スキーマを
+    upstream ソースと照合し、AIC↔divergence 対応と検証済み adapter を記載。真スキーマ
+    列互換 + cross-test は v0.13.0(Change Gate)に残す。
+  - **PLAN/issue 整合**(本更新): §2 マイルストーン・§3.5(#34)・§3.6(#32)を上記
+    成果に合わせて更新。公開 Roadmap ページ `docs/project/roadmap.md` が v0.3.0〜
+    v0.12.0 を依然「planned」と誤記していた(PLAN は #143 で修正済みだが公開ページ
+    未修正)ため実態へ更新。issue 側の状態コメント(#10/#21/#30 の audit コメント、
+    #32 進捗、#34 close)は既に反映済み。

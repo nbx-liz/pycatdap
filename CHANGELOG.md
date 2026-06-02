@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   ソース照合) の対応表、AIC↔divergence のセマンティクス対応、DivExplorer 0.2.x 形式
   へ整形する adapter レシピを記載。実スキーマ完全互換 (データ契約変更) は v0.13.0
   (#32) で対応予定。
+- 公開 Roadmap ページ `docs/project/roadmap.md` を実態へ更新。v0.3.0〜v0.12.0 を
+  依然「planned」と誤記していたのを released に修正し、v0.12.2 housekeeping /
+  v0.13.0 / v0.14.0 / v1.0.0 の計画を反映 (PLAN.md と整合)。
 
 ## [0.12.1] — 2026-05-30
 
