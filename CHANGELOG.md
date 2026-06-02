@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     ローカルでネットワーク依存の D4 fetcher がハングする問題を解消。フル実行は
     `make test-all` に分離。
 
+### Documentation
+
+- DivExplorer 相互運用ガイド `docs/interop/divexplorer.md` を追加 (#32)。pycatdap の
+  `to_divexplorer_format()` 出力と DivExplorer の実スキーマ (0.1.x / 0.2.x 両世代を
+  ソース照合) の対応表、AIC↔divergence のセマンティクス対応、DivExplorer 0.2.x 形式
+  へ整形する adapter レシピを記載。実スキーマ完全互換 (データ契約変更) は v0.13.0
+  (#32) で対応予定。
+
 ## [0.12.1] — 2026-05-30
 
 ### Added
