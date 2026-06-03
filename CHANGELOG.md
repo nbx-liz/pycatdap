@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.2] — 2026-06-03
+
 ### Changed
 
 - 開発品質ゲートを整備 (#34)。ユーザー向け API への影響はなし。
@@ -29,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - 公開 Roadmap ページ `docs/project/roadmap.md` を実態へ更新。v0.3.0〜v0.12.0 を
   依然「planned」と誤記していたのを released に修正し、v0.12.2 housekeeping /
   v0.13.0 / v0.14.0 / v1.0.0 の計画を反映 (PLAN.md と整合)。
+- チュートリアル名から内部フェーズ呼称を除去し公開名に統一 (#144)。PLAN.md を
+  v0.12.1 出荷実態へ整合 (#143)。
 
 ## [0.12.1] — 2026-05-30
 
