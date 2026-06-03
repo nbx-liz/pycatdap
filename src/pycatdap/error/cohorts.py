@@ -54,8 +54,11 @@ def _prepare_stacked(
     df_b: pd.DataFrame,
     columns: list[str],
 ) -> pd.DataFrame:
-    """Stack the two cohorts with a membership column; AIC-bin continuous
-    columns against membership so both cohorts share identical bins."""
+    """Stack both cohorts with a membership column and AIC-bin continuous columns.
+
+    Continuous columns are binned against membership so both cohorts
+    share identical bins.
+    """
     a = df_a[columns].reset_index(drop=True)
     b = df_b[columns].reset_index(drop=True)
     cohort = np.array([_A] * len(a) + [_B] * len(b), dtype=object)
@@ -87,9 +90,9 @@ def _cohort_aic_table(prepared: pd.DataFrame, columns: list[str]) -> pd.DataFram
 
 
 def _interval_sort_key(value: object) -> tuple[int, float, str]:
-    """Sort categories numerically when they are interval/bound labels
-    (``"< 10"`` / ``"[10, 20]"`` / ``">= 20"``), else lexicographically.
+    """Sort categories numerically for interval labels, else lexicographically.
 
+    Interval/bound labels look like ``"< 10"`` / ``"[10, 20]"`` / ``">= 20"``.
     Returns ``(group, leading_number, text)`` so plain categoricals sort
     by text and binned labels sort by their first numeric edge.
     """

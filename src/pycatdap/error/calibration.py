@@ -315,7 +315,7 @@ def expected_calibration_error(
     strategy: Strategy = "aic",
     n_bins: int = 10,
 ) -> float:
-    r"""Expected Calibration Error (H-0013 Phase K).
+    r"""Compute the Expected Calibration Error (H-0013 Phase K).
 
     .. math::
 

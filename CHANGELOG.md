@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.2] — 2026-06-03
+
+### Changed
+
+- 開発品質ゲートを整備 (#34)。ユーザー向け API への影響はなし。
+  - `mypy --strict` を `IPython.*` の `follow_imports = "skip"` 化により、IPython
+    のインストール有無にかかわらず同一結果 (0 エラー) に統一。
+  - ruff に pydocstyle (`D`, numpy convention) を追加し、public モジュールの
+    docstring 規約を強制。既存の docstring 違反 17 件を修正。
+  - pre-commit に `mypy --strict` のローカルフックを追加。
+  - `make test` / `make ci` を develop CI と同じく slow テスト除外に変更し、
+    ローカルでネットワーク依存の D4 fetcher がハングする問題を解消。フル実行は
+    `make test-all` に分離。
+
+### Documentation
+
+- DivExplorer 相互運用ガイド `docs/interop/divexplorer.md` を追加 (#32)。pycatdap の
+  `to_divexplorer_format()` 出力と DivExplorer の実スキーマ (0.1.x / 0.2.x 両世代を
+  ソース照合) の対応表、AIC↔divergence のセマンティクス対応、DivExplorer 0.2.x 形式
+  へ整形する adapter レシピを記載。実スキーマ完全互換 (データ契約変更) は v0.13.0
+  (#32) で対応予定。
+- 公開 Roadmap ページ `docs/project/roadmap.md` を実態へ更新。v0.3.0〜v0.12.0 を
+  依然「planned」と誤記していたのを released に修正し、v0.12.2 housekeeping /
+  v0.13.0 / v0.14.0 / v1.0.0 の計画を反映 (PLAN.md と整合)。
+- チュートリアル名から内部フェーズ呼称を除去し公開名に統一 (#144)。PLAN.md を
+  v0.12.1 出荷実態へ整合 (#143)。
+
 ## [0.12.1] — 2026-05-30
 
 ### Added

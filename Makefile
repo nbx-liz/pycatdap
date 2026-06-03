@@ -1,15 +1,23 @@
-.PHONY: install test test-slow r-reference lint format format-check typecheck ci build clean
+.PHONY: install test test-slow test-all r-reference lint format format-check typecheck ci build clean
 
 PACKAGE = src/pycatdap
 
 install:
 	uv sync --frozen --dev
 
+# Mirrors the develop-PR CI gate. Slow tests are excluded: the D4 dataset
+# fetchers are network-bound (OpenML) and hang for hours when scikit-learn is
+# installed locally — run them explicitly via ``make test-slow``.
 test:
-	uv run pytest --cov=$(PACKAGE) --cov-fail-under=80 -q
+	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-fail-under=80 -q
 
 test-slow:
 	uv run pytest -m slow -v
+
+# Full suite (slow included). Run in a network-available, sklearn-free env to
+# match the release-PR CI path; otherwise the network-bound fetchers may hang.
+test-all:
+	uv run pytest --cov=$(PACKAGE) --cov-fail-under=80 -q
 
 r-reference:
 	@command -v Rscript >/dev/null 2>&1 || { \
