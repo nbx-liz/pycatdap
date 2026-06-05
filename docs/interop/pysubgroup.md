@@ -9,20 +9,25 @@ same ΔAIC criterion pycatdap's native `discover_error_slices` uses.
 
 !!! info "Status (what this page covers)"
     `AICMeasure` ships as of this release (H-0018, [issue #31](https://github.com/nbx-liz/pycatdap/issues/31)).
-    pysubgroup is an **optional** dependency — install it with the `subgroup`
-    extra. The measure is designed for pysubgroup's `BeamSearch` / `SimpleDFS`;
-    see [Scope](#scope-beamsearch--simpledfs-not-apriori) for why Apriori / DFS
-    are out of scope.
+    pysubgroup is an **optional** dependency. The measure is designed for
+    pysubgroup's `BeamSearch` / `SimpleDFS`; see
+    [Scope](#scope-beamsearch--simpledfs-not-apriori) for why Apriori / DFS are
+    out of scope.
 
 ## Install
 
 ```bash
-pip install 'pycatdap[subgroup]'   # pulls in pysubgroup
+pip install pysubgroup        # install alongside pycatdap
 ```
+
+pysubgroup is **not** bundled as a pycatdap extra on purpose: it pins
+`numpy<2.0.0`, and a packaging-level dependency would propagate that cap to
+every pycatdap install (pycatdap targets numpy 2.x). Installing pysubgroup
+explicitly keeps that constraint opt-in.
 
 Importing `pycatdap.measures` never requires pysubgroup; only
 `pycatdap.measures.AICMeasure` does. Accessing it without pysubgroup installed
-raises a clear `ImportError` pointing at the extra.
+raises a clear `ImportError` telling you to `pip install pysubgroup`.
 
 ## Side-by-side example
 

@@ -43,13 +43,13 @@ def test_measures_getattr_raises_attributeerror_for_unknown() -> None:
 
 def test_aicmeasure_raises_importerror_without_pysubgroup() -> None:
     """When pysubgroup is unimportable, accessing ``AICMeasure`` must
-    surface a clear ImportError pointing at the ``pycatdap[subgroup]``
-    extra. We mask pysubgroup and drop the cached bridge module so its
-    top-level import re-runs."""
+    surface a clear ImportError telling the user to ``pip install
+    pysubgroup``. We mask pysubgroup and drop the cached bridge module so
+    its top-level import re-runs."""
     with mock.patch.dict(sys.modules):
         sys.modules["pysubgroup"] = None  # type: ignore[assignment]
         sys.modules.pop("pycatdap.measures._pysubgroup", None)
-        with pytest.raises(ImportError, match=r"pycatdap\[subgroup\]"):
+        with pytest.raises(ImportError, match=r"pip install pysubgroup"):
             _ = pycatdap.measures.AICMeasure
 
 

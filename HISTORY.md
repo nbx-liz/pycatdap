@@ -3752,14 +3752,27 @@ Apriori / DFS の枝刈りが不健全になる。`AICMeasure` は `BeamSearch` 
 
 #### B. optional dependency
 
-- `[project.optional-dependencies]` に `subgroup = ["pysubgroup>=0.9"]` を追加。
-- `[dependency-groups].dev` にも `pysubgroup>=0.9` を追加 (CI Quality matrix は全
-  ジョブ `--dev` を install するため、cross-test が CI で実走し interop が回帰として
-  保護される)。`[all]` には**追加しない** (ニッチ interop、`--extra all` を使う
-  notebooks CI を肥大させない)。
+pysubgroup は **pycatdap の extra に含めない**。明示インストール (`pip install
+pysubgroup`) とする。
+
+- 理由 (実測): pysubgroup 0.9.0 は `numpy<2.0.0` を pin する。これを `[subgroup]`
+  extra や `dev` group に入れると、**uv の universal lock がその cap を lock 全体に
+  伝播**させ、`uv sync --frozen --dev`(CI Quality matrix) を含む全 install が
+  numpy 1.26.4 に降格する。古い numpy スタブが Python 3.10 の `mypy --strict` で
+  既存ファイル群に 13 件の型エラーを表面化させ CI が壊れる (PR #154 で実際に発生)。
+  さらに pysubgroup は `scikit-learn` も要求し、dev 経由で sklearn が CI matrix と
+  release-PR の slow テスト経路に混入する (D4 fetcher hang リスク再燃、
+  `feedback_extra_all_pulls_sklearn_into_quality_ci` の轍)。
+- `[tool.uv] conflicts` + `dev` への `numpy>=2` floor で resolution を fork すれば
+  CI を numpy 2.x に保てることは確認したが、(a) cross-test は結局 dev fork に
+  pysubgroup が無く CI で skip され「CI 検証」の利得が無い、(b) lock の numpy 3 分岐
+  ・local-dev で dev↔subgroup 排他という機構コストが見合わない。よって最小・確実な
+  「extra に含めない」を採用する。
 - pysubgroup 未導入時、`pycatdap.measures.AICMeasure` は
-  `ImportError("pycatdap[subgroup]")` を送出する。`pycatdap.measures` 本体の import は
-  pysubgroup を必須にしない (PEP 562 `__getattr__` で lazy 解決)。
+  `ImportError("... pip install pysubgroup")` を送出する。`pycatdap.measures` 本体の
+  import は pysubgroup を必須にしない (PEP 562 `__getattr__` で lazy 解決)。
+- cross-test は `pytest.importorskip("pysubgroup")` でガードし、CI (pysubgroup 非導入)
+  では skip、ローカル (`pip install pysubgroup`) で検証する (D5 slow と同じ割り切り)。
 
 #### C. mypy
 
@@ -3775,7 +3788,7 @@ pysubgroup は型スタブを提供しないため:
 |---|---|
 | `src/pycatdap/measures/_pysubgroup.py` | 新規 `AICMeasure` |
 | `src/pycatdap/measures/__init__.py` | PEP 562 `__getattr__` で `AICMeasure` lazy export |
-| `pyproject.toml` | `[subgroup]` extra、`dev` group、mypy override |
+| `pyproject.toml` | mypy override のみ (`pysubgroup.*` ignore-missing + bridge module の subclassing 許可)。pysubgroup は extra/group に**含めない** |
 | `tests/test_measures_pysubgroup.py` | 新規 (ImportError fallback + bridge 数理 + BeamSearch cross-test) |
 | `docs/interop/pysubgroup.md` + `mkdocs.yml` | 新規 interop ガイド |
 | `CHANGELOG.md` | `[Unreleased]` 追記 |
@@ -3799,16 +3812,20 @@ optional で、未導入環境の挙動は不変。`pycatdap.measures` の impor
 - [ ] `pysubgroup.BeamSearch().execute(task, qf=pycatdap.measures.AICMeasure())` が動作する。
 - [ ] AICMeasure の出力が native `discover_error_slices` と数学的に整合 (同データで
       informative 変数が上位に来ることを cross-test で検証)。
-- [ ] pysubgroup 未導入時 `pycatdap.measures.AICMeasure` が `ImportError`(`pycatdap[subgroup]`)。
+- [ ] pysubgroup 未導入時 `pycatdap.measures.AICMeasure` が `ImportError`(`pip install pysubgroup`)。
 - [ ] `pycatdap.measures` の import は pysubgroup なしで成功する。
 - [ ] `docs/interop/pysubgroup.md` に side-by-side 例。
-- [ ] ruff / mypy strict clean、non-slow suite green。
+- [ ] ruff / mypy strict clean、non-slow suite green、CI 全 Python (3.10–3.13) green。
 
 ### Decision
 
 - Date: `(pending)`
 - Result: `proposed`
 - Notes: DP-6 の具体化。BeamSearch 専用スコープ (Apriori 非対応) は H-0014 §C の帰結。
+  **依存方針の修正 (PR #154 CI 失敗を受けて)**: 当初案は `[subgroup]` extra + `dev`
+  group だったが、pysubgroup の `numpy<2.0.0` pin が uv universal lock 経由で numpy を
+  全面降格させ Python 3.10 の strict mypy を壊した (§B 参照)。pysubgroup を extra/group
+  から外し明示インストールに変更。cross-test は CI skip・ローカル検証。
 
 ### Migration
 

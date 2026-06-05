@@ -56,8 +56,8 @@ def __getattr__(name: str) -> Any:
     imports pysubgroup at module load. Resolving it lazily keeps
     ``import pycatdap.measures`` free of any hard dependency on pysubgroup;
     accessing ``AICMeasure`` without pysubgroup installed raises the
-    bridge module's ``ImportError`` pointing at the ``pycatdap[subgroup]``
-    extra.
+    bridge module's ``ImportError`` telling the user to
+    ``pip install pysubgroup``.
     """
     if name == "AICMeasure":
         from pycatdap.measures._pysubgroup import AICMeasure

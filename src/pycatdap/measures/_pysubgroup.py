@@ -28,9 +28,12 @@ import numpy as np
 try:
     from pysubgroup import SimplePositivesQF
 except ImportError as exc:  # pragma: no cover - exercised via sys.modules mask
+    # pysubgroup is intentionally NOT a pycatdap extra: it pins ``numpy<2.0.0``,
+    # and uv's universal lock would propagate that cap to every install. Users
+    # opt in explicitly with ``pip install pysubgroup``. See HISTORY H-0018.
     msg = (
-        "pysubgroup is required for AICMeasure. "
-        "Install with: pip install 'pycatdap[subgroup]'"
+        "pysubgroup is required for AICMeasure. Install it explicitly with: "
+        "pip install pysubgroup"
     )
     raise ImportError(msg) from exc
 
