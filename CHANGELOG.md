@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
     target は `y`。
   - `pycatdap.datasets.fetch_mushroom()` — UCI Mushroom (8,124 行、全列カテゴリカル)。
     target は `class`。
+- pysubgroup interop measure `pycatdap.measures.AICMeasure` を追加 (#31, H-0018)。
+  ΔAIC を pysubgroup の binary-target quality function として公開し、
+  `pysubgroup.BeamSearch` / `SimpleDFS` で AIC をスコアに subgroup discovery を実行できる。
+  pysubgroup は optional 依存で、pycatdap の extra には含めず明示インストール
+  (`pip install pysubgroup`) する (pysubgroup が `numpy<2.0.0` を pin しており、extra 化
+  すると uv の universal lock がその制約を全 install に伝播させ numpy 2.x を壊すため)。
+  `pycatdap.measures` の import は pysubgroup を必須としない (lazy export)。ΔAIC に健全な
+  上界がないため `optimistic_estimate` は提供せず、Apriori / DFS は対象外
+  (BeamSearch / SimpleDFS 専用)。ガイド: `docs/interop/pysubgroup.md`。
 
 ## [0.12.3] — 2026-06-05
 

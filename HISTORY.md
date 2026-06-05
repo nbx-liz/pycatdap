@@ -3696,3 +3696,144 @@ pycatdap.datasets.fetch_mushroom() -> pd.DataFrame        # 8,124 × 23
 - 親仕様: H-0001 §E D5、Issue #25 / #11
 - 既存流儀: H-0011 D4 (`fetch_adult_income` 等)、`src/pycatdap/datasets.py`
 - network smoke の運用注意: memory `feedback_make_ci_d4_network_hang`
+
+## 2026-06-06: pysubgroup interop — AICMeasure（AIC を interestingness measure として公開）
+
+- ID: `H-0018`
+- Status: `proposed`
+- Scope: `API | optional-dependency`
+- Related: `H-0002 DP-6 / FR-9`, `H-0008 PR-D4`(measures registry), `H-0014 §C`(ΔAIC に健全上界なし), Issue #31 / #20 / #11
+
+### Context
+
+H-0002 の設計原則 DP-6 は「pysubgroup 互換の pluggable interestingness measure」を要求する。
+measures registry (`measures/_registry.py`, H-0008) は既に存在するが、それは
+`Callable[[2D table], float]` の table 単位インターフェースであり、pysubgroup の
+subgroup 単位 QualityFunction (`AbstractInterestingnessMeasure`) とは抽象度が異なる。
+#31 は両者を橋渡しする互換レイヤ (`AICMeasure`) を求める。
+
+調査 (実物 pysubgroup 0.9.0):
+
+- binary target の QF 基底は `SimplePositivesQF` で、dataset 統計 `(N, P)`
+  (全件数・全 positive 数) と subgroup 統計 `(n, p)` を提供する。
+- `BeamSearch` / `SimpleDFS` は `evaluate(subgroup, target, data, statistics)` のみ
+  使用し、`optimistic_estimate` を要求しない (Apriori / DFS は要求する)。
+
+### Proposal
+
+#### A. 公開 API
+
+```python
+pycatdap.measures.AICMeasure()  # pysubgroup 互換の QualityFunction
+```
+
+pysubgroup 0.9.0 の `SimplePositivesQF` を継承し `evaluate` のみ実装する:
+
+- dataset 統計 `(N, P)` と subgroup 統計 `(n, p)` から 2×2 分割表を構築:
+
+  ```
+              target=pos   target=neg
+  in-subgroup     p          n - p
+  out-subgroup  P - p   (N - n) - (P - p)
+  ```
+
+- `pycatdap.measures.aic(table)` で ΔAIC を計算し、**quality = −ΔAIC** を返す
+  (pysubgroup は quality を最大化する。ΔAIC は負 = informative なので符号反転で
+  「高い = より informative」に揃える)。
+- `n == 0` のとき `float("nan")` を返す (pysubgroup の `StandardQF` と同じ規約)。
+- 退化分割表 (0 周辺度数) は `_aic.py` の `0·ln0=0` 規約で扱えるが numpy の
+  eager division が `RuntimeWarning` を出すため、`evaluate` 内で
+  `np.errstate(divide="ignore", invalid="ignore")` により局所抑制する。
+
+`optimistic_estimate` は **意図的に実装しない** (`BoundedInterestingnessMeasure` を
+継承しない)。ΔAIC には健全な上界が存在しない (H-0014 §C で確立) ため、提供すると
+Apriori / DFS の枝刈りが不健全になる。`AICMeasure` は `BeamSearch` / `SimpleDFS`
+専用とし、その旨を docstring と docs に明記する。
+
+#### B. optional dependency
+
+pysubgroup は **pycatdap の extra に含めない**。明示インストール (`pip install
+pysubgroup`) とする。
+
+- 理由 (実測): pysubgroup 0.9.0 は `numpy<2.0.0` を pin する。これを `[subgroup]`
+  extra や `dev` group に入れると、**uv の universal lock がその cap を lock 全体に
+  伝播**させ、`uv sync --frozen --dev`(CI Quality matrix) を含む全 install が
+  numpy 1.26.4 に降格する。古い numpy スタブが Python 3.10 の `mypy --strict` で
+  既存ファイル群に 13 件の型エラーを表面化させ CI が壊れる (PR #154 で実際に発生)。
+  さらに pysubgroup は `scikit-learn` も要求し、dev 経由で sklearn が CI matrix と
+  release-PR の slow テスト経路に混入する (D4 fetcher hang リスク再燃、
+  `feedback_extra_all_pulls_sklearn_into_quality_ci` の轍)。
+- `[tool.uv] conflicts` + `dev` への `numpy>=2` floor で resolution を fork すれば
+  CI を numpy 2.x に保てることは確認したが、(a) cross-test は結局 dev fork に
+  pysubgroup が無く CI で skip され「CI 検証」の利得が無い、(b) lock の numpy 3 分岐
+  ・local-dev で dev↔subgroup 排他という機構コストが見合わない。よって最小・確実な
+  「extra に含めない」を採用する。
+- pysubgroup 未導入時、`pycatdap.measures.AICMeasure` は
+  `ImportError("... pip install pysubgroup")` を送出する。`pycatdap.measures` 本体の
+  import は pysubgroup を必須にしない (PEP 562 `__getattr__` で lazy 解決)。
+- cross-test は `pytest.importorskip("pysubgroup")` でガードし、CI (pysubgroup 非導入)
+  では skip、ローカル (`pip install pysubgroup`) で検証する (D5 slow と同じ割り切り)。
+
+#### C. mypy
+
+pysubgroup は型スタブを提供しないため:
+
+- `[[tool.mypy.overrides]]` に `pysubgroup.*` を `ignore_missing_imports = true` で追加。
+- bridge module `pycatdap.measures._pysubgroup` のみ `disallow_subclassing_any = false`
+  (untyped 基底 `SimplePositivesQF` の継承を許可。strict は他所では維持)。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/measures/_pysubgroup.py` | 新規 `AICMeasure` |
+| `src/pycatdap/measures/__init__.py` | PEP 562 `__getattr__` で `AICMeasure` lazy export |
+| `pyproject.toml` | mypy override のみ (`pysubgroup.*` ignore-missing + bridge module の subclassing 許可)。pysubgroup は extra/group に**含めない** |
+| `tests/test_measures_pysubgroup.py` | 新規 (ImportError fallback + bridge 数理 + BeamSearch cross-test) |
+| `docs/interop/pysubgroup.md` + `mkdocs.yml` | 新規 interop ガイド |
+| `CHANGELOG.md` | `[Unreleased]` 追記 |
+
+### Compatibility
+
+**完全に additive**。既存 measures registry・`aic` 関数・API・型に変更なし。pysubgroup は
+optional で、未導入環境の挙動は不変。`pycatdap.measures` の import は pysubgroup 非依存。
+
+### Alternatives Considered
+
+- **A1: `BoundedInterestingnessMeasure` を継承し optimistic_estimate も提供** — Apriori /
+  DFS も使えるが、ΔAIC に健全上界がない (H-0014 §C) ため枝刈りが不健全。却下。
+- **A2: registry の table 単位 measure をそのまま pysubgroup に渡す** — 抽象度
+  (table vs subgroup) が合わず不可。bridge クラスが必要。
+- **A3: quality = ΔAIC をそのまま返す** — pysubgroup は最大化するため informative
+  (負 ΔAIC) が最下位になり順序が逆。符号反転 (−ΔAIC) が正しい。
+
+### Acceptance Criteria
+
+- [ ] `pysubgroup.BeamSearch().execute(task, qf=pycatdap.measures.AICMeasure())` が動作する。
+- [ ] AICMeasure の出力が native `discover_error_slices` と数学的に整合 (同データで
+      informative 変数が上位に来ることを cross-test で検証)。
+- [ ] pysubgroup 未導入時 `pycatdap.measures.AICMeasure` が `ImportError`(`pip install pysubgroup`)。
+- [ ] `pycatdap.measures` の import は pysubgroup なしで成功する。
+- [ ] `docs/interop/pysubgroup.md` に side-by-side 例。
+- [ ] ruff / mypy strict clean、non-slow suite green、CI 全 Python (3.10–3.13) green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: DP-6 の具体化。BeamSearch 専用スコープ (Apriori 非対応) は H-0014 §C の帰結。
+  **依存方針の修正 (PR #154 CI 失敗を受けて)**: 当初案は `[subgroup]` extra + `dev`
+  group だったが、pysubgroup の `numpy<2.0.0` pin が uv universal lock 経由で numpy を
+  全面降格させ Python 3.10 の strict mypy を壊した (§B 参照)。pysubgroup を extra/group
+  から外し明示インストールに変更。cross-test は CI skip・ローカル検証。
+
+### Migration
+
+なし (純粋な追加)。
+
+### Related References
+
+- 設計原則: H-0002 DP-6 / FR-9、`BLUEPRINT.md §5.11`
+- measures registry: H-0008 PR-D4、`src/pycatdap/measures/_registry.py`
+- ΔAIC 非有界: H-0014 §C
+- pysubgroup 0.9.0 `SimplePositivesQF`: `binary_target.py`
