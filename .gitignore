@@ -8,6 +8,9 @@ dist/
 build/
 *.whl
 
+# R reference generation side-effects (catdap plots; suppressed via plot=0)
+Rplots*.pdf
+
 # Virtual environments
 .venv/
 venv/
