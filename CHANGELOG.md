@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- D5 データセット fetcher を追加 (#25, H-0017)。スライス発見・全カテゴリカル CATDAP
+  のデモ/検証用 UCI 3 データセットを download-on-demand で取得する。既存 D4 fetcher と
+  同じ `sklearn.datasets.fetch_openml` ラッパ流儀で、新規依存なし (既存 `[data]` extra)。
+  - `pycatdap.datasets.fetch_wine_quality()` — UCI Wine Quality (red+white 結合、
+    6,497 行)。`color ∈ {red, white}` 列を付与、target は `quality`。
+  - `pycatdap.datasets.fetch_bank_marketing()` — UCI Bank Marketing (45,211 行)。
+    OpenML の generic 列 `V1..V16` を UCI 公式名 (`age`, `job`, ...) に rename、
+    target は `y`。
+  - `pycatdap.datasets.fetch_mushroom()` — UCI Mushroom (8,124 行、全列カテゴリカル)。
+    target は `class`。
+
 ## [0.12.3] — 2026-06-05
 
 ### Changed
