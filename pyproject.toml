@@ -51,6 +51,9 @@ tutorial = [
 data = [
     "scikit-learn>=1.3",
 ]
+subgroup = [
+    "pysubgroup>=0.9",
+]
 
 [dependency-groups]
 dev = [
@@ -64,6 +67,9 @@ dev = [
     "vulture",
     "pre-commit>=4.0",
     "matplotlib>=3.7",
+    # Optional interop dep, kept in dev so the AICMeasure cross-test runs in
+    # CI (the Quality matrix always installs --dev). See HISTORY H-0018.
+    "pysubgroup>=0.9",
 ]
 notebooks = [
     "nbmake>=1.5",
@@ -139,8 +145,16 @@ module = [
     "plotly.*",
     "statsmodels.*",
     "sklearn.*",
+    "pysubgroup.*",
 ]
 ignore_missing_imports = true
+
+# The pysubgroup bridge subclasses an untyped base class
+# (``SimplePositivesQF``). pysubgroup ships no stubs, so under --strict the
+# base resolves to ``Any``; allow subclassing it in this one module only.
+[[tool.mypy.overrides]]
+module = ["pycatdap.measures._pysubgroup"]
+disallow_subclassing_any = false
 
 # IPython is an interactive-only optional dep. When installed locally it resolves
 # to untyped functions (e.g. ``display``) and trips ``no-untyped-call`` under
