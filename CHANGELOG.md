@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- R catdap 1.3.5 との strict 数値照合を実稼働化 (#10, #30)。`generate_reference.R`
+  が catdap 1.3.5 の実 API と不整合で実行できなかった問題を修正し、参照 CSV を
+  生成・コミット。照合は AIC エンジンの厳密一致を検証する: (1) catdap1 のカテゴリ
+  列、(2) catdap2 のカテゴリ (`pool=2`) 単変数、(3) 連続変数を R の選んだカット点で
+  ビン化した場合の AIC 等価。連続変数の binning 選択は pycatdap が AIC 貪欲マージ
+  (より AIC 最適) を採用しており R の粗い split とは設計が異なるため、選択そのものは
+  照合対象外とする (CONTRIBUTING の「R版との照合」参照)。
+
 ## [0.12.2] — 2026-06-03
 
 ### Changed

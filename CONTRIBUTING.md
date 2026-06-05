@@ -95,6 +95,8 @@ Types: feat, fix, refactor, docs, test, chore, perf, ci
   - **Property-based tests** — R 参照 CSV がなくても実行可能(符号・順位など定性的検証)
   - **Strict numerical tests** — R 参照 CSV (`docs/r_reference/*.csv`) が必要、`atol=1e-4` で厳密照合
 
+> **照合スコープ（重要）**: pycatdap の AIC エンジンは R catdap 1.3.5 と**任意の固定分割でビット一致**する。一方、連続変数の **binning 選択**（`pool=0`）は設計が異なる（pycatdap は細ビンからの AIC 貪欲マージ＝より AIC 最適、R は range 中点からの粗い split ヒューリスティック）。そのため strict 照合は (1) catdap1 のカテゴリ列、(2) catdap2 のカテゴリ（`pool=2`）単変数、(3) **連続変数を R の選んだカット点でビン化した場合の AIC 等価**、を検証する。連続変数の binning 選択そのものは意図的に照合対象外（[#10](https://github.com/nbx-liz/pycatdap/issues/10)）。
+
 ### R 参照 CSV の生成手順
 
 参照 CSV は git にコミットされている前提だが、再生成手順は以下:
@@ -120,8 +122,8 @@ git add docs/r_reference/*.csv
 | ファイル | 内容 |
 |---|---|
 | `health_catdap1.csv` | HealthData のカテゴリ列に対する catdap1 ΔAIC(response=symptoms) |
-| `health_catdap2_aic.csv` | HealthData の catdap2 単一変数 AIC |
-| `health_catdap2_subsets.csv` | HealthData の catdap2 ベスト部分集合 |
+| `health_catdap2_aic.csv` | HealthData の catdap2 単一変数 AIC（カテゴリ `pool=2` 変数のみ） |
+| `health_catdap2_fixed_partition.csv` | HealthData の連続変数について R が選んだカット点と ΔAIC（固定分割での engine 等価検証用） |
 
 `make r-reference` ターゲットは R と catdap パッケージのインストール状態を確認したうえで生成スクリプトを実行する。R が未インストールの場合は明示的なエラーメッセージを表示する。
 
