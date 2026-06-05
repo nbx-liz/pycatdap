@@ -6,6 +6,7 @@ Bundled datasets from the R ``catdap`` package for testing and examples.
 from __future__ import annotations
 
 import gzip
+import warnings
 from importlib import resources
 from pathlib import Path
 
@@ -443,3 +444,195 @@ def load_hello_goodbye() -> pd.DataFrame:
     path = _data_path("hello_goodbye.csv.gz")
     with gzip.open(path, "rt") as f:
         return pd.read_csv(f)
+
+
+#: UCI column order for the Bank Marketing dataset (``bank-full.csv``).
+#: OpenML ``bank-marketing`` (data_id 1461) ships these 16 features as
+#: generic ``V1``..``V16``; the loader renames them positionally so the
+#: frame has interpretable column names (#25 acceptance criterion).
+_BANK_MARKETING_COLUMNS: tuple[str, ...] = (
+    "age",
+    "job",
+    "marital",
+    "education",
+    "default",
+    "balance",
+    "housing",
+    "loan",
+    "contact",
+    "day",
+    "month",
+    "duration",
+    "campaign",
+    "pdays",
+    "previous",
+    "poutcome",
+)
+
+
+def fetch_wine_quality() -> pd.DataFrame:
+    """Fetch the UCI Wine Quality dataset (red + white combined, H-0017 D5).
+
+    Wrapper over :func:`sklearn.datasets.fetch_openml` that downloads the
+    ``wine-quality-red`` (1,599 rows) and ``wine-quality-white`` (4,898
+    rows) datasets, tags each with a ``color`` column, and concatenates
+    them into a single frame (6,497 rows). The target column is
+    normalised to ``quality`` regardless of the OpenML attribute name.
+
+    Returns
+    -------
+    DataFrame
+        6,497 rows × 13 columns (11 physicochemical features +
+        ``quality`` target + ``color``).
+
+    Raises
+    ------
+    ImportError
+        When ``scikit-learn`` is not installed. Install via
+        ``pip install pycatdap[data]``.
+
+    Notes
+    -----
+    - First call downloads from OpenML to the sklearn cache.
+    - ``color`` (``red`` / ``white``) is a useful explanatory variable
+      for AIC-based EDA and a natural grouping for slice discovery.
+
+    Examples
+    --------
+    >>> import pycatdap                              # doctest: +SKIP
+    >>> df = pycatdap.datasets.fetch_wine_quality()  # doctest: +SKIP
+    >>> df.shape                                     # doctest: +SKIP
+    (6497, 13)
+    """
+    try:
+        from sklearn.datasets import fetch_openml
+    except ImportError as exc:
+        msg = (
+            "scikit-learn is required for fetch_wine_quality. "
+            "Install with: pip install 'pycatdap[data]'"
+        )
+        raise ImportError(msg) from exc
+
+    frames = []
+    for name, color in (("wine-quality-red", "red"), ("wine-quality-white", "white")):
+        bundle = fetch_openml(name=name, version=1, as_frame=True)
+        frame: pd.DataFrame = bundle.data.copy()
+        frame["quality"] = bundle.target.to_numpy()
+        frame["color"] = color
+        frames.append(frame)
+    return pd.concat(frames, ignore_index=True)
+
+
+def fetch_bank_marketing() -> pd.DataFrame:
+    """Fetch the UCI Bank Marketing dataset (H-0017 D5).
+
+    Wrapper over :func:`sklearn.datasets.fetch_openml` with
+    ``name="bank-marketing"``. The OpenML release exposes the 16 features
+    as generic ``V1``..``V16``; this loader renames them to the UCI names
+    (``age``, ``job``, ``marital``, ...) and names the target ``y``. If a
+    future OpenML version already ships interpretable names, the rename
+    is skipped.
+
+    Returns
+    -------
+    DataFrame
+        45,211 rows × 17 columns (16 features + ``y`` target).
+
+    Raises
+    ------
+    ImportError
+        When ``scikit-learn`` is not installed. Install via
+        ``pip install pycatdap[data]``.
+
+    Notes
+    -----
+    - First call downloads from OpenML to the sklearn cache.
+    - Classification target ``y`` (term-deposit subscription) makes this
+      a good slice-discovery showcase.
+
+    Examples
+    --------
+    >>> import pycatdap                                # doctest: +SKIP
+    >>> df = pycatdap.datasets.fetch_bank_marketing()  # doctest: +SKIP
+    >>> "age" in df.columns                            # doctest: +SKIP
+    True
+    """
+    try:
+        from sklearn.datasets import fetch_openml
+    except ImportError as exc:
+        msg = (
+            "scikit-learn is required for fetch_bank_marketing. "
+            "Install with: pip install 'pycatdap[data]'"
+        )
+        raise ImportError(msg) from exc
+
+    bundle = fetch_openml(name="bank-marketing", version=1, as_frame=True)
+    frame: pd.DataFrame = bundle.data.copy()
+    # Rename the generic OpenML V1..V16 columns positionally to UCI names.
+    # A future OpenML version that already ships interpretable names is left
+    # untouched (silent no-op). If the names are still generic but the count
+    # no longer matches 16, we cannot rename safely — warn instead of
+    # silently returning ``V1..V16`` (#25 wants interpretable columns).
+    columns_are_generic = all(
+        str(c).startswith("V") and str(c)[1:].isdigit() for c in frame.columns
+    )
+    if columns_are_generic and len(frame.columns) == len(_BANK_MARKETING_COLUMNS):
+        frame.columns = pd.Index(_BANK_MARKETING_COLUMNS)
+    elif columns_are_generic:
+        warnings.warn(
+            "fetch_bank_marketing: OpenML returned generic column names "
+            f"({list(frame.columns)[:3]}...) but the count "
+            f"({len(frame.columns)}) does not match the expected "
+            f"{len(_BANK_MARKETING_COLUMNS)} UCI features; returning generic "
+            "names unchanged.",
+            stacklevel=2,
+        )
+    frame["y"] = bundle.target.to_numpy()
+    return frame
+
+
+def fetch_mushroom() -> pd.DataFrame:
+    """Fetch the UCI Mushroom dataset (H-0017 D5).
+
+    Wrapper over :func:`sklearn.datasets.fetch_openml` with
+    ``name="mushroom"``. All 22 features and the ``class`` target
+    (``e`` = edible / ``p`` = poisonous) are categorical, making this the
+    canonical fully-categorical CATDAP demonstration dataset.
+
+    Returns
+    -------
+    DataFrame
+        8,124 rows × 23 columns (22 categorical features + ``class``
+        target).
+
+    Raises
+    ------
+    ImportError
+        When ``scikit-learn`` is not installed. Install via
+        ``pip install pycatdap[data]``.
+
+    Notes
+    -----
+    - First call downloads from OpenML to the sklearn cache.
+    - Every column is categorical, so ``catdap2`` can run with the
+      default (all-categorical) pooling.
+
+    Examples
+    --------
+    >>> import pycatdap                          # doctest: +SKIP
+    >>> df = pycatdap.datasets.fetch_mushroom()  # doctest: +SKIP
+    >>> "class" in df.columns                    # doctest: +SKIP
+    True
+    """
+    try:
+        from sklearn.datasets import fetch_openml
+    except ImportError as exc:
+        msg = (
+            "scikit-learn is required for fetch_mushroom. "
+            "Install with: pip install 'pycatdap[data]'"
+        )
+        raise ImportError(msg) from exc
+
+    bundle = fetch_openml(name="mushroom", version=1, as_frame=True)
+    df: pd.DataFrame = bundle.frame.copy()
+    return df
