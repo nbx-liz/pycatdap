@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.3] — 2026-06-05
+
 ### Changed
 
 - R catdap 1.3.5 との strict 数値照合を実稼働化 (#10, #30)。`generate_reference.R`
