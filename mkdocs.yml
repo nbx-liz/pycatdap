@@ -81,6 +81,7 @@ nav:
       - Architecture: explanation/architecture.md
   - Interop:
       - DivExplorer: interop/divexplorer.md
+      - pysubgroup: interop/pysubgroup.md
   - Project:
       - Roadmap: project/roadmap.md
       - Changelog: project/changelog.md
