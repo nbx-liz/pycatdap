@@ -3591,3 +3591,108 @@ pycatdap.error.discover_error_slices(
 - 枝刈り設計: H-0014 §C、`src/pycatdap/error/_enumerate.py`
 - 暫定対策: PR-M5 `fix(test): bound Adult Income slow test for memory safety`
 - 性能ベンチ (関連): Issue #29
+
+## 2026-06-06: D5 データセット fetcher 追加（Wine Quality / Bank Marketing / Mushroom）
+
+- ID: `H-0017`
+- Status: `proposed`
+- Scope: `API`
+- Related: `H-0001 §E D5`, `H-0011 D4`(既存 fetch_openml 流儀), Issue #25 / #11
+
+### Context
+
+スライス発見・全カテゴリカル CATDAP のデモ/検証データが不足している。H-0001 §E D5 と
+Issue #25 は UCI 3 データセット (Wine Quality / Bank Marketing / Mushroom) の
+download-on-demand ローダを要求する。既存の D4 fetcher (`fetch_adult_income` /
+`fetch_compas` / `fetch_california_housing`, v0.8.0) は `sklearn.datasets.fetch_openml`
+の薄いラッパとして実装済みで、本追加はこの流儀を踏襲する。バンドル CSV を増やさず
+OpenML キャッシュを利用するため配布サイズは不変。
+
+### Proposal
+
+#### A. 公開 API
+
+`src/pycatdap/datasets.py` に 3 関数を追加 (いずれも既存 `[data]` extra の sklearn を
+再利用、新規依存なし):
+
+```python
+pycatdap.datasets.fetch_wine_quality() -> pd.DataFrame    # 6,497 × 13
+pycatdap.datasets.fetch_bank_marketing() -> pd.DataFrame  # 45,211 × 17
+pycatdap.datasets.fetch_mushroom() -> pd.DataFrame        # 8,124 × 23
+```
+
+- **fetch_wine_quality**: OpenML `wine-quality-red`(1,599) + `wine-quality-white`(4,898)
+  を pin して取得し、`color ∈ {red, white}` 列を付与して結合 → 6,497 行。11 連続特徴 +
+  `quality`(target) + `color`。
+- **fetch_bank_marketing**: OpenML `name="bank-marketing"` を pin して取得。OpenML 版は
+  列名が generic (`V1..V16`) のため、loader 内で UCI 公式名 (`age, job, marital,
+  education, default, balance, housing, loan, contact, day, month, duration, campaign,
+  pdays, previous, poutcome` + target `y`) に rename する (受入基準「解釈可能な列名」を
+  満たす)。初回取得時に実列数を検証し、既に名付き版なら rename は安全に no-op 化。
+- **fetch_mushroom**: OpenML `name="mushroom"` を pin して取得。8,124 × 23、全列
+  カテゴリカル、target `class ∈ {e, p}`。全カテゴリカル CATDAP デモに使用。
+
+いずれも sklearn 未導入時は既存 fetcher と同一の `ImportError("pycatdap[data]")` を送出。
+
+#### B. テスト
+
+`tests/test_datasets_d5.py` を新規追加。D4 と同一方針:
+
+- sklearn 不在時の ImportError fallback (mock で sklearn を None 化、network 不要、
+  全環境で実行)。
+- network smoke (`@pytest.mark.slow` + `pytest.importorskip("sklearn")`): 形状・列名・
+  target 列の存在を検証。default CI (`-m "not slow"`) からは除外される。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/datasets.py` | `fetch_wine_quality` / `fetch_bank_marketing` / `fetch_mushroom` 追加 |
+| `tests/test_datasets_d5.py` | 新規 (ImportError fallback + slow smoke) |
+| `docs/reference/datasets.md` | mkdocstrings 自動反映 (手動編集不要) |
+| `CHANGELOG.md` | `[Unreleased]` に追記 |
+
+### Compatibility
+
+**完全に additive**。既存 API・data contract・型・バンドル CSV に変更なし。新規 optional
+依存なし (sklearn は既存 `[data]` extra)。OpenML キャッシュ利用のため wheel/sdist サイズ
+不変。
+
+### Alternatives Considered
+
+- **A1: CSV をバンドル同梱** — 配布サイズが肥大 (bank 45k 行) し、既存の「fetch_* は
+  download-on-demand」方針と不統一。却下。
+- **A2: UCI から直接 urllib で DL** — zip パース自前実装が重く、D4 の `fetch_openml`
+  流儀と不統一。却下。
+- **A3: OpenML wrapper (採用)** — 既存 D4 と一貫、pin で再現性確保。
+- **bank 列名 (採用 = rename map)**: 名付き OpenML version を探す案も検討したが、live
+  検証不可かつ version 依存で不安定。UCI 公式名への rename を一次手段とし、初回取得で
+  名付き判明時は no-op。
+- **wine 形状 (採用 = red+white 結合 + color 列)**: white 単体案より Issue #25 の
+  「red+white 6,497 行」仕様に一致。
+
+### Acceptance Criteria
+
+- [ ] sklearn 不在で 3 ローダすべて `ImportError`(`pycatdap[data]` を指す)。
+- [ ] `fetch_wine_quality` が 6,497 行、`quality`・`color` 列を含む。
+- [ ] `fetch_bank_marketing` が 45,211 行、解釈可能な列名 (generic でない)、target `y`。
+- [ ] `fetch_mushroom` が 8,124 行、全列カテゴリカル、target `class`。
+- [ ] テストが slow+importorskip でガードされ default CI を汚さない。
+- [ ] ruff / mypy strict clean、non-slow suite green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: 純粋な API 追加。network smoke は個別実行で検証 (`make test-all` は D4 同様
+  ハングするため使わない — memory `feedback_make_ci_d4_network_hang`)。
+
+### Migration
+
+なし (純粋な追加)。
+
+### Related References
+
+- 親仕様: H-0001 §E D5、Issue #25 / #11
+- 既存流儀: H-0011 D4 (`fetch_adult_income` 等)、`src/pycatdap/datasets.py`
+- network smoke の運用注意: memory `feedback_make_ci_d4_network_hang`
