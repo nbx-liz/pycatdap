@@ -6,15 +6,46 @@ competitor to pycatdap's error-analysis layer: both surface **subgroups
 a whole**. This page explains how to move data between the two tools.
 
 !!! info "Status (what this page covers)"
-    pycatdap already ships `ErrorAnalysisResult.to_divexplorer_format()`
-    and `SliceDiscoveryResult.to_divexplorer_format()` (since v0.8.0). Today these
-    return **pycatdap-native columns**, not DivExplorer's exact schema. This page
-    documents (a) what each tool emits, (b) how the metrics correspond, and (c) a
-    copy-paste adapter that reshapes pycatdap output toward DivExplorer's columns.
+    `ErrorAnalysisResult.to_divexplorer_format()` and
+    `SliceDiscoveryResult.to_divexplorer_format()` (since v0.8.0) return
+    **pycatdap-native columns** by default. As of H-0019 (#32) they also accept
+    **`schema="divexplorer"`**, which emits DivExplorer's real 0.2.x column layout
+    natively — see [Native DivExplorer schema](#native-divexplorer-schema) below.
+    This page documents (a) what each tool emits, (b) how the metrics correspond,
+    and (c) the native `schema=` switch (plus the equivalent manual adapter).
 
-    Drop-in *column compatibility* with DivExplorer 0.2.x is tracked separately in
-    [issue #32](https://github.com/nbx-liz/pycatdap/issues/32) (v0.13.0 interop
-    track; data-contract change, gated).
+## Native DivExplorer schema
+
+Pass `schema="divexplorer"` to get DivExplorer-0.2.x-compatible columns
+(`support / itemset / error / error_div / error_t / length / support_count`)
+directly — no manual reshaping:
+
+```python
+import numpy as np
+from pycatdap.datasets import load_titanic
+from pycatdap.error import discover_error_slices
+
+df = load_titanic()
+y_true = df["Survived"]
+y_pred = np.where(df["Sex"].eq("Female"), "Yes", "No")
+
+result = discover_error_slices(df[["Class", "Sex", "Age"]], y_true, y_pred, max_vars=2)
+dx = result.to_divexplorer_format(schema="divexplorer")
+# columns: support, itemset, error, error_div, error_t, length, support_count
+```
+
+`SliceDiscoveryResult` carries `n_total` and `base_error_rate`, so `support` and
+`error_div` are computed automatically; pass `n_total=` / `overall_error_rate=`
+to override. For `ErrorAnalysisResult` they default to `n_rows` and
+`n_incorrect / n_rows` (classification); pass `overall_error_rate=` for
+regression. `schema="native"` (the default) is unchanged.
+
+!!! warning "`error_t` is not DivExplorer's t-value"
+    `error_t` carries pycatdap's own statistic (`measure_value` for multivariable
+    slices, `pearson_residual` for single-variable cells), **not** DivExplorer's
+    Bayesian/Welch t-value. Use it for *ranking*, not as an equivalent
+    significance score. pycatdap also surfaces only the top error-concentrated
+    slices, so (unlike DivExplorer) the frame omits the all-dataset **root row**.
 
 ## pycatdap's `to_divexplorer_format()` output
 
@@ -99,9 +130,15 @@ subgroups — but the numbers are **not** interchangeable. Treat the pycatdap
 statistic as a *rank-compatible analogue*, not a drop-in replacement for
 DivExplorer's t-value.
 
-## Adapter: reshape pycatdap output toward DivExplorer 0.2.x
+## Adapter: reshape a native frame toward DivExplorer 0.2.x
 
-The helper below converts a `to_divexplorer_format()` frame into a
+!!! tip "Prefer the native `schema="divexplorer"`"
+    Since H-0019 (#32), `to_divexplorer_format(schema="divexplorer")` produces
+    this exact layout for you — see [Native DivExplorer schema](#native-divexplorer-schema).
+    The manual adapter below is kept only for reshaping a frame you already
+    captured in the native schema (or from an older pycatdap).
+
+The helper below converts a `to_divexplorer_format()` (native) frame into a
 DivExplorer-0.2.x-*shaped* frame (`itemset / support / error / error_div /
 error_t / length / support_count`). It works for both result types — for
 `ErrorAnalysisResult` it uses `pearson_residual` as the significance column, for
@@ -199,10 +236,15 @@ print(dx)
   0.2.x natively stores it as `float` (`round(support × N)`). Cast with
   `.astype(float)` if exact dtype parity matters to your downstream consumer.
 
-## Roadmap
+## Status
 
 Native, drop-in column compatibility with DivExplorer 0.2.x — so that
-`to_divexplorer_format()` itself emits the real schema — is planned for the
-v0.13.0 interop track and tracked in
-[issue #32](https://github.com/nbx-liz/pycatdap/issues/32). That change touches a
-public data contract and will go through the Change Gate first.
+`to_divexplorer_format(schema="divexplorer")` emits the real schema — **shipped**
+in the v0.13.0 interop track ([issue #32](https://github.com/nbx-liz/pycatdap/issues/32),
+HISTORY H-0019). The additive `schema=` switch went through the Change Gate; the
+default `schema="native"` output is unchanged.
+
+The cross-test that validates column compatibility against real `divexplorer`
+runs only when divexplorer is installed (`pip install divexplorer`); it is **not**
+a pycatdap extra because it pulls scikit-learn / mlxtend / igraph (it would bloat
+the dependency lock — see HISTORY H-0019 §B).
