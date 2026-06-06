@@ -3837,3 +3837,146 @@ optional で、未導入環境の挙動は不変。`pycatdap.measures` の impor
 - measures registry: H-0008 PR-D4、`src/pycatdap/measures/_registry.py`
 - ΔAIC 非有界: H-0014 §C
 - pysubgroup 0.9.0 `SimplePositivesQF`: `binary_target.py`
+
+## 2026-06-06: DivExplorer 0.2.x スキーマ出力（to_divexplorer_format に schema 引数）
+
+- ID: `H-0019`
+- Status: `proposed`
+- Scope: `API | data-contract`
+- Related: `H-0002 FR-2 / §C`(DivExplorer 競合分析), `H-0011 PR-G3`(native 出力初出), Issue #32 / #17 / #20 / #11
+
+### Context
+
+`to_divexplorer_format()` は v0.8.0 (H-0011) から `ErrorAnalysisResult` /
+`SliceDiscoveryResult` の両方に存在するが、返すのは **pycatdap-native columns**
+(`description / size / error_rate / delta_aic / ...`) であり DivExplorer の実スキーマ
+ではない。#32 はこれを DivExplorer 0.2.x の実カラムに揃える (column 互換) ことを求める。
+`docs/interop/divexplorer.md` (PR #146) が目標スキーマと変換 adapter `to_divexplorer_like`
+を既に文書化済み。本 Proposal はその adapter をライブラリ本体の出力に昇格する。
+
+調査 (実物 divexplorer 0.2.6):
+
+- 目標スキーマ: `itemset(frozenset[str]) / support(float) / <metric>(float) /
+  <metric>_div(float) / <metric>_t(float) / length(int) / support_count`。pycatdap は
+  単一 error 概念なので `<metric>` を generic に `error` とする →
+  `itemset / support / error / error_div / error_t / length / support_count`。
+- `support = size / n_total`、`error_div = error_rate − overall_error_rate` の算出に
+  **n_total と overall(base) error rate** が必要。`SliceDiscoveryResult` はこれらを
+  保持していない (discover_error_slices 内で `n_rows` / `base_error_rate` として計算済
+  だが未保存)。`ErrorAnalysisResult` は `n_rows` + `n_incorrect` から導出可。
+- divexplorer は numpy/pandas を downgrade しない (2.x 互換) が `scikit-learn` /
+  `mlxtend` / `igraph` 等を pull する heavyweight。**pyproject に追加せず**明示
+  `pip install divexplorer` + `importorskip` で cross-test する (#31 / H-0018 と同方針、
+  `feedback_optional_dep_caps_core_poisons_uv_lock`)。
+
+### Proposal
+
+#### A. 公開 API (additive)
+
+両 result 型の `to_divexplorer_format` にキーワード専用引数を追加 (後方互換):
+
+```python
+def to_divexplorer_format(
+    self,
+    *,
+    schema: Literal["native", "divexplorer"] = "native",
+    n_total: int | None = None,
+    overall_error_rate: float | None = None,
+) -> pd.DataFrame: ...
+```
+
+- `schema="native"` (既定): **現行の出力を完全に維持** (列・dtype 不変)。`n_total` /
+  `overall_error_rate` は無視。
+- `schema="divexplorer"`: DivExplorer 0.2.x 形状
+  `itemset / support / error / error_div / error_t / length / support_count` を返す。
+  - `itemset`: 構造化された条件から構築 (`SliceDiscoveryResult` は
+    `ErrorSlice.conditions` の `(var, value)` から `frozenset(f"{var}={value}")`、
+    `ErrorAnalysisResult` は単一 `frozenset({f"{variable}={category}"})`)。
+    description 文字列のパースはしない (lossless)。
+  - `error_t`: pycatdap の有意性 — `SliceDiscoveryResult` は `measure_value`、
+    `ErrorAnalysisResult` は `pearson_residual`。**DivExplorer の beta/Welch t 値では
+    ない** (rank-互換アナログ) ことを docstring + docs で明記。
+  - `support_count`: 行数 (`size`)。**dtype は DivExplorer 0.2.6 に合わせ float64**
+    (実物確認: `round(support×N)` を float64 で保持)。列順も DivExplorer に合わせる
+    (`support, itemset, error, error_div, error_t, length, support_count`)。
+  - root 行 (全データ) は含めない (pycatdap は top スライスのみ surfance。差分を docs 明記)。
+  - 空スライス時は divexplorer 列の well-typed 空フレームを返す。
+
+n_total / overall の解決:
+
+- 明示引数 > result の保存値。両方欠落時は `ValueError` (案内付き)。
+- `SliceDiscoveryResult`: 既定で新フィールド `self.n_total` / `self.base_error_rate`。
+- `ErrorAnalysisResult`: 既定で `self.n_rows` / (`self.n_incorrect / self.n_rows`)。
+  分類で導出できない場合 (回帰等) は `overall_error_rate` 引数を要求。
+
+#### B. data-contract: SliceDiscoveryResult に additive フィールド
+
+```python
+@dataclass(frozen=True)
+class SliceDiscoveryResult:
+    ...
+    truncated: bool = field(default=False)
+    n_total: int = field(default=0)            # 新規 (= discover_error_slices の n_rows)
+    base_error_rate: float = field(default=0.0)  # 新規 (= base_error_rate)
+```
+
+`discover_error_slices` がこれらを populate する。`to_dict()` にも追加。デフォルト付き
+追加なので既存の直接構築コードは壊れない (未指定なら 0 / 0.0、その場合
+`schema="divexplorer"` は `n_total<=0` で `ValueError` を出し引数指定を促す)。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/error/_divexplorer.py` | 新規: 共有 schema builder (DRY、両 result 型が利用) |
+| `src/pycatdap/error/_slice.py` | `to_divexplorer_format` に schema 引数、`n_total`/`base_error_rate` フィールド、`to_dict` 反映 |
+| `src/pycatdap/error/_result.py` | `to_divexplorer_format` に schema 引数 (Error 型) |
+| `src/pycatdap/error/discovery.py` | `SliceDiscoveryResult(n_total=, base_error_rate=)` を populate |
+| `tests/test_error_divexplorer_schema.py` | 新規 (schema 出力 + n_total/overall + 空 + cross-test) |
+| `docs/interop/divexplorer.md` | adapter 節を「`schema="divexplorer"` がネイティブ対応」に更新 |
+| `CHANGELOG.md` | `[Unreleased]` 追記 |
+
+### Compatibility
+
+**後方互換 (additive)**。`schema` の既定 `"native"` で現行出力は不変。新フィールドは
+デフォルト付きで既存構築を壊さない。divexplorer は optional (pyproject 非追加)。
+
+### Alternatives Considered
+
+- **Breaking: 既存出力を置換** — issue 文言には沿うが v0.8.0 consumer を壊す。却下
+  (プロジェクトは v1.0 まで additive 方針)。
+- **新メソッド `to_divexplorer()`** — 後方互換だが似名2メソッドで紛らわしい。schema 引数を採用。
+- **n_total を引数必須に (フィールド追加なし)** — drop-in 性が落ちる。フィールド保存で
+  param-free を既定とし、引数は override として残す。
+- **root 行を合成追加** — DivExplorer は root を含むが pycatdap は top スライスのみが
+  本質。合成は誤解を招くため非追加 (docs で差分明記)。
+
+### Acceptance Criteria
+
+- [ ] `schema="native"` の出力が現行と完全一致 (列・dtype・値、回帰テスト)。
+- [ ] `schema="divexplorer"` が `itemset/support/error/error_div/error_t/length/support_count` を返す。
+- [ ] `support = size/n_total`、`error_div = error_rate − overall`、`length = len(itemset)` が正しい。
+- [ ] n_total/overall が param override > 保存値 > (欠落で) `ValueError`。
+- [ ] 空スライスで divexplorer 列の空フレーム。
+- [ ] cross-test (`importorskip("divexplorer")`): DivExplorer 0.2.6 の
+      `get_pattern_divergence` 出力と **列名互換**、同データで surface するスライスが重なる。
+- [ ] ruff / mypy strict clean、non-slow suite green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: schema 引数 (additive) をユーザー判断で採用。divexplorer は #31 と同じく
+  pyproject 非追加・cross-test は CI skip / ローカル検証。
+
+### Migration
+
+なし (純粋な additive)。既存 `to_divexplorer_format()` 呼び出しは `schema="native"`
+既定でそのまま動作。
+
+### Related References
+
+- 競合分析: H-0002 §C / FR-2、`docs/interop/divexplorer.md` (PR #146)
+- native 出力初出: H-0011 PR-G3
+- optional-dep 方針: H-0018 §B、`feedback_optional_dep_caps_core_poisons_uv_lock`
+- 説明文字列の文法: `src/pycatdap/error/_describe.py`
