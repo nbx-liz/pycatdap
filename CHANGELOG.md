@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `pycatdap.measures` の import は pysubgroup を必須としない (lazy export)。ΔAIC に健全な
   上界がないため `optimistic_estimate` は提供せず、Apriori / DFS は対象外
   (BeamSearch / SimpleDFS 専用)。ガイド: `docs/interop/pysubgroup.md`。
+- `to_divexplorer_format()` に `schema="divexplorer"` を追加 (#32, H-0019)。
+  `ErrorAnalysisResult` / `SliceDiscoveryResult` の両方で、DivExplorer 0.2.x の実カラム
+  `support / itemset / error / error_div / error_t / length / support_count` を直接出力できる。
+  既定 `schema="native"` は従来出力のまま不変 (後方互換)。`support` / `error_div` 算出のため
+  `SliceDiscoveryResult` に additive フィールド `n_total` / `base_error_rate` を追加
+  (引数 `n_total=` / `overall_error_rate=` で上書き可)。`error_t` は pycatdap 独自統計
+  (measure_value / pearson_residual) で DivExplorer の t 値とは異なる旨を docs に明記。
+  divexplorer は heavyweight (sklearn 等を pull) なため pyproject に含めず、cross-test は
+  明示 `pip install divexplorer` でローカル検証。ガイド: `docs/interop/divexplorer.md`。
 
 ## [0.12.3] — 2026-06-05
 
