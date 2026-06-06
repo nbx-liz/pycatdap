@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-07
+
+### Added
+
+- D5 データセット fetcher を追加 (#25, H-0017)。スライス発見・全カテゴリカル CATDAP
+  のデモ/検証用 UCI 3 データセットを download-on-demand で取得する。既存 D4 fetcher と
+  同じ `sklearn.datasets.fetch_openml` ラッパ流儀で、新規依存なし (既存 `[data]` extra)。
+  - `pycatdap.datasets.fetch_wine_quality()` — UCI Wine Quality (red+white 結合、
+    6,497 行)。`color ∈ {red, white}` 列を付与、target は `quality`。
+  - `pycatdap.datasets.fetch_bank_marketing()` — UCI Bank Marketing (45,211 行)。
+    OpenML の generic 列 `V1..V16` を UCI 公式名 (`age`, `job`, ...) に rename、
+    target は `y`。
+  - `pycatdap.datasets.fetch_mushroom()` — UCI Mushroom (8,124 行、全列カテゴリカル)。
+    target は `class`。
+- pysubgroup interop measure `pycatdap.measures.AICMeasure` を追加 (#31, H-0018)。
+  ΔAIC を pysubgroup の binary-target quality function として公開し、
+  `pysubgroup.BeamSearch` / `SimpleDFS` で AIC をスコアに subgroup discovery を実行できる。
+  pysubgroup は optional 依存で、pycatdap の extra には含めず明示インストール
+  (`pip install pysubgroup`) する (pysubgroup が `numpy<2.0.0` を pin しており、extra 化
+  すると uv の universal lock がその制約を全 install に伝播させ numpy 2.x を壊すため)。
+  `pycatdap.measures` の import は pysubgroup を必須としない (lazy export)。ΔAIC に健全な
+  上界がないため `optimistic_estimate` は提供せず、Apriori / DFS は対象外
+  (BeamSearch / SimpleDFS 専用)。ガイド: `docs/interop/pysubgroup.md`。
+- `to_divexplorer_format()` に `schema="divexplorer"` を追加 (#32, H-0019)。
+  `ErrorAnalysisResult` / `SliceDiscoveryResult` の両方で、DivExplorer 0.2.x の実カラム
+  `support / itemset / error / error_div / error_t / length / support_count` を直接出力できる。
+  既定 `schema="native"` は従来出力のまま不変 (後方互換)。`support` / `error_div` 算出のため
+  `SliceDiscoveryResult` に additive フィールド `n_total` / `base_error_rate` を追加
+  (引数 `n_total=` / `overall_error_rate=` で上書き可)。`error_t` は pycatdap 独自統計
+  (measure_value / pearson_residual) で DivExplorer の t 値とは異なる旨を docs に明記。
+  divexplorer は heavyweight (sklearn 等を pull) なため pyproject に含めず、cross-test は
+  明示 `pip install divexplorer` でローカル検証。ガイド: `docs/interop/divexplorer.md`。
+
 ## [0.12.3] — 2026-06-05
 
 ### Changed

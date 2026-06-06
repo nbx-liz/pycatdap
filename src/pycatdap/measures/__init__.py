@@ -24,6 +24,8 @@ extra setup.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pycatdap.measures._aic import aic
 from pycatdap.measures._cramers_v import cramers_v
 from pycatdap.measures._mutual_info import mutual_info
@@ -36,6 +38,7 @@ register("mutual_info", mutual_info)
 
 
 __all__ = [
+    "AICMeasure",
     "Measure",
     "aic",
     "cramers_v",
@@ -44,3 +47,21 @@ __all__ = [
     "mutual_info",
     "register",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily expose the optional pysubgroup bridge (PEP 562).
+
+    ``AICMeasure`` lives in :mod:`pycatdap.measures._pysubgroup`, which
+    imports pysubgroup at module load. Resolving it lazily keeps
+    ``import pycatdap.measures`` free of any hard dependency on pysubgroup;
+    accessing ``AICMeasure`` without pysubgroup installed raises the
+    bridge module's ``ImportError`` telling the user to
+    ``pip install pysubgroup``.
+    """
+    if name == "AICMeasure":
+        from pycatdap.measures._pysubgroup import AICMeasure
+
+        return AICMeasure
+    msg = f"module {__name__!r} has no attribute {name!r}"
+    raise AttributeError(msg)

@@ -3591,3 +3591,456 @@ pycatdap.error.discover_error_slices(
 - 枝刈り設計: H-0014 §C、`src/pycatdap/error/_enumerate.py`
 - 暫定対策: PR-M5 `fix(test): bound Adult Income slow test for memory safety`
 - 性能ベンチ (関連): Issue #29
+
+## 2026-06-06: D5 データセット fetcher 追加（Wine Quality / Bank Marketing / Mushroom）
+
+- ID: `H-0017`
+- Status: `proposed`
+- Scope: `API`
+- Related: `H-0001 §E D5`, `H-0011 D4`(既存 fetch_openml 流儀), Issue #25 / #11
+
+### Context
+
+スライス発見・全カテゴリカル CATDAP のデモ/検証データが不足している。H-0001 §E D5 と
+Issue #25 は UCI 3 データセット (Wine Quality / Bank Marketing / Mushroom) の
+download-on-demand ローダを要求する。既存の D4 fetcher (`fetch_adult_income` /
+`fetch_compas` / `fetch_california_housing`, v0.8.0) は `sklearn.datasets.fetch_openml`
+の薄いラッパとして実装済みで、本追加はこの流儀を踏襲する。バンドル CSV を増やさず
+OpenML キャッシュを利用するため配布サイズは不変。
+
+### Proposal
+
+#### A. 公開 API
+
+`src/pycatdap/datasets.py` に 3 関数を追加 (いずれも既存 `[data]` extra の sklearn を
+再利用、新規依存なし):
+
+```python
+pycatdap.datasets.fetch_wine_quality() -> pd.DataFrame    # 6,497 × 13
+pycatdap.datasets.fetch_bank_marketing() -> pd.DataFrame  # 45,211 × 17
+pycatdap.datasets.fetch_mushroom() -> pd.DataFrame        # 8,124 × 23
+```
+
+- **fetch_wine_quality**: OpenML `wine-quality-red`(1,599) + `wine-quality-white`(4,898)
+  を pin して取得し、`color ∈ {red, white}` 列を付与して結合 → 6,497 行。11 連続特徴 +
+  `quality`(target) + `color`。
+- **fetch_bank_marketing**: OpenML `name="bank-marketing"` を pin して取得。OpenML 版は
+  列名が generic (`V1..V16`) のため、loader 内で UCI 公式名 (`age, job, marital,
+  education, default, balance, housing, loan, contact, day, month, duration, campaign,
+  pdays, previous, poutcome` + target `y`) に rename する (受入基準「解釈可能な列名」を
+  満たす)。初回取得時に実列数を検証し、既に名付き版なら rename は安全に no-op 化。
+- **fetch_mushroom**: OpenML `name="mushroom"` を pin して取得。8,124 × 23、全列
+  カテゴリカル、target `class ∈ {e, p}`。全カテゴリカル CATDAP デモに使用。
+
+いずれも sklearn 未導入時は既存 fetcher と同一の `ImportError("pycatdap[data]")` を送出。
+
+#### B. テスト
+
+`tests/test_datasets_d5.py` を新規追加。D4 と同一方針:
+
+- sklearn 不在時の ImportError fallback (mock で sklearn を None 化、network 不要、
+  全環境で実行)。
+- network smoke (`@pytest.mark.slow` + `pytest.importorskip("sklearn")`): 形状・列名・
+  target 列の存在を検証。default CI (`-m "not slow"`) からは除外される。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/datasets.py` | `fetch_wine_quality` / `fetch_bank_marketing` / `fetch_mushroom` 追加 |
+| `tests/test_datasets_d5.py` | 新規 (ImportError fallback + slow smoke) |
+| `docs/reference/datasets.md` | mkdocstrings 自動反映 (手動編集不要) |
+| `CHANGELOG.md` | `[Unreleased]` に追記 |
+
+### Compatibility
+
+**完全に additive**。既存 API・data contract・型・バンドル CSV に変更なし。新規 optional
+依存なし (sklearn は既存 `[data]` extra)。OpenML キャッシュ利用のため wheel/sdist サイズ
+不変。
+
+### Alternatives Considered
+
+- **A1: CSV をバンドル同梱** — 配布サイズが肥大 (bank 45k 行) し、既存の「fetch_* は
+  download-on-demand」方針と不統一。却下。
+- **A2: UCI から直接 urllib で DL** — zip パース自前実装が重く、D4 の `fetch_openml`
+  流儀と不統一。却下。
+- **A3: OpenML wrapper (採用)** — 既存 D4 と一貫、pin で再現性確保。
+- **bank 列名 (採用 = rename map)**: 名付き OpenML version を探す案も検討したが、live
+  検証不可かつ version 依存で不安定。UCI 公式名への rename を一次手段とし、初回取得で
+  名付き判明時は no-op。
+- **wine 形状 (採用 = red+white 結合 + color 列)**: white 単体案より Issue #25 の
+  「red+white 6,497 行」仕様に一致。
+
+### Acceptance Criteria
+
+- [ ] sklearn 不在で 3 ローダすべて `ImportError`(`pycatdap[data]` を指す)。
+- [ ] `fetch_wine_quality` が 6,497 行、`quality`・`color` 列を含む。
+- [ ] `fetch_bank_marketing` が 45,211 行、解釈可能な列名 (generic でない)、target `y`。
+- [ ] `fetch_mushroom` が 8,124 行、全列カテゴリカル、target `class`。
+- [ ] テストが slow+importorskip でガードされ default CI を汚さない。
+- [ ] ruff / mypy strict clean、non-slow suite green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: 純粋な API 追加。network smoke は個別実行で検証 (`make test-all` は D4 同様
+  ハングするため使わない — memory `feedback_make_ci_d4_network_hang`)。
+
+### Migration
+
+なし (純粋な追加)。
+
+### Related References
+
+- 親仕様: H-0001 §E D5、Issue #25 / #11
+- 既存流儀: H-0011 D4 (`fetch_adult_income` 等)、`src/pycatdap/datasets.py`
+- network smoke の運用注意: memory `feedback_make_ci_d4_network_hang`
+
+## 2026-06-06: pysubgroup interop — AICMeasure（AIC を interestingness measure として公開）
+
+- ID: `H-0018`
+- Status: `proposed`
+- Scope: `API | optional-dependency`
+- Related: `H-0002 DP-6 / FR-9`, `H-0008 PR-D4`(measures registry), `H-0014 §C`(ΔAIC に健全上界なし), Issue #31 / #20 / #11
+
+### Context
+
+H-0002 の設計原則 DP-6 は「pysubgroup 互換の pluggable interestingness measure」を要求する。
+measures registry (`measures/_registry.py`, H-0008) は既に存在するが、それは
+`Callable[[2D table], float]` の table 単位インターフェースであり、pysubgroup の
+subgroup 単位 QualityFunction (`AbstractInterestingnessMeasure`) とは抽象度が異なる。
+#31 は両者を橋渡しする互換レイヤ (`AICMeasure`) を求める。
+
+調査 (実物 pysubgroup 0.9.0):
+
+- binary target の QF 基底は `SimplePositivesQF` で、dataset 統計 `(N, P)`
+  (全件数・全 positive 数) と subgroup 統計 `(n, p)` を提供する。
+- `BeamSearch` / `SimpleDFS` は `evaluate(subgroup, target, data, statistics)` のみ
+  使用し、`optimistic_estimate` を要求しない (Apriori / DFS は要求する)。
+
+### Proposal
+
+#### A. 公開 API
+
+```python
+pycatdap.measures.AICMeasure()  # pysubgroup 互換の QualityFunction
+```
+
+pysubgroup 0.9.0 の `SimplePositivesQF` を継承し `evaluate` のみ実装する:
+
+- dataset 統計 `(N, P)` と subgroup 統計 `(n, p)` から 2×2 分割表を構築:
+
+  ```
+              target=pos   target=neg
+  in-subgroup     p          n - p
+  out-subgroup  P - p   (N - n) - (P - p)
+  ```
+
+- `pycatdap.measures.aic(table)` で ΔAIC を計算し、**quality = −ΔAIC** を返す
+  (pysubgroup は quality を最大化する。ΔAIC は負 = informative なので符号反転で
+  「高い = より informative」に揃える)。
+- `n == 0` のとき `float("nan")` を返す (pysubgroup の `StandardQF` と同じ規約)。
+- 退化分割表 (0 周辺度数) は `_aic.py` の `0·ln0=0` 規約で扱えるが numpy の
+  eager division が `RuntimeWarning` を出すため、`evaluate` 内で
+  `np.errstate(divide="ignore", invalid="ignore")` により局所抑制する。
+
+`optimistic_estimate` は **意図的に実装しない** (`BoundedInterestingnessMeasure` を
+継承しない)。ΔAIC には健全な上界が存在しない (H-0014 §C で確立) ため、提供すると
+Apriori / DFS の枝刈りが不健全になる。`AICMeasure` は `BeamSearch` / `SimpleDFS`
+専用とし、その旨を docstring と docs に明記する。
+
+#### B. optional dependency
+
+pysubgroup は **pycatdap の extra に含めない**。明示インストール (`pip install
+pysubgroup`) とする。
+
+- 理由 (実測): pysubgroup 0.9.0 は `numpy<2.0.0` を pin する。これを `[subgroup]`
+  extra や `dev` group に入れると、**uv の universal lock がその cap を lock 全体に
+  伝播**させ、`uv sync --frozen --dev`(CI Quality matrix) を含む全 install が
+  numpy 1.26.4 に降格する。古い numpy スタブが Python 3.10 の `mypy --strict` で
+  既存ファイル群に 13 件の型エラーを表面化させ CI が壊れる (PR #154 で実際に発生)。
+  さらに pysubgroup は `scikit-learn` も要求し、dev 経由で sklearn が CI matrix と
+  release-PR の slow テスト経路に混入する (D4 fetcher hang リスク再燃、
+  `feedback_extra_all_pulls_sklearn_into_quality_ci` の轍)。
+- `[tool.uv] conflicts` + `dev` への `numpy>=2` floor で resolution を fork すれば
+  CI を numpy 2.x に保てることは確認したが、(a) cross-test は結局 dev fork に
+  pysubgroup が無く CI で skip され「CI 検証」の利得が無い、(b) lock の numpy 3 分岐
+  ・local-dev で dev↔subgroup 排他という機構コストが見合わない。よって最小・確実な
+  「extra に含めない」を採用する。
+- pysubgroup 未導入時、`pycatdap.measures.AICMeasure` は
+  `ImportError("... pip install pysubgroup")` を送出する。`pycatdap.measures` 本体の
+  import は pysubgroup を必須にしない (PEP 562 `__getattr__` で lazy 解決)。
+- cross-test は `pytest.importorskip("pysubgroup")` でガードし、CI (pysubgroup 非導入)
+  では skip、ローカル (`pip install pysubgroup`) で検証する (D5 slow と同じ割り切り)。
+
+#### C. mypy
+
+pysubgroup は型スタブを提供しないため:
+
+- `[[tool.mypy.overrides]]` に `pysubgroup.*` を `ignore_missing_imports = true` で追加。
+- bridge module `pycatdap.measures._pysubgroup` のみ `disallow_subclassing_any = false`
+  (untyped 基底 `SimplePositivesQF` の継承を許可。strict は他所では維持)。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/measures/_pysubgroup.py` | 新規 `AICMeasure` |
+| `src/pycatdap/measures/__init__.py` | PEP 562 `__getattr__` で `AICMeasure` lazy export |
+| `pyproject.toml` | mypy override のみ (`pysubgroup.*` ignore-missing + bridge module の subclassing 許可)。pysubgroup は extra/group に**含めない** |
+| `tests/test_measures_pysubgroup.py` | 新規 (ImportError fallback + bridge 数理 + BeamSearch cross-test) |
+| `docs/interop/pysubgroup.md` + `mkdocs.yml` | 新規 interop ガイド |
+| `CHANGELOG.md` | `[Unreleased]` 追記 |
+
+### Compatibility
+
+**完全に additive**。既存 measures registry・`aic` 関数・API・型に変更なし。pysubgroup は
+optional で、未導入環境の挙動は不変。`pycatdap.measures` の import は pysubgroup 非依存。
+
+### Alternatives Considered
+
+- **A1: `BoundedInterestingnessMeasure` を継承し optimistic_estimate も提供** — Apriori /
+  DFS も使えるが、ΔAIC に健全上界がない (H-0014 §C) ため枝刈りが不健全。却下。
+- **A2: registry の table 単位 measure をそのまま pysubgroup に渡す** — 抽象度
+  (table vs subgroup) が合わず不可。bridge クラスが必要。
+- **A3: quality = ΔAIC をそのまま返す** — pysubgroup は最大化するため informative
+  (負 ΔAIC) が最下位になり順序が逆。符号反転 (−ΔAIC) が正しい。
+
+### Acceptance Criteria
+
+- [ ] `pysubgroup.BeamSearch().execute(task, qf=pycatdap.measures.AICMeasure())` が動作する。
+- [ ] AICMeasure の出力が native `discover_error_slices` と数学的に整合 (同データで
+      informative 変数が上位に来ることを cross-test で検証)。
+- [ ] pysubgroup 未導入時 `pycatdap.measures.AICMeasure` が `ImportError`(`pip install pysubgroup`)。
+- [ ] `pycatdap.measures` の import は pysubgroup なしで成功する。
+- [ ] `docs/interop/pysubgroup.md` に side-by-side 例。
+- [ ] ruff / mypy strict clean、non-slow suite green、CI 全 Python (3.10–3.13) green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: DP-6 の具体化。BeamSearch 専用スコープ (Apriori 非対応) は H-0014 §C の帰結。
+  **依存方針の修正 (PR #154 CI 失敗を受けて)**: 当初案は `[subgroup]` extra + `dev`
+  group だったが、pysubgroup の `numpy<2.0.0` pin が uv universal lock 経由で numpy を
+  全面降格させ Python 3.10 の strict mypy を壊した (§B 参照)。pysubgroup を extra/group
+  から外し明示インストールに変更。cross-test は CI skip・ローカル検証。
+
+### Migration
+
+なし (純粋な追加)。
+
+### Related References
+
+- 設計原則: H-0002 DP-6 / FR-9、`BLUEPRINT.md §5.11`
+- measures registry: H-0008 PR-D4、`src/pycatdap/measures/_registry.py`
+- ΔAIC 非有界: H-0014 §C
+- pysubgroup 0.9.0 `SimplePositivesQF`: `binary_target.py`
+
+## 2026-06-06: DivExplorer 0.2.x スキーマ出力（to_divexplorer_format に schema 引数）
+
+- ID: `H-0019`
+- Status: `proposed`
+- Scope: `API | data-contract`
+- Related: `H-0002 FR-2 / §C`(DivExplorer 競合分析), `H-0011 PR-G3`(native 出力初出), Issue #32 / #17 / #20 / #11
+
+### Context
+
+`to_divexplorer_format()` は v0.8.0 (H-0011) から `ErrorAnalysisResult` /
+`SliceDiscoveryResult` の両方に存在するが、返すのは **pycatdap-native columns**
+(`description / size / error_rate / delta_aic / ...`) であり DivExplorer の実スキーマ
+ではない。#32 はこれを DivExplorer 0.2.x の実カラムに揃える (column 互換) ことを求める。
+`docs/interop/divexplorer.md` (PR #146) が目標スキーマと変換 adapter `to_divexplorer_like`
+を既に文書化済み。本 Proposal はその adapter をライブラリ本体の出力に昇格する。
+
+調査 (実物 divexplorer 0.2.6):
+
+- 目標スキーマ: `itemset(frozenset[str]) / support(float) / <metric>(float) /
+  <metric>_div(float) / <metric>_t(float) / length(int) / support_count`。pycatdap は
+  単一 error 概念なので `<metric>` を generic に `error` とする →
+  `itemset / support / error / error_div / error_t / length / support_count`。
+- `support = size / n_total`、`error_div = error_rate − overall_error_rate` の算出に
+  **n_total と overall(base) error rate** が必要。`SliceDiscoveryResult` はこれらを
+  保持していない (discover_error_slices 内で `n_rows` / `base_error_rate` として計算済
+  だが未保存)。`ErrorAnalysisResult` は `n_rows` + `n_incorrect` から導出可。
+- divexplorer は numpy/pandas を downgrade しない (2.x 互換) が `scikit-learn` /
+  `mlxtend` / `igraph` 等を pull する heavyweight。**pyproject に追加せず**明示
+  `pip install divexplorer` + `importorskip` で cross-test する (#31 / H-0018 と同方針、
+  `feedback_optional_dep_caps_core_poisons_uv_lock`)。
+
+### Proposal
+
+#### A. 公開 API (additive)
+
+両 result 型の `to_divexplorer_format` にキーワード専用引数を追加 (後方互換):
+
+```python
+def to_divexplorer_format(
+    self,
+    *,
+    schema: Literal["native", "divexplorer"] = "native",
+    n_total: int | None = None,
+    overall_error_rate: float | None = None,
+) -> pd.DataFrame: ...
+```
+
+- `schema="native"` (既定): **現行の出力を完全に維持** (列・dtype 不変)。`n_total` /
+  `overall_error_rate` は無視。
+- `schema="divexplorer"`: DivExplorer 0.2.x 形状
+  `itemset / support / error / error_div / error_t / length / support_count` を返す。
+  - `itemset`: 構造化された条件から構築 (`SliceDiscoveryResult` は
+    `ErrorSlice.conditions` の `(var, value)` から `frozenset(f"{var}={value}")`、
+    `ErrorAnalysisResult` は単一 `frozenset({f"{variable}={category}"})`)。
+    description 文字列のパースはしない (lossless)。
+  - `error_t`: pycatdap の有意性 — `SliceDiscoveryResult` は `measure_value`、
+    `ErrorAnalysisResult` は `pearson_residual`。**DivExplorer の beta/Welch t 値では
+    ない** (rank-互換アナログ) ことを docstring + docs で明記。
+  - `support_count`: 行数 (`size`)。**dtype は DivExplorer 0.2.6 に合わせ float64**
+    (実物確認: `round(support×N)` を float64 で保持)。列順も DivExplorer に合わせる
+    (`support, itemset, error, error_div, error_t, length, support_count`)。
+  - root 行 (全データ) は含めない (pycatdap は top スライスのみ surfance。差分を docs 明記)。
+  - 空スライス時は divexplorer 列の well-typed 空フレームを返す。
+
+n_total / overall の解決:
+
+- 明示引数 > result の保存値。両方欠落時は `ValueError` (案内付き)。
+- `SliceDiscoveryResult`: 既定で新フィールド `self.n_total` / `self.base_error_rate`。
+- `ErrorAnalysisResult`: 既定で `self.n_rows` / (`self.n_incorrect / self.n_rows`)。
+  分類で導出できない場合 (回帰等) は `overall_error_rate` 引数を要求。
+
+#### B. data-contract: SliceDiscoveryResult に additive フィールド
+
+```python
+@dataclass(frozen=True)
+class SliceDiscoveryResult:
+    ...
+    truncated: bool = field(default=False)
+    n_total: int = field(default=0)            # 新規 (= discover_error_slices の n_rows)
+    base_error_rate: float = field(default=0.0)  # 新規 (= base_error_rate)
+```
+
+`discover_error_slices` がこれらを populate する。`to_dict()` にも追加。デフォルト付き
+追加なので既存の直接構築コードは壊れない (未指定なら 0 / 0.0、その場合
+`schema="divexplorer"` は `n_total<=0` で `ValueError` を出し引数指定を促す)。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `src/pycatdap/error/_divexplorer.py` | 新規: 共有 schema builder (DRY、両 result 型が利用) |
+| `src/pycatdap/error/_slice.py` | `to_divexplorer_format` に schema 引数、`n_total`/`base_error_rate` フィールド、`to_dict` 反映 |
+| `src/pycatdap/error/_result.py` | `to_divexplorer_format` に schema 引数 (Error 型) |
+| `src/pycatdap/error/discovery.py` | `SliceDiscoveryResult(n_total=, base_error_rate=)` を populate |
+| `tests/test_error_divexplorer_schema.py` | 新規 (schema 出力 + n_total/overall + 空 + cross-test) |
+| `docs/interop/divexplorer.md` | adapter 節を「`schema="divexplorer"` がネイティブ対応」に更新 |
+| `CHANGELOG.md` | `[Unreleased]` 追記 |
+
+### Compatibility
+
+**後方互換 (additive)**。`schema` の既定 `"native"` で現行出力は不変。新フィールドは
+デフォルト付きで既存構築を壊さない。divexplorer は optional (pyproject 非追加)。
+
+### Alternatives Considered
+
+- **Breaking: 既存出力を置換** — issue 文言には沿うが v0.8.0 consumer を壊す。却下
+  (プロジェクトは v1.0 まで additive 方針)。
+- **新メソッド `to_divexplorer()`** — 後方互換だが似名2メソッドで紛らわしい。schema 引数を採用。
+- **n_total を引数必須に (フィールド追加なし)** — drop-in 性が落ちる。フィールド保存で
+  param-free を既定とし、引数は override として残す。
+- **root 行を合成追加** — DivExplorer は root を含むが pycatdap は top スライスのみが
+  本質。合成は誤解を招くため非追加 (docs で差分明記)。
+
+### Acceptance Criteria
+
+- [ ] `schema="native"` の出力が現行と完全一致 (列・dtype・値、回帰テスト)。
+- [ ] `schema="divexplorer"` が `itemset/support/error/error_div/error_t/length/support_count` を返す。
+- [ ] `support = size/n_total`、`error_div = error_rate − overall`、`length = len(itemset)` が正しい。
+- [ ] n_total/overall が param override > 保存値 > (欠落で) `ValueError`。
+- [ ] 空スライスで divexplorer 列の空フレーム。
+- [ ] cross-test (`importorskip("divexplorer")`): DivExplorer 0.2.6 の
+      `get_pattern_divergence` 出力と **列名互換**、同データで surface するスライスが重なる。
+- [ ] ruff / mypy strict clean、non-slow suite green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: schema 引数 (additive) をユーザー判断で採用。divexplorer は #31 と同じく
+  pyproject 非追加・cross-test は CI skip / ローカル検証。
+
+### Migration
+
+なし (純粋な additive)。既存 `to_divexplorer_format()` 呼び出しは `schema="native"`
+既定でそのまま動作。
+
+### Related References
+
+- 競合分析: H-0002 §C / FR-2、`docs/interop/divexplorer.md` (PR #146)
+- native 出力初出: H-0011 PR-G3
+- optional-dep 方針: H-0018 §B、`feedback_optional_dep_caps_core_poisons_uv_lock`
+- 説明文字列の文法: `src/pycatdap/error/_describe.py`
+
+## 2026-06-07: JNcharacter を同梱しない（決定 / won't-do）
+
+- ID: `H-0020`
+- Status: `decided`
+- Scope: `roadmap | data | docs`(公開 API 変更なし — 未実装機能のスコープ除外)
+- Related: H-0003 §D (元の D-series 計画), Issue #47 / #22 / #11、新 Issue #156(既存 catdap データの GPL 整合), BLUEPRINT §8
+
+### Context
+
+#47 は R `catdap` 同梱データ `JNcharacter` を `pycatdap.datasets.load_jncharacter()`
+として同梱する計画だった (H-0003 の D-series、#22 から defer)。実装着手前にライセンスを
+**公式一次情報で確認**した。
+
+公式確認 (catdap 1.3.5 の権威者宣言ファイル):
+
+- `DESCRIPTION`: `License: GPL (>= 2)`、データ用 carve-out (LicenseFiles) **なし**。
+- `AUTHORS`: **"All files are Copyright (C) 2008 The Institute of Statistical
+  Mathematics."** — データファイルを明示的に含む。
+- CRAN 配布 (v1.3.5, 2020-03-12)。R "Writing R Extensions" §1.1.2 により License
+  フィールドは package 全体 (data/ 含む) に及ぶ。
+- → JNcharacter は **著作権者 ISM が GPL (>= 2) でライセンスしたデータ**。「事実だから
+  public domain」という権威者の宣言は存在しない。
+
+実測: JNcharacter = 85 obs × 10 vars (整数コード化カテゴリ、CSV 約 1.8 KB)。「日本人の
+国民性調査」の一部を CATDAP-01 入力例に合わせ再コード化。一次資料: Katsura & Sakamoto
+(1980) ISM Monograph No.14 / Sakamoto, Ishiguro & Kitagawa (1983)『情報量統計学』共立。
+(注: #47 記載の「31×17」は誤り。)
+
+### Decision
+
+- Date: `2026-06-07`
+- Result: **`won't-do`(Option A) — JNcharacter を同梱しない。#47 を close。**
+- 根拠 (公式情報ベース):
+  1. **GPL コンプライアンス回避**: GPL-ISM データを MIT package にコピー配布するには
+     著作権表示・GPL ライセンス・ソース提供が要り、MIT への実質再ライセンスは不可。
+     同梱は既存の GPL ギャップ (Issue #156) を**拡大**するだけで、クリーンな価値を
+     生まない。
+  2. **限界価値が低い**: 85×10 の教材データ。全カテゴリカル CATDAP / catdap1 デモは
+     D2–D5 (Titanic / iris / HealthData / HelloGoodbye / Mushroom 等) で既に充足。
+  3. クリーンに同梱するには ISM の許諾 (CC0/MIT) か一次資料からの再構成が必要で、
+     この規模のデータには見合わない。
+- **既存の同梱 catdap データ (HealthData / HelloGoodbye) の GPL 整合は #156 で別途 triage**
+  (本決定は #47 のスコープ除外のみ)。
+- 将来 ISM の許諾または一次資料からの再構成が実現すれば再検討可 (新 Proposal を起こす)。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `src/pycatdap/datasets.py` | 変更なし(`load_jncharacter` は未実装だった) |
+| `BLUEPRINT.md §8` | R 照合テスト表から JNcharacter 行を削除 |
+| `PLAN.md` / `docs/project/roadmap.md` | v0.13.0 スコープから JNcharacter / #47 を除外 |
+| `CONTRIBUTING.md` | R 照合対象データセット一覧から JNcharacter を削除 |
+
+### Migration
+
+なし(公開 API 未実装のため利用者影響ゼロ)。
+
+### Related References
+
+- 公式ライセンス確認: catdap 1.3.5 `DESCRIPTION` / `AUTHORS`(Copyright ISM, GPL (>= 2))
+- 既存ギャップ: Issue #156
+- 一次資料: Katsura & Sakamoto (1980); Sakamoto, Ishiguro & Kitagawa (1983)

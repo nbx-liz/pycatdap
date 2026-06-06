@@ -396,6 +396,8 @@ def discover_error_slices(
         n_pruned=n_pruned,
         label_kind=label_kind,
         truncated=truncated,
+        n_total=n_rows,
+        base_error_rate=base_error_rate,
     )
 
 

@@ -1100,7 +1100,6 @@ R版CATDAPパッケージとの数値的一致を検証するため、以下の�
 | テストデータ | 検証内容 |
 |-------------|---------|
 | HealthData (catdap同梱) | catdap2のAIC値・最適部分集合 |
-| JNcharacter (catdap同梱) | catdap1のペアワイズAIC |
 | Titanic (R同梱) | catdap1/catdap1cの結果 |
 | iris (R同梱) | 連続目的変数のプーリング結果 |
 | HelloGoodbye (catdap同梱) | 多変数時の部分集合探索 |

@@ -139,8 +139,16 @@ module = [
     "plotly.*",
     "statsmodels.*",
     "sklearn.*",
+    "pysubgroup.*",
 ]
 ignore_missing_imports = true
+
+# The pysubgroup bridge subclasses an untyped base class
+# (``SimplePositivesQF``). pysubgroup ships no stubs, so under --strict the
+# base resolves to ``Any``; allow subclassing it in this one module only.
+[[tool.mypy.overrides]]
+module = ["pycatdap.measures._pysubgroup"]
+disallow_subclassing_any = false
 
 # IPython is an interactive-only optional dep. When installed locally it resolves
 # to untyped functions (e.g. ``display``) and trips ``no-untyped-call`` under
