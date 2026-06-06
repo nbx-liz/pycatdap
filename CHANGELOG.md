@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] — 2026-06-07
+
 ### Added
 
 - D5 データセット fetcher を追加 (#25, H-0017)。スライス発見・全カテゴリカル CATDAP
