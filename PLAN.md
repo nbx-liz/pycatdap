@@ -56,7 +56,7 @@ EDA + ML 誤差分析アーク(Phase A→M)は **全て出荷済み**。最新�
 | Version | テーマ | 主要 Issue | Change Gate | 状態 |
 |---|---|---|---|---|
 | v0.12.2 | Housekeeping: 品質ゲート整備 + DivExplorer interop docs + PLAN/issue 整合 | [#34](https://github.com/nbx-liz/pycatdap/issues/34)✅, [#32](https://github.com/nbx-liz/pycatdap/issues/32)(docs)✅, 本 PLAN | 不要 | 🟢 in progress(develop, 未リリース): #34=PR #145, #32 docs=PR #146 マージ済、PLAN/issue 整合=本 PR |
-| v0.13.0 | Datasets D5 + JNcharacter + interop(pysubgroup / DivExplorer 真スキーマ) | [#25](https://github.com/nbx-liz/pycatdap/issues/25), [#47](https://github.com/nbx-liz/pycatdap/issues/47), [#31](https://github.com/nbx-liz/pycatdap/issues/31), [#32](https://github.com/nbx-liz/pycatdap/issues/32) | 要(各 Proposal 先行) | 🟡 planned |
+| v0.13.0 | Datasets D5 + interop(pysubgroup AICMeasure / DivExplorer 真スキーマ) | [#25](https://github.com/nbx-liz/pycatdap/issues/25)✅, [#31](https://github.com/nbx-liz/pycatdap/issues/31)✅, [#32](https://github.com/nbx-liz/pycatdap/issues/32)✅ | 済(H-0017/18/19) | 🟢 develop(未リリース)。[#47](https://github.com/nbx-liz/pycatdap/issues/47) JNcharacter は won't-do(GPL、H-0020) |
 | v0.14.0 | R cross-validation 実照合の有効化 + 性能ベンチ | [#10](https://github.com/nbx-liz/pycatdap/issues/10), [#30](https://github.com/nbx-liz/pycatdap/issues/30), [#29](https://github.com/nbx-liz/pycatdap/issues/29) | 一部(#29 dep+CI) | 🟡 planned(R環境依存) |
 | v1.0.0 | API 整理(`plotting.*` → `plot.matplotlib.*` deprecation) | [#33](https://github.com/nbx-liz/pycatdap/issues/33) | 要(公開 API) | 🟡 planned |
 
@@ -67,7 +67,9 @@ EDA + ML 誤差分析アーク(Phase A→M)は **全て出荷済み**。最新�
   契約テスト)+ 誤差分析積み残し(回帰スライス探索・回帰/多クラス calibration plot・
   多クラス confusion)に再定義された。
 - D3 datasets (#23) は v0.7.0(Phase G の demo)、D4 (#24) は v0.8.0(Phase H)に
-  同梱済み。**D5 (#25) と JNcharacter (#47) は未着手**。
+  同梱済み。**D5 (#25) は v0.13.0 で同梱済 (H-0017、develop 未リリース)。JNcharacter
+  (#47) は GPL ライセンスのため won't-do (H-0020)** — catdap データは ISM 著作・GPL(>=2)
+  で MIT package に再配布できない。既存同梱の HealthData/HelloGoodbye の GPL 整合は #156。
 - **#21 の重い作業は LizyStudio 側(別リポジトリ #579)**。pycatdap 本体側の
   `.to_plotly_json()` 契約は v0.12.0 で出荷済み(全結果型実装 + 契約テスト)。
 - **#32 の核メソッド `to_divexplorer_format` は v0.8.0 で実装済み**。残るは真の
@@ -118,8 +120,8 @@ EDA + ML 誤差分析アーク(Phase A→M)は **全て出荷済み**。最新�
 | D2 | [#22](https://github.com/nbx-liz/pycatdap/issues/22) | v0.3.0 | Titanic, iris | ✅ released |
 | D3 | [#23](https://github.com/nbx-liz/pycatdap/issues/23) | v0.7.0(Phase G に折込) | German Credit, Heart Disease, Penguins | ✅ released |
 | D4 | [#24](https://github.com/nbx-liz/pycatdap/issues/24) | v0.8.0(Phase H に折込) | Adult Income, COMPAS, California Housing | ✅ released |
-| D5 | [#25](https://github.com/nbx-liz/pycatdap/issues/25) | v0.13.0 | Wine Quality, Bank Marketing, Mushroom | 🟡 planned(loader 未実装) |
-| 追加 | [#47](https://github.com/nbx-liz/pycatdap/issues/47) | v0.13.0 | JNcharacter (CATDAP-01 復元) | 🟡 planned(データ取得が R 環境依存) |
+| D5 | [#25](https://github.com/nbx-liz/pycatdap/issues/25) | v0.13.0 | Wine Quality, Bank Marketing, Mushroom | ✅ develop(H-0017, 未リリース) |
+| 追加 | [#47](https://github.com/nbx-liz/pycatdap/issues/47) | — | JNcharacter (CATDAP-01 復元) | ❌ won't-do(GPL ライセンス、H-0020) |
 
 ### 3.4 ドキュメント(全 issue CLOSED)
 
@@ -186,8 +188,8 @@ Phase A→M が出荷済みのため、旧来の Phase 間直列依存は解消�
 
 | 並列可能 | 直列必須 / 外部依存 |
 |---|---|
-| #34 mypy shim と #32 docs(v0.12.2 内) | #25 / #31 / #47 は各 Change Gate Proposal の承認が前提 |
-| #25 D5 datasets と #47 JNcharacter(共に datasets.py) | #10 / #30 の strict 照合有効化は **R + catdap 1.3.5 環境**(維持者作業)が前提 |
+| #34 mypy shim と #32 docs(v0.12.2 内) | #25 / #31 / #32 は完了(H-0017/18/19、develop)。#47 は won't-do(H-0020) |
+| (#25 D5 datasets 完了) | #10 / #30 の strict 照合有効化は **R + catdap 1.3.5 環境**(維持者作業)が前提 |
 | #29 perf benchmark(独立、ただし dep+CI Gate) | #21 の E2E 受け入れ基準は **LizyStudio#579**(別リポジトリ)が前提 |
 | PLAN/docs 整合(本作業、Gate 不要) | #33 rename は v1.0 リリース判断が前提 |
 
@@ -213,7 +215,7 @@ Phase A→M が出荷済みのため、旧来の Phase 間直列依存は解消�
 | v0.13 開始時 | D5 loader の取得元(UCI 直 DL vs OpenML pin)+ cache 方針 | #25 |
 | v0.13 開始時 | pysubgroup measure API のシグネチャ + optional dep 配置(`[subgroup]` extra) | #31 |
 | v0.13 開始時 | DivExplorer 真スキーマ整合の採否(option a 据置 vs b 破壊的) | #32 |
-| v0.13 開始時 | JNcharacter のデータ取得元 + GPL provenance の扱い | #47 |
+| ✅ 解決(2026-06-07) | JNcharacter: catdap は ISM 著作・GPL(>=2)(公式確認)→ MIT package に同梱しない won't-do。既存同梱 catdap データ(HealthData/HelloGoodbye)の GPL 整合は #156 で別途 | #47 → H-0020 / #156 |
 | v0.14 開始時 | R 参照 CSV の生成・コミット(R + catdap 1.3.5)/ perf ベンチの runner・dep 選定 | #10, #30, #29 |
 | v1.0 開始時 | Deprecation 期間(v1.0 → v2.0?)+ `load_hellogoodbye` rename の同梱可否 | #33 |
 

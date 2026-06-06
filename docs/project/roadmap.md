@@ -33,7 +33,7 @@ release is **v0.12.1**.
 | v0.12.0 | LizyStudio integration enablement (Plotly JSON contracts) | ✅ released |
 | v0.12.1 | `discover_error_slices` candidate cap (OOM guard) | ✅ released |
 | v0.12.2 | Housekeeping: quality gates ([#34](https://github.com/nbx-liz/pycatdap/issues/34)), DivExplorer interop docs ([#32](https://github.com/nbx-liz/pycatdap/issues/32)), plan reconciliation | 🟢 in progress (unreleased) |
-| v0.13.0 | Datasets D5 + JNcharacter + interop (pysubgroup, DivExplorer schema) | 🟡 planned ([#25](https://github.com/nbx-liz/pycatdap/issues/25), [#47](https://github.com/nbx-liz/pycatdap/issues/47), [#31](https://github.com/nbx-liz/pycatdap/issues/31), [#32](https://github.com/nbx-liz/pycatdap/issues/32)) |
+| v0.13.0 | Datasets D5 + interop (pysubgroup AICMeasure, DivExplorer schema) | 🟢 on develop, unreleased ([#25](https://github.com/nbx-liz/pycatdap/issues/25), [#31](https://github.com/nbx-liz/pycatdap/issues/31), [#32](https://github.com/nbx-liz/pycatdap/issues/32) done; [#47](https://github.com/nbx-liz/pycatdap/issues/47) JNcharacter won't-do — GPL, H-0020) |
 | v0.14.0 | R numerical cross-validation + performance benchmarks | 🟡 planned ([#10](https://github.com/nbx-liz/pycatdap/issues/10), [#30](https://github.com/nbx-liz/pycatdap/issues/30), [#29](https://github.com/nbx-liz/pycatdap/issues/29)) |
 | v1.0.0 | API stabilization (`plotting.*` → `plot.matplotlib.*`) | 🟡 planned ([#33](https://github.com/nbx-liz/pycatdap/issues/33)) |
 

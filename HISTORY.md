@@ -3980,3 +3980,67 @@ class SliceDiscoveryResult:
 - native 出力初出: H-0011 PR-G3
 - optional-dep 方針: H-0018 §B、`feedback_optional_dep_caps_core_poisons_uv_lock`
 - 説明文字列の文法: `src/pycatdap/error/_describe.py`
+
+## 2026-06-07: JNcharacter を同梱しない（決定 / won't-do）
+
+- ID: `H-0020`
+- Status: `decided`
+- Scope: `roadmap | data | docs`(公開 API 変更なし — 未実装機能のスコープ除外)
+- Related: H-0003 §D (元の D-series 計画), Issue #47 / #22 / #11、新 Issue #156(既存 catdap データの GPL 整合), BLUEPRINT §8
+
+### Context
+
+#47 は R `catdap` 同梱データ `JNcharacter` を `pycatdap.datasets.load_jncharacter()`
+として同梱する計画だった (H-0003 の D-series、#22 から defer)。実装着手前にライセンスを
+**公式一次情報で確認**した。
+
+公式確認 (catdap 1.3.5 の権威者宣言ファイル):
+
+- `DESCRIPTION`: `License: GPL (>= 2)`、データ用 carve-out (LicenseFiles) **なし**。
+- `AUTHORS`: **"All files are Copyright (C) 2008 The Institute of Statistical
+  Mathematics."** — データファイルを明示的に含む。
+- CRAN 配布 (v1.3.5, 2020-03-12)。R "Writing R Extensions" §1.1.2 により License
+  フィールドは package 全体 (data/ 含む) に及ぶ。
+- → JNcharacter は **著作権者 ISM が GPL (>= 2) でライセンスしたデータ**。「事実だから
+  public domain」という権威者の宣言は存在しない。
+
+実測: JNcharacter = 85 obs × 10 vars (整数コード化カテゴリ、CSV 約 1.8 KB)。「日本人の
+国民性調査」の一部を CATDAP-01 入力例に合わせ再コード化。一次資料: Katsura & Sakamoto
+(1980) ISM Monograph No.14 / Sakamoto, Ishiguro & Kitagawa (1983)『情報量統計学』共立。
+(注: #47 記載の「31×17」は誤り。)
+
+### Decision
+
+- Date: `2026-06-07`
+- Result: **`won't-do`(Option A) — JNcharacter を同梱しない。#47 を close。**
+- 根拠 (公式情報ベース):
+  1. **GPL コンプライアンス回避**: GPL-ISM データを MIT package にコピー配布するには
+     著作権表示・GPL ライセンス・ソース提供が要り、MIT への実質再ライセンスは不可。
+     同梱は既存の GPL ギャップ (Issue #156) を**拡大**するだけで、クリーンな価値を
+     生まない。
+  2. **限界価値が低い**: 85×10 の教材データ。全カテゴリカル CATDAP / catdap1 デモは
+     D2–D5 (Titanic / iris / HealthData / HelloGoodbye / Mushroom 等) で既に充足。
+  3. クリーンに同梱するには ISM の許諾 (CC0/MIT) か一次資料からの再構成が必要で、
+     この規模のデータには見合わない。
+- **既存の同梱 catdap データ (HealthData / HelloGoodbye) の GPL 整合は #156 で別途 triage**
+  (本決定は #47 のスコープ除外のみ)。
+- 将来 ISM の許諾または一次資料からの再構成が実現すれば再検討可 (新 Proposal を起こす)。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `src/pycatdap/datasets.py` | 変更なし(`load_jncharacter` は未実装だった) |
+| `BLUEPRINT.md §8` | R 照合テスト表から JNcharacter 行を削除 |
+| `PLAN.md` / `docs/project/roadmap.md` | v0.13.0 スコープから JNcharacter / #47 を除外 |
+| `CONTRIBUTING.md` | R 照合対象データセット一覧から JNcharacter を削除 |
+
+### Migration
+
+なし(公開 API 未実装のため利用者影響ゼロ)。
+
+### Related References
+
+- 公式ライセンス確認: catdap 1.3.5 `DESCRIPTION` / `AUTHORS`(Copyright ISM, GPL (>= 2))
+- 既存ギャップ: Issue #156
+- 一次資料: Katsura & Sakamoto (1980); Sakamoto, Ishiguro & Kitagawa (1983)
