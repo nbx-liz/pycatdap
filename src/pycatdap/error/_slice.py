@@ -18,11 +18,12 @@ fields (already immutable), and DataFrames are produced fresh on each
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
 from pycatdap.error._describe import build_description
+from pycatdap.error._divexplorer import build_divexplorer_frame
 
 
 @dataclass(frozen=True)
@@ -137,6 +138,16 @@ class SliceDiscoveryResult:
         ``True`` if the search hit ``max_candidates`` and stopped early.
         The returned slices are still a sound subset (real frequent cells
         with correct support), just not exhaustive (H-0016).
+    n_total : int
+        Total dataset row count. Denominator of DivExplorer ``support``
+        (H-0019). ``0`` only when built outside ``discover_error_slices``
+        (then ``schema="divexplorer"`` raises unless ``n_total=`` is passed).
+    base_error_rate : float
+        Dataset-wide error rate. Subtracted to form DivExplorer
+        ``error_div`` (H-0019). The ``0.0`` default is a sentinel for
+        "built outside ``discover_error_slices``", **not** a reliable
+        overall rate — when constructing manually, pass
+        ``overall_error_rate=`` to ``to_divexplorer_format(schema="divexplorer")``.
     """
 
     slices: tuple[ErrorSlice, ...]
@@ -147,25 +158,78 @@ class SliceDiscoveryResult:
     n_pruned: int
     label_kind: str = field(default="error_label")
     truncated: bool = field(default=False)
+    n_total: int = field(default=0)
+    base_error_rate: float = field(default=0.0)
 
     # ------------------------------------------------------------------
     # to_divexplorer_format()
     # ------------------------------------------------------------------
 
-    def to_divexplorer_format(self) -> pd.DataFrame:
-        """Return a DivExplorer-compatible flat DataFrame of slices.
+    def to_divexplorer_format(
+        self,
+        *,
+        schema: Literal["native", "divexplorer"] = "native",
+        n_total: int | None = None,
+        overall_error_rate: float | None = None,
+    ) -> pd.DataFrame:
+        """Return a flat DataFrame of slices in the requested schema.
 
-        Columns: ``description / size / error_rate / delta_aic /
-        measure_value / n_error_in_slice``. One row per
-        :class:`ErrorSlice`; a well-typed empty frame when no slice was
-        found. Shares the ``description / size / error_rate / delta_aic``
-        columns with :meth:`ErrorAnalysisResult.to_divexplorer_format`;
-        the remaining columns are container-specific (this multivariable
-        container reports ``measure_value`` rather than the single-cell
-        ``pearson_residual``).
+        Parameters
+        ----------
+        schema : {"native", "divexplorer"}, default "native"
+            ``"native"`` (default, unchanged since v0.8.0): columns
+            ``description / size / error_rate / delta_aic / measure_value
+            / n_error_in_slice``. ``"divexplorer"``: the DivExplorer 0.2.x
+            layout ``support / itemset / error / error_div / error_t /
+            length / support_count`` (H-0019, #32).
+        n_total : int or None
+            DivExplorer ``support`` denominator. Defaults to
+            :attr:`n_total`; pass to override. Ignored for ``"native"``.
+        overall_error_rate : float or None
+            Dataset error rate for ``error_div``. Defaults to
+            :attr:`base_error_rate`; pass to override. Ignored for
+            ``"native"``.
 
-        See <https://github.com/elianap/divexplorer>.
+        Returns
+        -------
+        DataFrame
+            One row per :class:`ErrorSlice`; a well-typed empty frame when
+            no slice was found.
+
+        Raises
+        ------
+        ValueError
+            If ``schema`` is unknown, or ``schema="divexplorer"`` and no
+            positive ``n_total`` is available.
+
+        Notes
+        -----
+        For ``"divexplorer"``, ``error_t`` carries ``measure_value`` (this
+        multivariable container's statistic), **not** DivExplorer's
+        t-value. See ``docs/interop/divexplorer.md``.
         """
+        if schema == "divexplorer":
+            rows = (
+                (
+                    frozenset(f"{var}={val}" for var, val in s.conditions),
+                    int(s.size),
+                    float(s.error_metric),
+                    float(s.measure_value),
+                )
+                for s in self.slices
+            )
+            return build_divexplorer_frame(
+                rows,
+                n_total=self.n_total if n_total is None else n_total,
+                overall_error_rate=(
+                    self.base_error_rate
+                    if overall_error_rate is None
+                    else overall_error_rate
+                ),
+            )
+        if schema != "native":
+            msg = f"schema must be 'native' or 'divexplorer'; got {schema!r}"
+            raise ValueError(msg)
         if not self.slices:
             # Preserve column dtypes on the empty frame so downstream
             # numeric consumers don't trip over all-object columns.
@@ -224,6 +288,8 @@ class SliceDiscoveryResult:
             "n_pruned": int(self.n_pruned),
             "label_kind": self.label_kind,
             "truncated": bool(self.truncated),
+            "n_total": int(self.n_total),
+            "base_error_rate": float(self.base_error_rate),
             "slices": [
                 {
                     "conditions": [list(c) for c in s.conditions],

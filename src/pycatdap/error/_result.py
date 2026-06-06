@@ -33,6 +33,7 @@ import numpy.typing as npt
 import pandas as pd
 
 from pycatdap._target_pair import RegressionTargetSummary, TargetSummary
+from pycatdap.error._divexplorer import build_divexplorer_frame
 
 
 @dataclass(frozen=True)
@@ -404,18 +405,74 @@ class ErrorAnalysisResult:
     # to_divexplorer_format()
     # ------------------------------------------------------------------
 
-    def to_divexplorer_format(self) -> pd.DataFrame:
-        """Return a DivExplorer-compatible flat DataFrame of slices.
+    def to_divexplorer_format(
+        self,
+        *,
+        schema: Literal["native", "divexplorer"] = "native",
+        n_total: int | None = None,
+        overall_error_rate: float | None = None,
+    ) -> pd.DataFrame:
+        """Return a flat DataFrame of slices in the requested schema.
 
-        Columns: ``description / size / error_rate / delta_aic /
-        pearson_residual``. One row per :class:`Slice`. Empty (but
-        well-typed) DataFrame when no slice cleared the
-        ``|pearson_residual| >= 2.0`` threshold.
+        Parameters
+        ----------
+        schema : {"native", "divexplorer"}, default "native"
+            ``"native"`` (default, unchanged since v0.8.0): columns
+            ``description / size / error_rate / delta_aic /
+            pearson_residual / error_category / variable / category``.
+            ``"divexplorer"``: the DivExplorer 0.2.x layout ``support /
+            itemset / error / error_div / error_t / length /
+            support_count`` (H-0019, #32).
+        n_total : int or None
+            DivExplorer ``support`` denominator. Defaults to :attr:`n_rows`;
+            pass to override. Ignored for ``"native"``.
+        overall_error_rate : float or None
+            Dataset error rate for ``error_div``. Defaults to
+            ``n_incorrect / n_rows`` (classification); required for
+            regression where it cannot be derived. Ignored for ``"native"``.
 
-        See <https://github.com/divexplorer/divexplorer> for the
-        reference subgroup-DataFrame shape Phase L will fully integrate
-        with; PR-G3 ships the format compatibility only.
+        Returns
+        -------
+        DataFrame
+            One row per :class:`Slice`; empty (well-typed) when no slice
+            cleared the ``|pearson_residual| >= 2.0`` threshold.
+
+        Raises
+        ------
+        ValueError
+            If ``schema`` is unknown, or ``schema="divexplorer"`` and
+            ``n_total`` / ``overall_error_rate`` cannot be resolved.
+
+        Notes
+        -----
+        For ``"divexplorer"``, ``error_t`` carries ``pearson_residual``
+        (this single-cell container's statistic), **not** DivExplorer's
+        t-value. See ``docs/interop/divexplorer.md``.
         """
+        if schema == "divexplorer":
+            if overall_error_rate is not None:
+                overall: float | None = overall_error_rate
+            elif self.n_incorrect is not None and self.n_rows:
+                overall = self.n_incorrect / self.n_rows
+            else:
+                overall = None
+            rows = (
+                (
+                    frozenset({f"{s.variable}={s.category}"}),
+                    int(s.n_in_slice),
+                    float(s.error_rate),
+                    float(s.pearson_residual),
+                )
+                for s in self.top_slices
+            )
+            return build_divexplorer_frame(
+                rows,
+                n_total=self.n_rows if n_total is None else n_total,
+                overall_error_rate=overall,
+            )
+        if schema != "native":
+            msg = f"schema must be 'native' or 'divexplorer'; got {schema!r}"
+            raise ValueError(msg)
         records = [
             {
                 "description": f"{s.variable} = {s.category}",
