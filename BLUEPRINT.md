@@ -1099,10 +1099,9 @@ R版CATDAPパッケージとの数値的一致を検証するため、以下の�
 
 | テストデータ | 検証内容 |
 |-------------|---------|
-| HealthData (catdap同梱) | catdap2のAIC値・最適部分集合 |
+| HealthData (catdap由来・tests/fixtures、非同梱) | catdap2のAIC値・最適部分集合 |
 | Titanic (R同梱) | catdap1/catdap1cの結果 |
 | iris (R同梱) | 連続目的変数のプーリング結果 |
-| HelloGoodbye (catdap同梱) | 多変数時の部分集合探索 |
 
 照合手順：
 1. R側で各テストデータに対しcatdap1/catdap2を実行し、結果をCSVに書き出す

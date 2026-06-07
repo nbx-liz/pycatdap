@@ -56,7 +56,7 @@ nav:
       - Basic CATDAP: tutorials/01-basic-catdap.ipynb
       - EDA on Titanic: tutorials/02-eda-titanic.ipynb
       - AIC-optimal binning on iris: tutorials/03-iris-pooling.ipynb
-      - Multivariate HelloGoodbye: tutorials/04-hellogoodbye-multivariate.ipynb
+      - Multivariate scale (synthetic): tutorials/04-hellogoodbye-multivariate.ipynb
       - Real-world EDA on seaborn Titanic: tutorials/05-real-world-eda.ipynb
       - Target-pair analysis: tutorials/06-target-pair-titanic.ipynb
       - Bivariate association analysis: tutorials/07-bivariate-association.ipynb
