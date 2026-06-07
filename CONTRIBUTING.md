@@ -90,7 +90,7 @@ Types: feat, fix, refactor, docs, test, chore, perf, ci
 `tests/test_against_r.py` で R版 `catdap` パッケージとの数値一致を検証する。
 
 - 許容誤差: AIC値は小数第4位まで一致（`atol=1e-4`）
-- 対象データセット: HealthData（現状）、Titanic / iris / HelloGoodbye（[#22](https://github.com/nbx-liz/pycatdap/issues/22) で対応予定）。JNcharacter は同梱しない（GPL ライセンスのため、H-0020 / [#47](https://github.com/nbx-liz/pycatdap/issues/47)）
+- 対象データセット: HealthData（R catdap 由来・GPL のため `tests/fixtures/health_data.csv` に非同梱 fixture として配置、wheel/sdist には含めない — H-0025 / [#156](https://github.com/nbx-liz/pycatdap/issues/156)）。HelloGoodbye / JNcharacter は同梱しない（GPL のため、H-0025 / H-0020 / [#47](https://github.com/nbx-liz/pycatdap/issues/47)）
 - 2層構成:
   - **Property-based tests** — R 参照 CSV がなくても実行可能(符号・順位など定性的検証)
   - **Strict numerical tests** — R 参照 CSV (`docs/r_reference/*.csv`) が必要、`atol=1e-4` で厳密照合

@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-06-07
+
+### Added
+
+- パフォーマンスベンチマーク基盤 (Phase 1) を追加 (#29, H-0021)。`benchmarks/` に
+  `pytest-benchmark` ベースの計測スイートを置き、`make bench` で実行する。`catdap1` /
+  `catdap2` / `optimal_binning` / `discover_error_slices` の hot path を固定 seed の合成
+  データでスケーリング計測し、ベースラインを `docs/performance.md` に記録。
+  - `pytest-benchmark` は dev 専用の `bench` dependency-group (利用者向け extra でも
+    `dev` でもない)。`py-cpuinfo` のみに依存し numpy/pandas の version cap を持たないため
+    uv の universal lock を汚染しない。wheel/sdist には含まれない。
+  - `benchmarks/` は `testpaths` 外のため `make ci` / `make test` では収集・実行されない。
+  - `discover_error_slices` ベンチは OOM 回避のため強くバウンド (`max_vars=2`、
+    `max_candidates` 上限、5k 行 subsample、`slow` マーク)。Adult Income は実 fetch せず
+    形状を模倣した合成データを使用 (network 計測ノイズ回避)。
+- nightly 非ブロッキング ベンチマーク CI (Phase 2) を追加 (#161, H-0022)。
+  `.github/workflows/benchmarks.yml` が schedule (03:00 UTC) / `workflow_dispatch` で
+  `make bench` を実行し、`github-action-benchmark` で履歴を `gh-pages` ブランチ
+  (`dev/bench/`) に蓄積。回帰時 (≥1.5×) は**コミットコメント**で警告するのみで PR/コミットを
+  ブロックしない (`fail-on-alert: false`)。`output.json` は artifact 保存。`make ci` の
+  挙動・時間は不変。
+  - Pages は docs サイト (Actions デプロイ) が使用中のため、チャートは `gh-pages` ブランチ
+    保存のみで公開 URL には載せない (docs サイトと非競合)。
+  - scheduled workflow は default branch (`main`) 定義で発火するため、nightly 自動実行は
+    本ワークフローが main に乗る次回リリース以降に有効化。それまでは `workflow_dispatch` で検証。
+- ベンチマーク PR-delta コメント (Phase 3) を追加 (#161, H-0023)。`src/pycatdap/**` を変更する
+  PR で非 slow subset を実行し、`gh-pages` の baseline と比較した delta を **PR コメント
+  (レビューコメント)** として投稿 (`comment-always`、`pull-requests: write` 必須)。履歴は書き換えず (`auto-push` /
+  `save-data-file: false`)、PR を**ブロックしない** (`fail-on-alert: false`)。same-repo PR
+  限定 (fork PR は read-only token のため検証のみ)。これで #161 (Phase 2+3) 完了。
+
+### Changed
+
+- `optimal_binning` の auto-accuracy (`accuracy=None`) が初期ビン数を上限化 (#164, H-0024)。
+  最小ギャップが範囲に対し `_MAX_AUTO_BINS=256` を超える初期ビンを生む高カーディナリティ連続
+  データでは accuracy を `range/256` に広げ `UserWarning` を出す。これにより従来ハング/OOM して
+  いた全ユニーク連続 float (例: 10万行 >200s 未完了) が短時間で完了 (実測 0.245s)。
+  **明示 `accuracy` は従来通り verbatim** (R 厳密照合・既存挙動に影響なし)。細かい制御は
+  明示 `accuracy=` を渡す。catdap2 / target_pair の auto パスも同経路で恩恵。
+
+### Removed
+
+- **BREAKING**: `pycatdap.datasets.load_hello_goodbye` と同梱データ
+  `hello_goodbye.csv.gz` を削除 (#156, H-0025)。HelloGoodbye は R `catdap` 由来で
+  **GPL (>=2)・Copyright ISM** のため、MIT 配布物 (wheel) に同梱すると下流 (LizyStudio 等
+  permissive) へ GPL が伝播する。再構成不可 (13954×56 匿名) なため除去。tutorial 04 は
+  同形状の**合成データ**に書き換え。GPL 化は下流非互換、ISM 許諾は取得不可のため同梱解除を選択。
+- **BREAKING**: `pycatdap.datasets.load_health_data` と同梱データ `health_data.csv` を
+  配布物から除去 (#156, H-0025)。HealthData も catdap 由来 (GPL/ISM)。R bit-exact 照合の
+  土台のため、**非配布の test fixture** (`tests/fixtures/health_data.csv`、wheel/sdist 除外、
+  `NOTICE` で帰属明記) として保持し検証は CI で継続。tutorial 01 / quickstart / README の
+  デモは permissive な `load_heart_disease` (UCI) に差替。wheel・sdist に catdap GPL データは
+  含まれない (`uv build` で確認)。
+
 ## [0.13.0] — 2026-06-07
 
 ### Added

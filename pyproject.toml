@@ -72,6 +72,15 @@ notebooks = [
     "matplotlib>=3.7",
     "ipykernel>=6.29",
 ]
+bench = [
+    # Dev-only performance benchmarking (run via ``make bench``; never in
+    # ``make ci``). pytest-benchmark depends only on py-cpuinfo + pytest, so it
+    # carries NO numpy/pandas version cap and cannot poison uv's universal lock.
+    # The explicit pytest floor matches the ``dev`` group so ``uv sync
+    # --only-group bench`` resolves a consistent pytest.
+    "pytest>=8.0",
+    "pytest-benchmark>=4.0",
+]
 docs = [
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.25",
@@ -98,6 +107,13 @@ version-file = "src/pycatdap/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pycatdap"]
 
+[tool.hatch.build.targets.sdist]
+# Exclude the GPL-licensed catdap-derived test fixture from the source
+# distribution (it is an internal R-equivalence fixture, not part of the
+# MIT-licensed library — see NOTICE and HISTORY H-0025 / #156). The wheel already
+# excludes it by only packaging src/pycatdap.
+exclude = ["tests/fixtures/health_data.csv"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short --cov=pycatdap --cov-report=term-missing"
@@ -121,11 +137,12 @@ convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 # Docstring rules apply to the package surface only. Tests, the build-generated
-# version file, tutorial notebooks, and internal scripts are exempt.
+# version file, tutorial notebooks, benchmarks, and internal scripts are exempt.
 "tests/**" = ["D"]
 "src/pycatdap/_version.py" = ["D"]
 "docs/**" = ["D"]
 "scripts/**" = ["D"]
+"benchmarks/**" = ["D"]
 
 [tool.mypy]
 python_version = "3.10"

@@ -4,10 +4,10 @@ Learning-oriented walkthroughs that guide you from zero to confident usage.
 
 ## Available
 
-- **[Basic CATDAP](01-basic-catdap.ipynb)** — The original v0.2 tutorial walkthrough using HealthData
+- **[Basic CATDAP](01-basic-catdap.ipynb)** — The original CATDAP-01 / CATDAP-02 walkthrough on the UCI Heart Disease dataset
 - **[EDA on Titanic](02-eda-titanic.ipynb)** — v0.3+ univariate EDA APIs (`describe`, `plot_variable`, `plot_missing`) demonstrated on the Titanic dataset
 - **[AIC-optimal binning on iris](03-iris-pooling.ipynb)** — Why CATDAP-02's pooling search beats equal-width binning, with cut points visualized against species histograms
-- **[Multivariate HelloGoodbye](04-hellogoodbye-multivariate.ipynb)** — Scale to 56 binary variables, use `catdap1` to rank candidates and `catdap2(nvar=k)` to keep the subset search tractable
+- **[Multivariate scale (synthetic)](04-hellogoodbye-multivariate.ipynb)** — Scale to 56 binary variables on a synthetic wide dataset, use `catdap1` to rank candidates and `catdap2(nvar=k)` to keep the subset search tractable
 - **[Real-world EDA on seaborn Titanic](05-real-world-eda.ipynb)** — End-to-end workflow on messy data: missingness inspection, cleanup, mixed-pooling CATDAP-02, and HTML/Plotly export. Requires `pycatdap[tutorial]`.
 - **[Target-pair analysis](06-target-pair-titanic.ipynb)** — Drill into a single (target, explanatory) pair with `target_summary` and `plot_target`: four-perspective tables, AIC-optimal binning for continuous explanatories, ΔAIC ranking, Plotly export, and **continuous-target regression mode** via `RegressionTargetSummary` (H-0005). Requires `pycatdap[tutorial]`.
 - **[Bivariate association analysis](07-bivariate-association.ipynb)** — Step beyond a single pair: `plot_pair` for symmetric two-column plots, `aic_heatmap` for one-glance ΔAIC matrices, `association_matrix` for the full m × m ΔAIC sweep, and `association_plot` for vcd-style Pearson residuals. Requires `pycatdap[tutorial]`.

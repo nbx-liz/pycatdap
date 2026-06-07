@@ -45,18 +45,20 @@ Supported: Python 3.10 / 3.11 / 3.12 / 3.13
 ```python
 import pycatdap
 
-df = pycatdap.datasets.load_health_data()
+df = pycatdap.datasets.load_heart_disease()
 
-# CATDAP-01: pairwise AIC analysis
-result = pycatdap.catdap1(df, response_names=["symptoms"])
-print(result.aic_order["symptoms"])  # variables ranked by ΔAIC
+# CATDAP-01: pairwise AIC on the coded-categorical columns
+cat = df[["target", "sex", "cp", "exang", "thal"]]
+result = pycatdap.catdap1(cat, response_names=["target"])
+print(result.aic_order["target"])  # variables ranked by ΔAIC
 
-# CATDAP-02: best explanatory subset
+# CATDAP-02: best explanatory subset (continuous columns auto-pooled)
 result2 = pycatdap.catdap2(
     df,
-    pool=[2, 2, 2, 0, 0, 0, 0, 2],
-    response_name="symptoms",
-    accuracy=[0., 0., 0., 1., 1., 1., 0.1, 0.],
+    #     age sex cp trestbps chol fbs restecg thalach exang oldpeak slope ca thal target
+    pool=[1, 2, 2, 1, 1, 2, 2, 1, 2, 1, 2, 2, 2, 2],
+    response_name="target",
+    nvar=6,
 )
 for s in result2.subsets[:3]:
     print(f"AIC={s.aic:.2f}, vars={s.variables}")
@@ -65,7 +67,7 @@ for s in result2.subsets[:3]:
 ### One-call EDA report (v0.5+)
 
 ```python
-report = pycatdap.profile(df, response="symptoms")
+report = pycatdap.profile(df, response="target")
 report.show()                       # Jupyter inline
 report.to_html("report.html")       # self-contained HTML, inline Plotly
 report.to_dict()                    # JSON-friendly

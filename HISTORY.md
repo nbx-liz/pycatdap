@@ -4044,3 +4044,550 @@ class SliceDiscoveryResult:
 - 公式ライセンス確認: catdap 1.3.5 `DESCRIPTION` / `AUTHORS`(Copyright ISM, GPL (>= 2))
 - 既存ギャップ: Issue #156
 - 一次資料: Katsura & Sakamoto (1980); Sakamoto, Ishiguro & Kitagawa (1983)
+
+## 2026-06-07: パフォーマンスベンチマーク基盤（Phase 1 — benchmarks/ + pytest-benchmark）
+
+- ID: `H-0021`
+- Status: `proposed`
+- Scope: `build | dev-tooling | docs`(公開 API 変更なし)
+- Related: Issue #29 / #20(CATDAP-02 は 14 列 Adult Income を 30s で処理する想定)/ #11、memory `incident_discover_slices_oom` / `feedback_make_ci_d4_network_hang` / `feedback_optional_dep_caps_core_poisons_uv_lock`
+
+### Context
+
+#20 の受入基準で「CATDAP-02 は Adult Income (14 列) を 30s 以内で処理する」と謳って
+いるが、明示的ベンチマークがないため性能回帰が静かに混入し得る。#29 は `benchmarks/` +
+`pytest-benchmark` + nightly CI + 履歴チャート + PR delta コメント + 20% 回帰ゲートを
+要求する大型タスク。GitHub hosted runner は共有 CPU で計測ノイズが大きく、20% PR ゲートは
+flaky 化しやすい。よって**段階導入**とし、本 Proposal は **Phase 1(ローカル実行可能な
+計測基盤 + ベースライン記録)** のみをスコープとする。nightly CI / 履歴チャート / PR delta
+コメント / 回帰ゲートは follow-up issue(nightly 非ブロッキング警告方針)に分離する。
+
+### Proposal
+
+#### A. 新規 dev 依存(`bench` dependency-group)
+
+`pyproject.toml` の `[dependency-groups]` に `bench` を追加:
+
+```toml
+[dependency-groups]
+bench = ["pytest-benchmark>=4.0"]
+```
+
+- `pytest-benchmark` は `py-cpuinfo` のみに依存する純粋な pytest プラグインで、
+  **numpy/pandas に version cap を持たない**(memory `feedback_optional_dep_caps_core_poisons_uv_lock`
+  の uv-lock 汚染リスクなし)。`[project.optional-dependencies]`(利用者向け extra)には
+  入れず、開発専用 group とする。default の `dev` group にも入れない(`make ci` を汚さない)。
+
+#### B. `benchmarks/` ディレクトリ(pytest 収集対象外)
+
+`[tool.pytest.ini_options].testpaths = ["tests"]` のままとし、`benchmarks/` は
+`make bench` から明示パス指定でのみ実行する(`make test` / `make ci` は一切実行しない)。
+
+- `benchmarks/_data.py` — 固定 seed(`np.random.default_rng`)の決定論的合成データ生成。
+  入力 DataFrame/array は不変(immutable)。
+- `benchmarks/conftest.py` — 共有設定。
+- `benchmarks/bench_catdap1.py` — `catdap1()`: 100 / 1k / 10k / 100k 行 × 10 列(全カテゴリカル)。
+- `benchmarks/bench_catdap2.py` — `catdap2()`: 100 / 1k / 10k 行 × 5 / 10 列(mixed)。
+  **`nvar` を固定(5)** して subset search の組合せ爆発を回避(`nvar=None` は全列全組合せ
+  = 2^cols 爆発のため危険)。
+- `benchmarks/bench_pooling.py` — `optimal_binning()`: 1k / 10k / 100k 行。
+- `benchmarks/bench_discovery.py` — `discover_error_slices()` を **Adult Income 形状(14 列
+  mixed)を模倣した合成データ**で計測。`fetch_adult_income` の実取得は使わない(OpenML
+  ネットワーク依存 + sklearn が `make test-all` をハングさせ、計測に network 分散が混入
+  するため; memory `feedback_make_ci_d4_network_hang`)。OOM 回帰(memory
+  `incident_discover_slices_oom`)を避けるため **`max_vars=2` / `max_candidates` 小 /
+  行数 subsample** で強くバウンドし、`@pytest.mark.slow` を付与。
+
+各ベンチ関数は `benchmark` fixture で対象を計測しつつ、戻り値の妥当性(`Catdap1Result`
+等)を assert して self-validating とする。
+
+#### C. `make bench` ターゲット
+
+```make
+bench:
+	uv run --group bench pytest benchmarks/ --benchmark-only -o addopts="" -p no:cacheprovider
+```
+
+- `pytest-benchmark` は `pytest-cov` 同時実行下で計測を無効化するため、`-o addopts=""` で
+  既定の `--cov` を外す。
+- 既定では `slow` 含む全ベンチを実行(`benchmarks/` は CI 非対象なので問題なし)。
+
+#### D. ドキュメント
+
+- `docs/performance.md` — 計測手法・実行方法・本機での Phase 1 ベースライン値・解釈と
+  注意(hosted runner ノイズ、絶対値は環境依存)を記録。`mkdocs.yml` の nav に追加。
+- `CHANGELOG.md` `[Unreleased]` に追記。
+
+#### E. ruff 設定
+
+`[tool.ruff.lint.per-file-ignores]` に `"benchmarks/**" = ["D"]` を追加(ベンチは
+パッケージ公開面でないため docstring 規則を免除)。`mypy` は `src/pycatdap/` のみ対象の
+ため `benchmarks/` は型チェック外(既存挙動)。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `pyproject.toml` | `[dependency-groups] bench` 追加 / ruff per-file-ignore 追加 |
+| `uv.lock` | `pytest-benchmark` + `py-cpuinfo` 追加(dev-only group) |
+| `benchmarks/` | 新規(`_data.py` / `conftest.py` / `bench_*.py` ×4) |
+| `Makefile` | `bench` ターゲット追加 |
+| `docs/performance.md` / `mkdocs.yml` | 新規ドキュメント + nav |
+| `CHANGELOG.md` | `[Unreleased]` に追記 |
+
+### Compatibility
+
+**完全に additive かつ非ランタイム**。公開 API・data contract・型・配布 wheel/sdist に
+変更なし(`bench` group は dev 専用で wheel に含まれない)。`make ci` / `make test` の
+挙動・実行時間は不変(`benchmarks/` は収集対象外)。新規ランタイム依存なし。
+
+### Alternatives Considered
+
+- **A1: Issue 全部を 1 PR(nightly CI + gh-pages チャート + PR delta + 20% ゲート)** —
+  範囲が大きく、hosted runner ノイズで 20% PR ゲートが flaky 化。段階導入で Phase 1 を
+  先に固める方が低リスク。却下(follow-up に分離)。
+- **A2: ベンチを `tests/` 配下に置き marker で除外** — `testpaths` 既定収集に乗り、
+  `make ci` の収集・依存に影響しうる。`benchmarks/` 分離 + 明示パスの方がクリーン。却下。
+- **A3: discovery ベンチで実 Adult Income を fetch** — network 分散が計測に混入 +
+  OOM/ハングリスク(memory 2 件)。合成データ模倣を採用。
+- **A4: `pytest-benchmark` を `dev` group / `[all]` extra に** — `make ci` や release-PR CI に
+  不要な依存が乗る。専用 `bench` group が最小。採用。
+
+### Acceptance Criteria
+
+- [ ] `make bench` がローカルで全ベンチを完走(catdap1 / catdap2 / pooling / discovery)。
+- [ ] `make ci`(lint / format / typecheck / non-slow test, 80%+ cov)が green、実行時間不変。
+- [ ] `benchmarks/` が `make test` / `make ci` で**収集・実行されない**。
+- [ ] discovery ベンチが `max_vars=2` / `max_candidates` 小 / subsample でバウンドされ
+      OOM しない。
+- [ ] `docs/performance.md` に本機ベースライン値・手法・実行方法を記載、mkdocs nav に追加。
+- [ ] `uv.lock` の numpy/pandas 解決が base branch から不変(`bench` 追加で汚染しない)。
+- [ ] ruff clean。`bench` group は wheel/sdist に含まれない。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: Phase 1 のみ。nightly 非ブロッキング CI / 履歴チャート / PR delta コメント /
+  20% 回帰ゲートは follow-up issue に分離(本 Proposal のスコープ外)。
+
+### Migration
+
+なし(純粋な dev-tooling 追加)。
+
+### Related References
+
+- 親仕様: Issue #29 / #20(CATDAP-02 30s 想定)/ #11
+- OOM 回帰防止: memory `incident_discover_slices_oom`
+- network ハング回避: memory `feedback_make_ci_d4_network_hang`
+- uv-lock 汚染チェック: memory `feedback_optional_dep_caps_core_poisons_uv_lock`
+
+## 2026-06-07: nightly 非ブロッキング ベンチマーク CI（Phase 2 — schedule + 回帰アラート）
+
+- ID: `H-0022`
+- Status: `proposed`
+- Scope: `ci | dev-tooling`(公開 API・配布物変更なし)
+- Related: Issue #161 / #29(H-0021 Phase 1)/ #20、memory `incident_discover_slices_oom` / `finding_optimal_binning_unique_squared`
+
+### Context
+
+H-0021(#29 Phase 1)でローカル実行可能なベンチマーク基盤を整備した。#161 はその CI 化を
+要求する。GitHub hosted runner は共有 CPU で計測ノイズが大きいため、#29 の判断どおり
+**per-PR の 20% 回帰ゲートは採らず、nightly schedule + 非ブロッキング回帰アラート**とする。
+
+重要な既存制約: 本リポジトリの GitHub Pages は **`build_type: workflow`**(`docs.yml` の
+`actions/deploy-pages@v5` で mkdocs サイトを配信)であり、レガシー `gh-pages` ブランチは
+**配信に使っていない**。`github-action-benchmark` は既定で `gh-pages` ブランチへチャートを
+push する。1 リポジトリ 1 Pages のため、benchmark チャートを公開 URL に載せると docs サイトと
+競合する。→ **チャートは `gh-pages` ブランチに保存するが公開 URL には載せない**方針を採用
+(Pages の `build_type` は branch 作成では切り替わらないため docs サイトへの影響なし)。
+
+### Proposal
+
+#### A. 新規ワークフロー `.github/workflows/benchmarks.yml`
+
+- トリガー:
+  - `schedule`(nightly, `cron: "0 3 * * *"` = 03:00 UTC)
+  - `workflow_dispatch`(手動検証用)
+  - `pull_request`(paths: `.github/workflows/benchmarks.yml` / `benchmarks/**` /
+    `Makefile` / `pyproject.toml`)— **検証専用**(下記 D)
+- ジョブ(ubuntu-latest, Python 3.12):
+  1. checkout(`fetch-depth: 0` = hatch-vcs)
+  2. setup-uv → `uv sync --frozen --group bench`(sklearn/extra は入れない =
+     D4 OpenML ハング回避; ベンチは合成データで network 不要)
+  3. `make bench BENCH_ARGS="--benchmark-json=output.json"`(slow 含むフル)
+  4. `benchmark-action/github-action-benchmark@v1`(`tool: pytest`,
+     `output-file-path: output.json`)
+  5. `actions/upload-artifact@v4` で `output.json` を保存
+
+#### B. github-action-benchmark の設定
+
+- `gh-pages-branch: gh-pages`, `benchmark-data-dir-path: dev/bench`,
+  `auto-push: true`(schedule/dispatch 時のみ)→ 履歴とインタラクティブ
+  ダッシュボード(`index.html`)を `gh-pages` ブランチに蓄積。
+- `alert-threshold: "150%"`(hosted-runner ノイズを考慮し +20% 通念より緩め。閾値は
+  後でチューニング可)、`comment-on-alert: true`、**`fail-on-alert: false`(PR/コミットを
+  ブロックしない)**。
+- `github-token: ${{ secrets.GITHUB_TOKEN }}`。permissions: `contents: write`
+  (gh-pages push + commit comment)。
+
+#### C. 権限・並行性
+
+- `permissions: contents: write`(他は read)。
+- `concurrency: group: benchmarks, cancel-in-progress: false`(nightly 重複防止)。
+
+#### D. PR 検証モード(副作用なし)
+
+`pull_request` イベント時は `auto-push: false` / `save-data-file: false` /
+`comment-on-alert: false` とし、**実行と JSON パースの検証のみ**(gh-pages 書込・コメント
+なし)。これにより本ワークフロー導入 PR 自身で end-to-end 検証できる(fork PR でも安全)。
+
+#### E. ドキュメント
+
+`docs/performance.md` に nightly 運用と履歴データの所在(`gh-pages` ブランチ
+`dev/bench/`)を追記。`CHANGELOG [Unreleased]`。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `.github/workflows/benchmarks.yml` | 新規 |
+| `gh-pages` ブランチ | 初回 nightly で自動生成(データ保存専用) |
+| `docs/performance.md` / `CHANGELOG.md` | 追記 |
+
+### Compatibility
+
+**完全に additive**。公開 API・data contract・配布 wheel/sdist・`make ci` / `make test` の
+挙動と実行時間に変更なし(別ワークフロー)。Pages の docs サイト配信は不変
+(`build_type: workflow` は branch 作成で切り替わらない)。新規ランタイム/Python 依存なし
+(`github-action-benchmark` は CI Action であり package 依存ではない)。
+
+### Alternatives Considered
+
+- **A1: per-PR 20% 回帰ゲート(fail-on-alert: true)** — hosted-runner ノイズで flaky。
+  #29 で却下済。非ブロッキングを採用。
+- **A2: チャートを docs サイト(公開 Pages)に統合** — mkdocs build とベンチ履歴の連携配線が
+  重い。Phase 2 では `gh-pages` ブランチ保存に留め、公開可視化は将来検討。
+- **A3: self-hosted runner で安定計測** — 運用負荷大。hosted + 非ブロッキングで十分。
+- **A4: チャートなし(artifact のみ)** — 履歴トレンドが追えない。github-action-benchmark の
+  gh-pages 保存は低コストで履歴+アラートを両立するため採用。
+
+### Acceptance Criteria
+
+- [ ] nightly(schedule)で benchmarks.yml が green、`gh-pages` に履歴が蓄積される。
+- [ ] 回帰検出時に**コメント**が出るが PR/コミットを**ブロックしない**(fail-on-alert:false)。
+- [ ] `make ci` の実行時間・挙動が不変(benchmarks は testpaths 外のまま)。
+- [ ] PR 検証モードで gh-pages 書込・コメントが発生しない。
+- [ ] Pages の docs サイト配信が継続(build_type: workflow 不変)。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: Phase 2 のみ。Phase 3(src 変更 PR での PR-delta コメント)は別 PR / issue #161 に
+  残す。閾値 150% は暫定で運用後に調整。**運用注意**: scheduled workflow は default branch
+  (`main`)の定義で発火するため、nightly 自動実行は benchmarks.yml が main に乗る次回
+  リリース以降に有効化される。develop マージ後は `workflow_dispatch`(手動)で gh-pages 生成を
+  検証する。導入 PR 自身は `pull_request` 検証モードで end-to-end チェック済とする。
+
+### Migration
+
+なし(CI 追加のみ)。
+
+### Related References
+
+- 親仕様: Issue #161 / #29(H-0021)/ #20
+- Pages 競合の根拠: `docs.yml`(`deploy-pages@v5`)+ `gh api repos/.../pages`(build_type: workflow)
+- ノイズ対策方針: #29 Decision(非ブロッキング nightly)
+
+## 2026-06-07: ベンチマーク PR-delta コメント（Phase 3 — 非ブロッキング）
+
+- ID: `H-0023`
+- Status: `proposed`
+- Scope: `ci | dev-tooling`(公開 API・配布物変更なし)
+- Related: Issue #161 / #29(H-0021 Phase 1 / H-0022 Phase 2)
+
+### Context
+
+H-0022(Phase 2)で nightly 非ブロッキング CI を導入し、`gh-pages` ブランチに履歴 baseline を
+蓄積するようにした。#161 の残タスク Phase 3 は、**src を変更する PR で性能影響を可視化**する
+こと。既存の `benchmarks.yml` の `pull_request` 挙動(Phase 2 では副作用なしの検証専用)を
+拡張する。
+
+`github-action-benchmark` は **commit comment** のみ対応(PR スレッドコメントは upstream の
+Future work)。`save-data-file: false` は「PR と base の比較用」と公式に明記されており、
+履歴に保存せず baseline と比較して delta を出す PR-delta パターンそのもの。
+
+### Proposal
+
+`.github/workflows/benchmarks.yml` を変更:
+
+#### A. トリガー paths に `src/pycatdap/**` 追加
+
+src 変更 PR でベンチが走るようにする(既存 plumbing paths はそのまま)。
+
+#### B. 実行は PR では非 slow subset
+
+`pull_request` 時は `make bench BENCH_ARGS="--benchmark-json=output.json -m 'not slow'"`
+(slow な slice-discovery を除外し PR フィードバック時間をバウンド)。schedule/dispatch は
+フル実行のまま。
+
+#### C. action 入力(PR モード)
+
+- `auto-push: false` / `save-data-file: false`(履歴を書かない)
+- `skip-fetch-gh-pages: false`(baseline を取得して比較。gh-pages は H-0022 で pre-created)
+- `comment-always: true`(**ただし same-repo PR のみ**:
+  `github.event.pull_request.head.repo.full_name == github.repository`)→ PR head commit に
+  delta の commit comment。fork PR は read-only token のためコメントせず検証のみ。
+- `fail-on-alert: false`(ブロックしない)
+- `concurrency` を `benchmarks-${{ github.ref }}`(per-ref)に変更し PR/nightly が相互に
+  ブロックしないようにする。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `.github/workflows/benchmarks.yml` | pull_request paths + 条件付き実行 + PR comment-always(same-repo) |
+| `docs/performance.md` / `CHANGELOG.md` | 追記 |
+
+### Compatibility
+
+**additive / CI のみ**。公開 API・配布物・`make ci` 不変。schedule/dispatch の挙動も不変
+(PR モードのみ拡張)。新規依存なし。auto-push は PR では false のため、PR から gh-pages を
+改変するセキュリティ懸念(README 警告)は発生しない。
+
+### Alternatives Considered
+
+- **A1: PR スレッドへの本文コメント** — `github-action-benchmark` 未対応(Future work)。
+  commit comment を採用(PR の head commit に表示され意図を満たす)。
+- **A2: PR でもフル(slow 含む)実行** — +約35s。issue が「slow は opt-in」と明記のため
+  非 slow subset を採用。
+- **A3: fork PR でも comment** — fork は read-only token でコメント不可 → 失敗赤×。
+  same-repo PR に限定し fork は検証のみ。
+
+### Acceptance Criteria
+
+- [ ] src 変更 PR(same-repo)で delta の commit comment が出る。
+- [ ] PR は **ブロックされない**(fail-on-alert: false)。
+- [ ] PR は履歴(gh-pages)を書き換えない(auto-push/save-data-file: false)。
+- [ ] schedule/dispatch のフル実行・履歴追記は不変。
+- [ ] `make ci` 不変。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: これで #161(Phase 2+3)は実装完了。閾値・subset 構成は運用後に調整可。
+
+### Migration
+
+なし(CI 拡張のみ)。
+
+### Related References
+
+- 親仕様: Issue #161 / #29(H-0021 / H-0022)
+- comment 仕様: `github-action-benchmark` README(`comment-always` = commit comment、
+  `save-data-file: false` = PR vs base 比較用、PR スレッドコメントは Future work)
+
+## 2026-06-07: optimal_binning auto-accuracy の初期ビン数上限（O(n³) ハード化）
+
+- ID: `H-0024`
+- Status: `proposed`
+- Scope: `behavior(internal)`(公開 API シグネチャ・data contract 不変; auto パスの出力が
+  高カーディナリティ端でのみ変化)
+- Related: Issue #164 / #29(H-0021 で発見)、memory `finding_optimal_binning_unique_squared`、先例 H-0013 §B-bis(calibration `_AIC_INIT_BINS=50`)
+
+### Context
+
+`_pooling.optimal_binning(accuracy=None)` は `_auto_accuracy(values)`(ソート済みユニーク値の
+**最小ギャップ**)で初期ビン幅を決める。全ユニークな連続 float では最小ギャップが極小となり、
+初期ビン数 `(max-min)/accuracy` が数百万に膨張 → `_initial_bins`/`_build_bin_freq_table` の
+**メモリ爆発** + 貪欲マージの **O(n_bins³)** で事実上ハング(#29 ベンチ構築時に 100k 行 1 呼び出しが
+>200s 未完了)。catdap2 / target_pair の auto パスも同経路で波及。
+
+calibration モジュールは既に同問題を回避済(H-0013 §B-bis: 確率を `1/50` グリッドに固定して
+初期ビンを ~50 に上限化)。本提案はこの上限化を `_auto_accuracy` 本体に一般化する。
+
+### Proposal
+
+`src/pycatdap/_pooling.py`:
+
+- 定数 `_MAX_AUTO_BINS = 256` を追加。
+- `_auto_accuracy` を変更: 最小ギャップ `min_gap` が `(max-min)/_MAX_AUTO_BINS` より小さい
+  (= 初期ビンが 256 を超える)場合、accuracy を `(max-min)/_MAX_AUTO_BINS` に広げ、
+  `warnings.warn`(UserWarning, 明示 `accuracy=` を促す)を発行。そうでなければ従来通り
+  `min_gap` を返す。
+- `optimal_binning` / `_auto_accuracy` の docstring に上限と感度を明記。
+
+**スコープ厳守**: 変更は `accuracy=None`(auto)パスのみ。**明示 `accuracy` は verbatim honored**
+(マージ本体・`_initial_bins` は不変)。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `src/pycatdap/_pooling.py` | `_MAX_AUTO_BINS` 追加 / `_auto_accuracy` に上限+警告 / docstring |
+| `tests/test_pooling.py` | 上限・警告・低カーディナリティ不変・明示 accuracy バイパスのテスト追加 |
+| `docs/performance.md` / `CHANGELOG.md` | caveat 更新・追記 |
+
+### Compatibility
+
+- **明示 `accuracy` 経路は完全不変** → R 厳密照合(`test_against_r.py` は明示 accuracy 使用)・
+  既存テストに影響なし。
+- auto 経路は `min_gap` が 256 ビン以内に収まるデータ(通常・中程度)は**不変**。256 ビンを
+  超える高カーディナリティ auto のみ accuracy が広がり(従来はハング/OOM = 実質利用不能)、
+  **動作中の挙動は回帰しない**。
+- 新規例外なし(警告のみ)。公開 API シグネチャ不変。
+
+### Alternatives Considered
+
+- **A1: 明示エラー(raise)** — fail-fast だが catdap2 auto がエラー化し「とりあえず動く」性を損なう。
+  警告付き上限の方が UX 良。却下。
+- **A2: 貪欲マージを O(n²) に最適化して上限不要に** — マージ本体の書換は全パス(明示 accuracy/
+  R 照合)に影響し、浮動小数の tie-break 同値性検証が重い。リスク大。将来検討(#164 に残せる)。
+- **A3: 上限値** — calibration の 50 は確率専用。汎用連続には粗すぎるため 256(マージ高速かつ
+  十分な解像度)。明示 accuracy で更に細かく可。
+- **A4: ドキュメントのみ** — ハングを実際には防げない。却下。
+
+### Acceptance Criteria
+
+- [ ] 高カーディナリティ auto(全ユニーク数千〜10万行)が**短時間で完了**し UserWarning を出す。
+- [ ] 最終ビン数 ≤ `_MAX_AUTO_BINS`。
+- [ ] 低カーディナリティ auto は accuracy=min_gap のまま**警告なし・結果不変**。
+- [ ] 明示 `accuracy` 経路は警告なし・従来通り(R 照合 green)。
+- [ ] `make ci` green、`make test-slow`(R 照合含む)green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: auto パス限定のハード化。マージ最適化(A2)は別途必要なら #164 に残す。
+
+### Migration
+
+なし(auto パスの高カーディナリティ端のみ挙動変化。明示 accuracy で従来挙動を再現可能)。
+
+### Related References
+
+- 親仕様: Issue #164 / #29
+- 既存先例: `error/calibration.py` `_AIC_INIT_BINS`(H-0013 §B-bis)
+- 知見: memory `finding_optimal_binning_unique_squared`
+
+## 2026-06-07: catdap 同梱 GPL データの同梱解除（#156 解決 / MIT 維持）
+
+- ID: `H-0025`
+- Status: `proposed`
+- Scope: `API(breaking) | data | docs | build | ci`
+- Related: Issue #156、#47/H-0020(JNcharacter won't-bundle, 同じ GPL 理由)、#21/LizyStudio#579(下流統合)、#33(deprecation 流儀)
+
+### Context
+
+pycatdap は **MIT** だが、同梱の 2 データセットが R `catdap` 由来で **GPL(>=2)・Copyright ISM**
+(catdap 1.3.5 `DESCRIPTION`/`AUTHORS` で確認):
+
+- `src/pycatdap/data/health_data.csv`(`load_health_data`)
+- `src/pycatdap/data/hello_goodbye.csv.gz`(`load_hello_goodbye`)
+
+**下流の確定制約**: pycatdap は **LizyStudio に統合予定**で、LizyStudio は **GPL 非互換**
+(maintainer 判断)。よって:
+
+- **pycatdap の GPL 化は不可**(LizyStudio 統合を破壊)→ MIT 維持必須。
+- **ISM 許諾は取得不可**(maintainer 判断)。
+- **NOTICE 単独では不十分**: GPL データが wheel に残ると、permissive な LizyStudio が pycatdap
+  をインストール/再配布する際に GPL が伝播する。
+- → **配布成果物(wheel / sdist)から GPL データを除去**するのが唯一合理的な解。
+
+設計原則: **「インストールされる成果物を GPL-free にする」**ことを最優先(LizyStudio は wheel を
+pip install するだけで repo/tests を vendoring しない)。R bit-exact 検証(プロジェクトの中核)は維持。
+破壊は最小限。
+
+### Proposal
+
+#### A. HelloGoodbye(検証外・13954×56・再構成不可)→ 完全削除 + 合成置換
+
+- `data/hello_goodbye.csv.gz` 削除、公開 API `load_hello_goodbye` **撤去**。
+- `tutorials/04-hellogoodbye-multivariate.ipynb` を **合成の大規模不均衡バイナリ**(固定 seed、
+  ~1.3% positive、情報を持つ少数変数)で書換。タイトル/ナビ更新。
+- `tests/test_datasets.py::TestHelloGoodbye` 削除(R 検証外 = 検証価値の損失なし)。
+
+#### B. HealthData(R 検証の土台・52×8)→ test fixture 化(wheel/sdist 除外)
+
+- `src/pycatdap/data/health_data.csv` → `tests/fixtures/health_data.csv` へ移動。
+- **wheel は `packages=["src/pycatdap"]` のため tests/ は自動的に非同梱**。**sdist は
+  `[tool.hatch.build.targets.sdist].exclude` で fixture を除外** → wheel・sdist とも GPL-free。
+- `tests/test_against_r.py` / `tests/test_target_pair.py` を fixture パス読みに変更(`load_health_data`
+  依存を除去)→ **R bit-exact 検証は CI で継続**。
+- 公開 API `load_health_data` **撤去**(データを同梱しない以上インストール環境で動作不能)。
+- `tutorials/01-basic-catdap.ipynb` を **`load_heart_disease`(UCI permissive・医療 mixed type)** に差替。
+
+#### C. NOTICE
+
+`NOTICE` を新規追加 + テスト docstring / CONTRIBUTING に明記: `tests/fixtures/health_data.csv` は
+R catdap 由来(Copyright ISM, GPL >=2)、**テスト専用・配布ライブラリの一部ではない**(wheel/sdist
+非同梱)。
+
+#### D. 公開 API 撤去の扱い
+
+`load_health_data` / `load_hello_goodbye` は GPL データを同梱できない以上、従来動作する
+soft-deprecation は不可能。Development Status: Alpha のため、**撤去 + CHANGELOG「Removed」**で扱う
+(必要なら 1 バージョンだけ「compliance 理由で削除」を示す情報付きエラーの shim を残す)。代替は
+`load_heart_disease` / `load_titanic` / `load_iris` 等。GPL データが必要な利用者は R catdap から取得。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `src/pycatdap/data/` | `health_data.csv`(移動)・`hello_goodbye.csv.gz`(削除) |
+| `src/pycatdap/datasets.py` | `load_health_data` / `load_hello_goodbye` 撤去(+不要 `gzip` import 整理) |
+| `tests/fixtures/health_data.csv` | 新規(GPL fixture) |
+| `tests/test_against_r.py` / `tests/test_target_pair.py` | fixture パス読みに変更 |
+| `tests/test_datasets.py` | TestHelloGoodbye 削除・TestHealthData は fixture 経由 or 削除 |
+| `tutorials/01` / `tutorials/04` | heart_disease / 合成データに書換 |
+| `pyproject.toml` | sdist exclude 追加 |
+| `NOTICE` / `CONTRIBUTING.md` | GPL fixture の帰属明記 |
+| `README.md` / `docs/*` / `BLUEPRINT.md` / `PLAN.md` / `CHANGELOG.md` | 参照更新・Removed 記載 |
+
+### Compatibility
+
+**BREAKING**(公開 API `load_health_data` / `load_hello_goodbye` 撤去)。緩和: 他の同梱
+permissive データセット(heart_disease/titanic/iris/german_credit/penguins)は不変。R bit-exact
+検証は fixture 経由で CI 継続。wheel/sdist は GPL-free 化(LizyStudio クリーン)。本体 AIC コードは
+無改変。
+
+### Alternatives Considered
+
+- **GPL 化**: LizyStudio(GPL 非互換)統合を破壊。却下。
+- **ISM 許諾**: 取得不可(maintainer)。却下。
+- **NOTICE のみ**: GPL が wheel に残り permissive 下流へ伝播。不十分。却下。
+- **HealthData 再構成**: R bit-exact 一致には**ビット同一**が必要 = 同一表現の複製で法的にグレー +
+  手キーで照合崩壊リスク。却下。
+- **fetch 化**: 入手元は GPL R パッケージのみ → GPL 回避にならず、オフライン中核テストに
+  ネットワーク依存を持ち込む。却下。
+- **採用案**: 配布成果物から除去 + HealthData は非配布 fixture として検証維持。
+
+### Acceptance Criteria
+
+- [ ] `uv build` の wheel・sdist に catdap GPL データ(health_data / hello_goodbye)が**含まれない**
+      (`tar tf` / `unzip -l` で確認)。
+- [ ] R bit-exact テスト(`test_against_r.py`)が fixture 経由で **CI(`-m slow`)で実行・pass**。
+- [ ] `make ci` green。tutorials 01/04 が nbmake で実行成功(GPL データ非依存)。
+- [ ] `load_health_data` / `load_hello_goodbye` が公開 API から消える。
+- [ ] `NOTICE` が GPL fixture を帰属明記。
+- [ ] README/docs の HelloGoodbye/HealthData 記述が更新。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: 2 PR に分割(A: HelloGoodbye / B: HealthData)。各々自己完結で green。
+
+### Migration
+
+`load_health_data` / `load_hello_goodbye` は撤去。デモは `load_heart_disease` 等の permissive
+データセットへ。GPL データが必要なら R `catdap` パッケージから取得すること。
+
+### Related References
+
+- 親仕様: Issue #156、#47/H-0020(JNcharacter)
+- 下流制約: #21 / LizyStudio#579(GPL 非互換)
+- 公式ライセンス: catdap 1.3.5 `DESCRIPTION`/`AUTHORS`(Copyright ISM, GPL >=2)
