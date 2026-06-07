@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] — 2026-06-07
+
 ### Added
 
 - パフォーマンスベンチマーク基盤 (Phase 1) を追加 (#29, H-0021)。`benchmarks/` に
@@ -31,8 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - scheduled workflow は default branch (`main`) 定義で発火するため、nightly 自動実行は
     本ワークフローが main に乗る次回リリース以降に有効化。それまでは `workflow_dispatch` で検証。
 - ベンチマーク PR-delta コメント (Phase 3) を追加 (#161, H-0023)。`src/pycatdap/**` を変更する
-  PR で非 slow subset を実行し、`gh-pages` の baseline と比較した delta を **PR head commit の
-  commit comment** として投稿 (`comment-always`)。履歴は書き換えず (`auto-push` /
+  PR で非 slow subset を実行し、`gh-pages` の baseline と比較した delta を **PR コメント
+  (レビューコメント)** として投稿 (`comment-always`、`pull-requests: write` 必須)。履歴は書き換えず (`auto-push` /
   `save-data-file: false`)、PR を**ブロックしない** (`fail-on-alert: false`)。same-repo PR
   限定 (fork PR は read-only token のため検証のみ)。これで #161 (Phase 2+3) 完了。
 
