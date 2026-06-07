@@ -1,4 +1,4 @@
-.PHONY: install test test-slow test-all r-reference lint format format-check typecheck ci build clean
+.PHONY: install test test-slow test-all bench r-reference lint format format-check typecheck ci build clean
 
 PACKAGE = src/pycatdap
 
@@ -18,6 +18,16 @@ test-slow:
 # match the release-PR CI path; otherwise the network-bound fetchers may hang.
 test-all:
 	uv run pytest --cov=$(PACKAGE) --cov-fail-under=80 -q
+
+# Performance benchmarks (Issue #29, H-0021). Lives outside ``testpaths`` so it
+# never runs in ``make ci``/``make test``. ``-o addopts=""`` drops the default
+# pytest opts: ``--cov`` (pytest-benchmark disables timing when pytest-cov is
+# active) AND ``-v --tb=short`` (so failures here print the default short-ish
+# traceback, not the verbose one). Append BENCH_ARGS for extra flags, e.g.:
+#   make bench BENCH_ARGS="--benchmark-save=baseline -m 'not slow'"
+bench:
+	uv run --group bench pytest benchmarks/ --benchmark-only \
+		-o addopts="" -o python_files="bench_*.py" -p no:cacheprovider $(BENCH_ARGS)
 
 r-reference:
 	@command -v Rscript >/dev/null 2>&1 || { \

@@ -84,6 +84,7 @@ nav:
       - pysubgroup: interop/pysubgroup.md
   - Project:
       - Roadmap: project/roadmap.md
+      - Performance: performance.md
       - Changelog: project/changelog.md
       - Contributing: project/contributing.md
 

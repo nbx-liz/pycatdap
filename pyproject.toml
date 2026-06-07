@@ -72,6 +72,15 @@ notebooks = [
     "matplotlib>=3.7",
     "ipykernel>=6.29",
 ]
+bench = [
+    # Dev-only performance benchmarking (run via ``make bench``; never in
+    # ``make ci``). pytest-benchmark depends only on py-cpuinfo + pytest, so it
+    # carries NO numpy/pandas version cap and cannot poison uv's universal lock.
+    # The explicit pytest floor matches the ``dev`` group so ``uv sync
+    # --only-group bench`` resolves a consistent pytest.
+    "pytest>=8.0",
+    "pytest-benchmark>=4.0",
+]
 docs = [
     "mkdocs-material>=9.5",
     "mkdocstrings[python]>=0.25",
@@ -121,11 +130,12 @@ convention = "numpy"
 
 [tool.ruff.lint.per-file-ignores]
 # Docstring rules apply to the package surface only. Tests, the build-generated
-# version file, tutorial notebooks, and internal scripts are exempt.
+# version file, tutorial notebooks, benchmarks, and internal scripts are exempt.
 "tests/**" = ["D"]
 "src/pycatdap/_version.py" = ["D"]
 "docs/**" = ["D"]
 "scripts/**" = ["D"]
+"benchmarks/**" = ["D"]
 
 [tool.mypy]
 python_version = "3.10"
