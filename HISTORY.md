@@ -4044,3 +4044,140 @@ class SliceDiscoveryResult:
 - 公式ライセンス確認: catdap 1.3.5 `DESCRIPTION` / `AUTHORS`(Copyright ISM, GPL (>= 2))
 - 既存ギャップ: Issue #156
 - 一次資料: Katsura & Sakamoto (1980); Sakamoto, Ishiguro & Kitagawa (1983)
+
+## 2026-06-07: パフォーマンスベンチマーク基盤（Phase 1 — benchmarks/ + pytest-benchmark）
+
+- ID: `H-0021`
+- Status: `proposed`
+- Scope: `build | dev-tooling | docs`(公開 API 変更なし)
+- Related: Issue #29 / #20(CATDAP-02 は 14 列 Adult Income を 30s で処理する想定)/ #11、memory `incident_discover_slices_oom` / `feedback_make_ci_d4_network_hang` / `feedback_optional_dep_caps_core_poisons_uv_lock`
+
+### Context
+
+#20 の受入基準で「CATDAP-02 は Adult Income (14 列) を 30s 以内で処理する」と謳って
+いるが、明示的ベンチマークがないため性能回帰が静かに混入し得る。#29 は `benchmarks/` +
+`pytest-benchmark` + nightly CI + 履歴チャート + PR delta コメント + 20% 回帰ゲートを
+要求する大型タスク。GitHub hosted runner は共有 CPU で計測ノイズが大きく、20% PR ゲートは
+flaky 化しやすい。よって**段階導入**とし、本 Proposal は **Phase 1(ローカル実行可能な
+計測基盤 + ベースライン記録)** のみをスコープとする。nightly CI / 履歴チャート / PR delta
+コメント / 回帰ゲートは follow-up issue(nightly 非ブロッキング警告方針)に分離する。
+
+### Proposal
+
+#### A. 新規 dev 依存(`bench` dependency-group)
+
+`pyproject.toml` の `[dependency-groups]` に `bench` を追加:
+
+```toml
+[dependency-groups]
+bench = ["pytest-benchmark>=4.0"]
+```
+
+- `pytest-benchmark` は `py-cpuinfo` のみに依存する純粋な pytest プラグインで、
+  **numpy/pandas に version cap を持たない**(memory `feedback_optional_dep_caps_core_poisons_uv_lock`
+  の uv-lock 汚染リスクなし)。`[project.optional-dependencies]`(利用者向け extra)には
+  入れず、開発専用 group とする。default の `dev` group にも入れない(`make ci` を汚さない)。
+
+#### B. `benchmarks/` ディレクトリ(pytest 収集対象外)
+
+`[tool.pytest.ini_options].testpaths = ["tests"]` のままとし、`benchmarks/` は
+`make bench` から明示パス指定でのみ実行する(`make test` / `make ci` は一切実行しない)。
+
+- `benchmarks/_data.py` — 固定 seed(`np.random.default_rng`)の決定論的合成データ生成。
+  入力 DataFrame/array は不変(immutable)。
+- `benchmarks/conftest.py` — 共有設定。
+- `benchmarks/bench_catdap1.py` — `catdap1()`: 100 / 1k / 10k / 100k 行 × 10 列(全カテゴリカル)。
+- `benchmarks/bench_catdap2.py` — `catdap2()`: 100 / 1k / 10k 行 × 5 / 10 列(mixed)。
+  **`nvar` を固定(5)** して subset search の組合せ爆発を回避(`nvar=None` は全列全組合せ
+  = 2^cols 爆発のため危険)。
+- `benchmarks/bench_pooling.py` — `optimal_binning()`: 1k / 10k / 100k 行。
+- `benchmarks/bench_discovery.py` — `discover_error_slices()` を **Adult Income 形状(14 列
+  mixed)を模倣した合成データ**で計測。`fetch_adult_income` の実取得は使わない(OpenML
+  ネットワーク依存 + sklearn が `make test-all` をハングさせ、計測に network 分散が混入
+  するため; memory `feedback_make_ci_d4_network_hang`)。OOM 回帰(memory
+  `incident_discover_slices_oom`)を避けるため **`max_vars=2` / `max_candidates` 小 /
+  行数 subsample** で強くバウンドし、`@pytest.mark.slow` を付与。
+
+各ベンチ関数は `benchmark` fixture で対象を計測しつつ、戻り値の妥当性(`Catdap1Result`
+等)を assert して self-validating とする。
+
+#### C. `make bench` ターゲット
+
+```make
+bench:
+	uv run --group bench pytest benchmarks/ --benchmark-only -o addopts="" -p no:cacheprovider
+```
+
+- `pytest-benchmark` は `pytest-cov` 同時実行下で計測を無効化するため、`-o addopts=""` で
+  既定の `--cov` を外す。
+- 既定では `slow` 含む全ベンチを実行(`benchmarks/` は CI 非対象なので問題なし)。
+
+#### D. ドキュメント
+
+- `docs/performance.md` — 計測手法・実行方法・本機での Phase 1 ベースライン値・解釈と
+  注意(hosted runner ノイズ、絶対値は環境依存)を記録。`mkdocs.yml` の nav に追加。
+- `CHANGELOG.md` `[Unreleased]` に追記。
+
+#### E. ruff 設定
+
+`[tool.ruff.lint.per-file-ignores]` に `"benchmarks/**" = ["D"]` を追加(ベンチは
+パッケージ公開面でないため docstring 規則を免除)。`mypy` は `src/pycatdap/` のみ対象の
+ため `benchmarks/` は型チェック外(既存挙動)。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `pyproject.toml` | `[dependency-groups] bench` 追加 / ruff per-file-ignore 追加 |
+| `uv.lock` | `pytest-benchmark` + `py-cpuinfo` 追加(dev-only group) |
+| `benchmarks/` | 新規(`_data.py` / `conftest.py` / `bench_*.py` ×4) |
+| `Makefile` | `bench` ターゲット追加 |
+| `docs/performance.md` / `mkdocs.yml` | 新規ドキュメント + nav |
+| `CHANGELOG.md` | `[Unreleased]` に追記 |
+
+### Compatibility
+
+**完全に additive かつ非ランタイム**。公開 API・data contract・型・配布 wheel/sdist に
+変更なし(`bench` group は dev 専用で wheel に含まれない)。`make ci` / `make test` の
+挙動・実行時間は不変(`benchmarks/` は収集対象外)。新規ランタイム依存なし。
+
+### Alternatives Considered
+
+- **A1: Issue 全部を 1 PR(nightly CI + gh-pages チャート + PR delta + 20% ゲート)** —
+  範囲が大きく、hosted runner ノイズで 20% PR ゲートが flaky 化。段階導入で Phase 1 を
+  先に固める方が低リスク。却下(follow-up に分離)。
+- **A2: ベンチを `tests/` 配下に置き marker で除外** — `testpaths` 既定収集に乗り、
+  `make ci` の収集・依存に影響しうる。`benchmarks/` 分離 + 明示パスの方がクリーン。却下。
+- **A3: discovery ベンチで実 Adult Income を fetch** — network 分散が計測に混入 +
+  OOM/ハングリスク(memory 2 件)。合成データ模倣を採用。
+- **A4: `pytest-benchmark` を `dev` group / `[all]` extra に** — `make ci` や release-PR CI に
+  不要な依存が乗る。専用 `bench` group が最小。採用。
+
+### Acceptance Criteria
+
+- [ ] `make bench` がローカルで全ベンチを完走(catdap1 / catdap2 / pooling / discovery)。
+- [ ] `make ci`(lint / format / typecheck / non-slow test, 80%+ cov)が green、実行時間不変。
+- [ ] `benchmarks/` が `make test` / `make ci` で**収集・実行されない**。
+- [ ] discovery ベンチが `max_vars=2` / `max_candidates` 小 / subsample でバウンドされ
+      OOM しない。
+- [ ] `docs/performance.md` に本機ベースライン値・手法・実行方法を記載、mkdocs nav に追加。
+- [ ] `uv.lock` の numpy/pandas 解決が base branch から不変(`bench` 追加で汚染しない)。
+- [ ] ruff clean。`bench` group は wheel/sdist に含まれない。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: Phase 1 のみ。nightly 非ブロッキング CI / 履歴チャート / PR delta コメント /
+  20% 回帰ゲートは follow-up issue に分離(本 Proposal のスコープ外)。
+
+### Migration
+
+なし(純粋な dev-tooling 追加)。
+
+### Related References
+
+- 親仕様: Issue #29 / #20(CATDAP-02 30s 想定)/ #11
+- OOM 回帰防止: memory `incident_discover_slices_oom`
+- network ハング回避: memory `feedback_make_ci_d4_network_hang`
+- uv-lock 汚染チェック: memory `feedback_optional_dep_caps_core_poisons_uv_lock`
