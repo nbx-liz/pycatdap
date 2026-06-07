@@ -5,7 +5,6 @@ Bundled datasets from the R ``catdap`` package for testing and examples.
 
 from __future__ import annotations
 
-import gzip
 import warnings
 from importlib import resources
 from pathlib import Path
@@ -414,36 +413,6 @@ def fetch_compas() -> pd.DataFrame:
     bundle = fetch_openml(name="compas-two-years", version=4, as_frame=True)
     df: pd.DataFrame = bundle.frame
     return df
-
-
-def load_hello_goodbye() -> pd.DataFrame:
-    """Load the HelloGoodbye dataset (13954 observations, 56 binary variables).
-
-    Anonymous binary data used to demonstrate CATDAP-02 with large
-    multivariate datasets.  All variables are binary (0/1).
-
-    Variables
-    ---------
-    Isay : int (0, 1)
-        Response variable.
-    You1say .. You55say : int (0, 1)
-        Explanatory binary variables.
-
-    Returns
-    -------
-    DataFrame
-        13954 rows, 56 columns.
-
-    Examples
-    --------
-    >>> from pycatdap.datasets import load_hello_goodbye
-    >>> df = load_hello_goodbye()
-    >>> df.shape
-    (13954, 56)
-    """
-    path = _data_path("hello_goodbye.csv.gz")
-    with gzip.open(path, "rt") as f:
-        return pd.read_csv(f)
 
 
 #: UCI column order for the Bank Marketing dataset (``bank-full.csv``).

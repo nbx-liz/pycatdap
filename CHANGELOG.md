@@ -45,6 +45,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   **明示 `accuracy` は従来通り verbatim** (R 厳密照合・既存挙動に影響なし)。細かい制御は
   明示 `accuracy=` を渡す。catdap2 / target_pair の auto パスも同経路で恩恵。
 
+### Removed
+
+- **BREAKING**: `pycatdap.datasets.load_hello_goodbye` と同梱データ
+  `hello_goodbye.csv.gz` を削除 (#156, H-0025)。HelloGoodbye は R `catdap` 由来で
+  **GPL (>=2)・Copyright ISM** のため、MIT 配布物 (wheel) に同梱すると下流 (LizyStudio 等
+  permissive) へ GPL が伝播する。再構成不可 (13954×56 匿名) なため除去。tutorial 04 は
+  同形状の**合成データ**に書き換え。GPL 化は下流非互換、ISM 許諾は取得不可のため同梱解除を選択。
+
 ## [0.13.0] — 2026-06-07
 
 ### Added

@@ -6,7 +6,6 @@ from pycatdap.datasets import (
     load_german_credit,
     load_health_data,
     load_heart_disease,
-    load_hello_goodbye,
     load_iris,
     load_penguins,
     load_titanic,
@@ -51,24 +50,6 @@ class TestHealthData:
         df1 = load_health_data()
         df2 = load_health_data()
         assert df1 is not df2
-
-
-class TestHelloGoodbye:
-    """Tests for the HelloGoodbye dataset."""
-
-    def test_shape(self) -> None:
-        df = load_hello_goodbye()
-        assert df.shape == (13954, 56)
-
-    def test_response_column(self) -> None:
-        df = load_hello_goodbye()
-        assert "Isay" in df.columns
-        assert set(df["Isay"].unique()) == {0, 1}
-
-    def test_all_binary(self) -> None:
-        df = load_hello_goodbye()
-        for col in df.columns:
-            assert set(df[col].unique()).issubset({0, 1}), f"{col} is not binary"
 
 
 class TestTitanic:
