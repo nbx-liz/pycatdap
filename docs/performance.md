@@ -117,11 +117,12 @@ target. See the caveats below for why it is bounded and synthetic.
 - **Continuous data has finite precision.** `optimal_binning` starts from
   fine-grained bins of width `accuracy` (auto-detected as the smallest gap
   between sorted unique values), then greedily merges. All-unique random floats
-  explode the initial bin count, making the merge O(unique²). Real features have
-  finite measurement precision, so the generators round continuous values; this
-  keeps the initial bin count bounded and the benchmark measures the genuine
-  O(rows) cost. If you bin high-cardinality continuous data in practice, pass an
-  explicit `accuracy` to control the bin count.
+  would explode the initial bin count, making the merge ~O(n_bins³). The
+  auto-accuracy path therefore **caps the initial grid at 256 bins** and warns
+  when it does so (issue #164 / H-0024), keeping the cost bounded for any input;
+  pass an explicit `accuracy` for finer control. The generators still use
+  bounded-precision (rounded) continuous values, so the benchmark measures the
+  genuine O(rows) cost rather than the capped fallback.
 - **Hosted-runner noise.** GitHub-hosted runners share CPU and show high timing
   variance, which is why the CI regression check is a non-blocking nightly alert
   rather than a per-PR gate.

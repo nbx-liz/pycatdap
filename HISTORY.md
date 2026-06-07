@@ -4388,3 +4388,87 @@ src 変更 PR でベンチが走るようにする(既存 plumbing paths はそ�
 - 親仕様: Issue #161 / #29(H-0021 / H-0022)
 - comment 仕様: `github-action-benchmark` README(`comment-always` = commit comment、
   `save-data-file: false` = PR vs base 比較用、PR スレッドコメントは Future work)
+
+## 2026-06-07: optimal_binning auto-accuracy の初期ビン数上限（O(n³) ハード化）
+
+- ID: `H-0024`
+- Status: `proposed`
+- Scope: `behavior(internal)`(公開 API シグネチャ・data contract 不変; auto パスの出力が
+  高カーディナリティ端でのみ変化)
+- Related: Issue #164 / #29(H-0021 で発見)、memory `finding_optimal_binning_unique_squared`、先例 H-0013 §B-bis(calibration `_AIC_INIT_BINS=50`)
+
+### Context
+
+`_pooling.optimal_binning(accuracy=None)` は `_auto_accuracy(values)`(ソート済みユニーク値の
+**最小ギャップ**)で初期ビン幅を決める。全ユニークな連続 float では最小ギャップが極小となり、
+初期ビン数 `(max-min)/accuracy` が数百万に膨張 → `_initial_bins`/`_build_bin_freq_table` の
+**メモリ爆発** + 貪欲マージの **O(n_bins³)** で事実上ハング(#29 ベンチ構築時に 100k 行 1 呼び出しが
+>200s 未完了)。catdap2 / target_pair の auto パスも同経路で波及。
+
+calibration モジュールは既に同問題を回避済(H-0013 §B-bis: 確率を `1/50` グリッドに固定して
+初期ビンを ~50 に上限化)。本提案はこの上限化を `_auto_accuracy` 本体に一般化する。
+
+### Proposal
+
+`src/pycatdap/_pooling.py`:
+
+- 定数 `_MAX_AUTO_BINS = 256` を追加。
+- `_auto_accuracy` を変更: 最小ギャップ `min_gap` が `(max-min)/_MAX_AUTO_BINS` より小さい
+  (= 初期ビンが 256 を超える)場合、accuracy を `(max-min)/_MAX_AUTO_BINS` に広げ、
+  `warnings.warn`(UserWarning, 明示 `accuracy=` を促す)を発行。そうでなければ従来通り
+  `min_gap` を返す。
+- `optimal_binning` / `_auto_accuracy` の docstring に上限と感度を明記。
+
+**スコープ厳守**: 変更は `accuracy=None`(auto)パスのみ。**明示 `accuracy` は verbatim honored**
+(マージ本体・`_initial_bins` は不変)。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `src/pycatdap/_pooling.py` | `_MAX_AUTO_BINS` 追加 / `_auto_accuracy` に上限+警告 / docstring |
+| `tests/test_pooling.py` | 上限・警告・低カーディナリティ不変・明示 accuracy バイパスのテスト追加 |
+| `docs/performance.md` / `CHANGELOG.md` | caveat 更新・追記 |
+
+### Compatibility
+
+- **明示 `accuracy` 経路は完全不変** → R 厳密照合(`test_against_r.py` は明示 accuracy 使用)・
+  既存テストに影響なし。
+- auto 経路は `min_gap` が 256 ビン以内に収まるデータ(通常・中程度)は**不変**。256 ビンを
+  超える高カーディナリティ auto のみ accuracy が広がり(従来はハング/OOM = 実質利用不能)、
+  **動作中の挙動は回帰しない**。
+- 新規例外なし(警告のみ)。公開 API シグネチャ不変。
+
+### Alternatives Considered
+
+- **A1: 明示エラー(raise)** — fail-fast だが catdap2 auto がエラー化し「とりあえず動く」性を損なう。
+  警告付き上限の方が UX 良。却下。
+- **A2: 貪欲マージを O(n²) に最適化して上限不要に** — マージ本体の書換は全パス(明示 accuracy/
+  R 照合)に影響し、浮動小数の tie-break 同値性検証が重い。リスク大。将来検討(#164 に残せる)。
+- **A3: 上限値** — calibration の 50 は確率専用。汎用連続には粗すぎるため 256(マージ高速かつ
+  十分な解像度)。明示 accuracy で更に細かく可。
+- **A4: ドキュメントのみ** — ハングを実際には防げない。却下。
+
+### Acceptance Criteria
+
+- [ ] 高カーディナリティ auto(全ユニーク数千〜10万行)が**短時間で完了**し UserWarning を出す。
+- [ ] 最終ビン数 ≤ `_MAX_AUTO_BINS`。
+- [ ] 低カーディナリティ auto は accuracy=min_gap のまま**警告なし・結果不変**。
+- [ ] 明示 `accuracy` 経路は警告なし・従来通り(R 照合 green)。
+- [ ] `make ci` green、`make test-slow`(R 照合含む)green。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: auto パス限定のハード化。マージ最適化(A2)は別途必要なら #164 に残す。
+
+### Migration
+
+なし(auto パスの高カーディナリティ端のみ挙動変化。明示 accuracy で従来挙動を再現可能)。
+
+### Related References
+
+- 親仕様: Issue #164 / #29
+- 既存先例: `error/calibration.py` `_AIC_INIT_BINS`(H-0013 §B-bis)
+- 知見: memory `finding_optimal_binning_unique_squared`
