@@ -6,11 +6,11 @@ run it and records a baseline.
 
 !!! note "Scope"
     Phase 1 ([issue #29][issue29]) added the locally runnable harness and the
-    baseline below. Phase 2 ([issue #161][issue161]) adds a **nightly,
-    non-blocking** benchmark workflow (see [below](#continuous-benchmarking-nightly)).
-    Benchmarks are intentionally **never** part of `make ci` — they do not run in
-    the standard test gate, and the nightly job never blocks a PR or commit.
-    PR-delta comments remain a follow-up.
+    baseline below. Phase 2 + 3 ([issue #161][issue161]) add a **non-blocking**
+    benchmark workflow (see [below](#continuous-benchmarking-nightly)): a nightly
+    run plus a delta comment on code-changing PRs. Benchmarks are intentionally
+    **never** part of `make ci` — they do not run in the standard test gate, and
+    the workflow never blocks a PR or commit.
 
 ## Running the benchmarks
 
@@ -147,9 +147,11 @@ commit.
   recorded run, the action posts a **commit comment** (`alert-threshold: 150%`,
   intentionally above +20% because hosted-runner timing is noisy). It does **not**
   fail the run (`fail-on-alert: false`).
-- **On PRs** touching the benchmark plumbing, the workflow runs in validate-only
-  mode (no `gh-pages` write, no comment) to prove the suite and JSON parsing
-  still work.
+- **On PRs** touching `src/pycatdap/**` (or the benchmark plumbing), the workflow
+  runs the non-slow subset, compares against the `gh-pages` baseline **without**
+  writing history, and leaves a **delta commit comment** on the PR head commit
+  (same-repo PRs; fork PRs validate read-only with no comment). It never blocks
+  the PR.
 
 [issue29]: https://github.com/nbx-liz/pycatdap/issues/29
 [issue161]: https://github.com/nbx-liz/pycatdap/issues/161
