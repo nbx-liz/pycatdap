@@ -195,7 +195,7 @@ graph LR
         UCI["UCI ML Repo"] -->|fetch_*| Core
         OpenML["OpenML"] -->|fetch_*| Core
         SK["sklearn datasets"] -->|fetch_*| Core
-        Bundled["Bundled CSVs<br/>HealthData / Titanic / etc"] -->|load_*| Core
+        Bundled["Bundled CSVs<br/>Titanic / Heart Disease / etc"] -->|load_*| Core
     end
 ```
 

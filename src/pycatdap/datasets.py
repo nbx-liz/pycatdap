@@ -20,47 +20,6 @@ def _data_path(filename: str) -> Path:
         return Path(p)
 
 
-def load_health_data() -> pd.DataFrame:
-    """Load the HealthData dataset (52 observations, 8 variables).
-
-    Medical data with mixed categorical and continuous variables,
-    originally used in the CATDAP-02 example by Sakamoto & Katsura.
-
-    Variables
-    ---------
-    opthalmo. : int (1, 2)
-        Ophthalmic examination result.
-    ecg : int (1, 2)
-        Electrocardiogram result.
-    symptoms : str ('A', 'B')
-        Symptom classification (response variable).
-    age : int
-        Patient age.
-    max.press : int
-        Maximum blood pressure.
-    min.press : int
-        Minimum blood pressure.
-    aortic.wav : float
-        Aortic wave measurement.
-    cholesterol : str ('low', 'high')
-        Cholesterol level.
-
-    Returns
-    -------
-    DataFrame
-        52 rows, 8 columns.
-
-    Examples
-    --------
-    >>> from pycatdap.datasets import load_health_data
-    >>> df = load_health_data()
-    >>> df.shape
-    (52, 8)
-    """
-    path = _data_path("health_data.csv")
-    return pd.read_csv(path)
-
-
 def load_titanic() -> pd.DataFrame:
     """Load the Titanic dataset (2201 observations, 4 categorical variables).
 

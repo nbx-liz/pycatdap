@@ -52,6 +52,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   **GPL (>=2)・Copyright ISM** のため、MIT 配布物 (wheel) に同梱すると下流 (LizyStudio 等
   permissive) へ GPL が伝播する。再構成不可 (13954×56 匿名) なため除去。tutorial 04 は
   同形状の**合成データ**に書き換え。GPL 化は下流非互換、ISM 許諾は取得不可のため同梱解除を選択。
+- **BREAKING**: `pycatdap.datasets.load_health_data` と同梱データ `health_data.csv` を
+  配布物から除去 (#156, H-0025)。HealthData も catdap 由来 (GPL/ISM)。R bit-exact 照合の
+  土台のため、**非配布の test fixture** (`tests/fixtures/health_data.csv`、wheel/sdist 除外、
+  `NOTICE` で帰属明記) として保持し検証は CI で継続。tutorial 01 / quickstart / README の
+  デモは permissive な `load_heart_disease` (UCI) に差替。wheel・sdist に catdap GPL データは
+  含まれない (`uv build` で確認)。
 
 ## [0.13.0] — 2026-06-07
 

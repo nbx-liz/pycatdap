@@ -43,8 +43,9 @@ Unlike `ydata-profiling`, `Skrub`, `DivExplorer`, or `pysubgroup`, pycatdap prov
     ```python
     import pycatdap
 
-    df = pycatdap.datasets.load_health_data()
-    r = pycatdap.catdap1(df, response_names=["symptoms"])
+    df = pycatdap.datasets.load_heart_disease()
+    cat = df[["target", "sex", "cp", "exang", "thal"]]
+    r = pycatdap.catdap1(cat, response_names=["target"])
     print(r.aic_order)
     ```
 

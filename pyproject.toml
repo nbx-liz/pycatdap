@@ -107,6 +107,13 @@ version-file = "src/pycatdap/_version.py"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pycatdap"]
 
+[tool.hatch.build.targets.sdist]
+# Exclude the GPL-licensed catdap-derived test fixture from the source
+# distribution (it is an internal R-equivalence fixture, not part of the
+# MIT-licensed library — see NOTICE and HISTORY H-0025 / #156). The wheel already
+# excludes it by only packaging src/pycatdap.
+exclude = ["tests/fixtures/health_data.csv"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short --cov=pycatdap --cov-report=term-missing"

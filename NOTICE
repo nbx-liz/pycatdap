@@ -1,0 +1,27 @@
+pycatdap
+Copyright (c) 2026 nbx-liz
+Licensed under the MIT License (see LICENSE).
+
+================================================================================
+Third-party data — NOT part of the distributed library
+================================================================================
+
+tests/fixtures/health_data.csv
+------------------------------
+This file (the "HealthData" example dataset) is derived from the R `catdap`
+package:
+
+    Copyright (C) 2008 The Institute of Statistical Mathematics (ISM)
+    Licensed under GPL (>= 2)
+
+It is retained SOLELY as an internal test fixture for verifying numerical
+equivalence against R `catdap` (see tests/test_against_r.py). It is therefore
+licensed GPL (>= 2), NOT MIT.
+
+It is EXCLUDED from the distributed artifacts (the built wheel contains only
+`src/pycatdap/`; the source distribution excludes this fixture — see
+pyproject.toml `[tool.hatch.build.targets.sdist]`). It is not importable from the
+installed package and is not redistributed as part of pycatdap.
+
+The previously bundled "HelloGoodbye" dataset (also catdap-derived, GPL/ISM) was
+removed entirely (issue #156, HISTORY H-0025).

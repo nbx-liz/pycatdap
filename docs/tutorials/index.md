@@ -4,7 +4,7 @@ Learning-oriented walkthroughs that guide you from zero to confident usage.
 
 ## Available
 
-- **[Basic CATDAP](01-basic-catdap.ipynb)** — The original v0.2 tutorial walkthrough using HealthData
+- **[Basic CATDAP](01-basic-catdap.ipynb)** — The original CATDAP-01 / CATDAP-02 walkthrough on the UCI Heart Disease dataset
 - **[EDA on Titanic](02-eda-titanic.ipynb)** — v0.3+ univariate EDA APIs (`describe`, `plot_variable`, `plot_missing`) demonstrated on the Titanic dataset
 - **[AIC-optimal binning on iris](03-iris-pooling.ipynb)** — Why CATDAP-02's pooling search beats equal-width binning, with cut points visualized against species histograms
 - **[Multivariate scale (synthetic)](04-hellogoodbye-multivariate.ipynb)** — Scale to 56 binary variables on a synthetic wide dataset, use `catdap1` to rank candidates and `catdap2(nvar=k)` to keep the subset search tractable
