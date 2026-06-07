@@ -12,12 +12,22 @@ Input arrays are never mutated.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
 
 from pycatdap._aic import _safe_xlogy
+
+#: Upper bound on the number of fine bins the auto-accuracy heuristic may imply.
+#: Without it, high-cardinality continuous data (e.g. all-unique floats whose
+#: smallest gap is ~1e-7) produces millions of initial bins, blowing up memory
+#: and the greedy AIC merge (which is ~O(n_bins^3); ~0.2s at 256 bins, ~36s at
+#: 2048). Only the auto path (``accuracy=None``) is capped — an explicit
+#: ``accuracy`` is honoured verbatim. Mirrors the calibration module's bounded
+#: grid (``_AIC_INIT_BINS``, H-0013 §B-bis). See issue #164 / H-0024.
+_MAX_AUTO_BINS = 256
 
 # ---------------------------------------------------------------------------
 # Result container
@@ -47,7 +57,14 @@ class PoolingResult:
 
 
 def _auto_accuracy(values: npt.NDArray[np.float64]) -> float:
-    """Guess accuracy from the smallest non-zero gap between sorted values."""
+    """Guess accuracy from the smallest non-zero gap between sorted values.
+
+    The result is widened if the smallest gap would imply more than
+    :data:`_MAX_AUTO_BINS` fine bins over the value range, bounding the cost of
+    the downstream greedy merge on high-cardinality continuous data (issue
+    #164). When this cap is applied a :class:`UserWarning` is emitted; pass an
+    explicit ``accuracy`` for finer control.
+    """
     sorted_vals = np.sort(np.unique(values))
     if len(sorted_vals) <= 1:
         return 1.0
@@ -55,7 +72,28 @@ def _auto_accuracy(values: npt.NDArray[np.float64]) -> float:
     positive_diffs = diffs[diffs > 0]
     if len(positive_diffs) == 0:
         return 1.0
-    return float(np.min(positive_diffs))
+    min_gap = float(np.min(positive_diffs))
+
+    value_range = float(sorted_vals[-1] - sorted_vals[0])
+    # Guard against non-finite ranges (e.g. ``inf`` in the data): never derive a
+    # non-finite accuracy from the cap; fall back to the finite min-gap (the
+    # downstream behaviour for such inputs is then unchanged from before #164).
+    if np.isfinite(value_range):
+        capped_accuracy = value_range / _MAX_AUTO_BINS
+        if capped_accuracy > min_gap:
+            # stacklevel=3: _auto_accuracy <- optimal_binning <- caller, so the
+            # warning points at the user's optimal_binning(...) call site.
+            warnings.warn(
+                "Auto-detected accuracy "
+                f"({min_gap:.3g}) would create more than {_MAX_AUTO_BINS} "
+                "initial bins for this high-cardinality continuous data; "
+                f"widening accuracy to {capped_accuracy:.3g} to bound cost. "
+                "Pass an explicit accuracy= for finer control.",
+                UserWarning,
+                stacklevel=3,
+            )
+            return capped_accuracy
+    return min_gap
 
 
 def _initial_bins(
@@ -322,7 +360,11 @@ def optimal_binning(
         ``'bottom_up'`` (default) uses unequal pooling;
         ``'top_down'`` uses equal pooling.
     accuracy : float or None
-        Minimum bin width.  If ``None``, auto-detected from data.
+        Minimum bin width.  If ``None``, auto-detected from the data as the
+        smallest non-zero gap between sorted values, capped so the initial grid
+        never exceeds :data:`_MAX_AUTO_BINS` bins (a ``UserWarning`` is emitted
+        when the cap applies — see issue #164). Pass an explicit value for finer
+        control on high-cardinality continuous data.
 
     Returns
     -------

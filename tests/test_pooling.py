@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pytest
 
 from pycatdap._pooling import (
+    _MAX_AUTO_BINS,
     PoolingResult,
+    _auto_accuracy,
     equal_pooling,
     optimal_binning,
     unequal_pooling,
@@ -198,3 +202,73 @@ class TestOptimalBinning:
         # Every observation must be assigned a bin
         assert not np.any(np.isnan(result.codes.astype(float)))
         assert len(result.codes) == len(values)
+
+
+# ---------------------------------------------------------------------------
+# Auto-accuracy initial-bin cap (issue #164, H-0024)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoAccuracyCap:
+    """The auto path bounds the initial bin count to avoid an O(n^3) blow-up.
+
+    Only ``accuracy=None`` (auto) is affected; an explicit ``accuracy`` is
+    honoured verbatim.
+    """
+
+    def test_low_cardinality_returns_min_gap_uncapped(self) -> None:
+        # 51 integers 0..50: range 50 / gap 1 = 50 fine bins < the cap.
+        values = np.arange(51, dtype=float)
+        assert _auto_accuracy(values) == 1.0
+
+    def test_low_cardinality_emits_no_warning(self) -> None:
+        values = np.arange(51, dtype=float)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            _auto_accuracy(values)  # must not warn
+
+    def test_high_cardinality_caps_accuracy(self) -> None:
+        # 2000 evenly spaced points over [0, 1000]: ~2000 fine bins > cap, so
+        # accuracy widens to range / _MAX_AUTO_BINS.
+        values = np.linspace(0.0, 1000.0, 2000)
+        value_range = float(values.max() - values.min())
+        assert _auto_accuracy(values) == pytest.approx(value_range / _MAX_AUTO_BINS)
+
+    def test_high_cardinality_warns(self) -> None:
+        values = np.linspace(0.0, 1000.0, 2000)
+        with pytest.warns(UserWarning, match="accuracy"):
+            _auto_accuracy(values)
+
+    def test_optimal_binning_high_cardinality_bounded(self) -> None:
+        # Regression for #164: all-unique floats hung before the cap.
+        rng = np.random.default_rng(0)
+        values = rng.normal(size=5000)  # all-unique → no finite precision
+        response = rng.choice(["a", "b"], 5000).astype(object)
+        with pytest.warns(UserWarning):
+            result = optimal_binning(values, response)
+        assert len(result.codes) == 5000
+        # Final bins are bounded by the capped initial grid.
+        assert len(set(result.codes.tolist())) <= _MAX_AUTO_BINS
+
+    def test_explicit_accuracy_bypasses_cap_and_does_not_warn(self) -> None:
+        rng = np.random.default_rng(0)
+        values = rng.normal(size=300)  # all-unique, but accuracy is explicit
+        response = rng.choice(["a", "b"], 300).astype(object)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            optimal_binning(values, response, accuracy=0.5)
+        assert not any("accuracy" in str(w.message).lower() for w in caught)
+
+    def test_warning_points_at_caller_not_pooling_internals(self) -> None:
+        values = np.linspace(0.0, 1000.0, 2000)
+        response = np.array(["a", "b"] * 1000, dtype=object)
+        with pytest.warns(UserWarning) as record:
+            optimal_binning(values, response)
+        # stacklevel must blame this call site (test file), not src/_pooling.py.
+        assert record[0].filename.endswith("test_pooling.py")
+
+    def test_single_unique_value_returns_default_no_warning(self) -> None:
+        values = np.array([5.0, 5.0, 5.0])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            assert _auto_accuracy(values) == 1.0

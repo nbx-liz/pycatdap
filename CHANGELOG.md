@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `save-data-file: false`)、PR を**ブロックしない** (`fail-on-alert: false`)。same-repo PR
   限定 (fork PR は read-only token のため検証のみ)。これで #161 (Phase 2+3) 完了。
 
+### Changed
+
+- `optimal_binning` の auto-accuracy (`accuracy=None`) が初期ビン数を上限化 (#164, H-0024)。
+  最小ギャップが範囲に対し `_MAX_AUTO_BINS=256` を超える初期ビンを生む高カーディナリティ連続
+  データでは accuracy を `range/256` に広げ `UserWarning` を出す。これにより従来ハング/OOM して
+  いた全ユニーク連続 float (例: 10万行 >200s 未完了) が短時間で完了 (実測 0.245s)。
+  **明示 `accuracy` は従来通り verbatim** (R 厳密照合・既存挙動に影響なし)。細かい制御は
+  明示 `accuracy=` を渡す。catdap2 / target_pair の auto パスも同経路で恩恵。
+
 ## [0.13.0] — 2026-06-07
 
 ### Added
