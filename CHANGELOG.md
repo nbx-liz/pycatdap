@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- パフォーマンスベンチマーク基盤 (Phase 1) を追加 (#29, H-0021)。`benchmarks/` に
+  `pytest-benchmark` ベースの計測スイートを置き、`make bench` で実行する。`catdap1` /
+  `catdap2` / `optimal_binning` / `discover_error_slices` の hot path を固定 seed の合成
+  データでスケーリング計測し、ベースラインを `docs/performance.md` に記録。
+  - `pytest-benchmark` は dev 専用の `bench` dependency-group (利用者向け extra でも
+    `dev` でもない)。`py-cpuinfo` のみに依存し numpy/pandas の version cap を持たないため
+    uv の universal lock を汚染しない。wheel/sdist には含まれない。
+  - `benchmarks/` は `testpaths` 外のため `make ci` / `make test` では収集・実行されない。
+  - `discover_error_slices` ベンチは OOM 回避のため強くバウンド (`max_vars=2`、
+    `max_candidates` 上限、5k 行 subsample、`slow` マーク)。Adult Income は実 fetch せず
+    形状を模倣した合成データを使用 (network 計測ノイズ回避)。
+  - nightly 非ブロッキング CI / 履歴チャート / PR delta コメント / 回帰ゲートは follow-up。
+
 ## [0.13.0] — 2026-06-07
 
 ### Added
