@@ -30,9 +30,19 @@ import pytest
 
 from pycatdap.catdap1 import catdap1
 from pycatdap.catdap2 import catdap2
-from pycatdap.datasets import load_health_data
 
 REFERENCE_DIR = Path(__file__).parent.parent / "docs" / "r_reference"
+FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+def load_health_data() -> pd.DataFrame:
+    """Load the HealthData test fixture.
+
+    HealthData is catdap-derived (GPL >= 2, Copyright ISM) and is NOT bundled in
+    the distributed library; it is retained only as a test fixture for this
+    R-equivalence suite (see NOTICE / HISTORY H-0025 / #156).
+    """
+    return pd.read_csv(FIXTURE_DIR / "health_data.csv")
 
 
 def _load_reference(filename: str) -> pd.DataFrame:

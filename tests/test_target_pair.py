@@ -39,7 +39,9 @@ def cont_df() -> pd.DataFrame:
 
 @pytest.fixture()
 def health_df() -> pd.DataFrame:
-    return pycatdap.datasets.load_health_data()
+    # HealthData is catdap-derived (GPL, ISM); kept only as a test fixture, not
+    # bundled in the library (see NOTICE / HISTORY H-0025 / #156).
+    return pd.read_csv(Path(__file__).parent / "fixtures" / "health_data.csv")
 
 
 class TestTargetSummaryStructure:

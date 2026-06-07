@@ -4,52 +4,15 @@ from __future__ import annotations
 
 from pycatdap.datasets import (
     load_german_credit,
-    load_health_data,
     load_heart_disease,
     load_iris,
     load_penguins,
     load_titanic,
 )
 
-
-class TestHealthData:
-    """Tests for the HealthData dataset."""
-
-    def test_shape(self) -> None:
-        df = load_health_data()
-        assert df.shape == (52, 8)
-
-    def test_columns(self) -> None:
-        df = load_health_data()
-        expected = [
-            "opthalmo.",
-            "ecg",
-            "symptoms",
-            "age",
-            "max.press",
-            "min.press",
-            "aortic.wav",
-            "cholesterol",
-        ]
-        assert list(df.columns) == expected
-
-    def test_symptoms_values(self) -> None:
-        df = load_health_data()
-        assert set(df["symptoms"].unique()) == {"A", "B"}
-
-    def test_cholesterol_values(self) -> None:
-        df = load_health_data()
-        assert set(df["cholesterol"].unique()) == {"low", "high"}
-
-    def test_no_missing_values(self) -> None:
-        df = load_health_data()
-        assert not df.isnull().any().any()
-
-    def test_returns_copy(self) -> None:
-        """Each call should return a fresh DataFrame."""
-        df1 = load_health_data()
-        df2 = load_health_data()
-        assert df1 is not df2
+# Note: HealthData / HelloGoodbye are catdap-derived (GPL) and no longer bundled
+# (see HISTORY H-0025 / #156); HealthData survives only as an R-equivalence test
+# fixture exercised by tests/test_against_r.py.
 
 
 class TestTitanic:
