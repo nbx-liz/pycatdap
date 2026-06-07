@@ -69,7 +69,11 @@ EDA + ML 誤差分析アーク(Phase A→M)は **全て出荷済み**。最新�
 - D3 datasets (#23) は v0.7.0(Phase G の demo)、D4 (#24) は v0.8.0(Phase H)に
   同梱済み。**D5 (#25) は v0.13.0 で同梱済 (H-0017、develop 未リリース)。JNcharacter
   (#47) は GPL ライセンスのため won't-do (H-0020)** — catdap データは ISM 著作・GPL(>=2)
-  で MIT package に再配布できない。既存同梱の HealthData/HelloGoodbye の GPL 整合は #156。
+  で MIT package に再配布できない。既存同梱の HealthData/HelloGoodbye の GPL 整合は
+  **#156 で解決済 (H-0025、develop 未リリース)**: HelloGoodbye は削除 (tutorial 04 を合成
+  データ化)、HealthData は非配布の test fixture (`tests/fixtures/`、wheel/sdist 除外、NOTICE)
+  に移し R bit-exact 照合を維持、デモは UCI heart_disease に差替。GPL 化は LizyStudio
+  (GPL 非互換) を破壊するため不可、ISM 許諾も取得不可のため同梱解除を選択。
 - **#21 の重い作業は LizyStudio 側(別リポジトリ #579)**。pycatdap 本体側の
   `.to_plotly_json()` 契約は v0.12.0 で出荷済み(全結果型実装 + 契約テスト)。
 - **#32 の核メソッド `to_divexplorer_format` は v0.8.0 で実装済み**。残るは真の
@@ -215,7 +219,8 @@ Phase A→M が出荷済みのため、旧来の Phase 間直列依存は解消�
 | v0.13 開始時 | D5 loader の取得元(UCI 直 DL vs OpenML pin)+ cache 方針 | #25 |
 | v0.13 開始時 | pysubgroup measure API のシグネチャ + optional dep 配置(`[subgroup]` extra) | #31 |
 | v0.13 開始時 | DivExplorer 真スキーマ整合の採否(option a 据置 vs b 破壊的) | #32 |
-| ✅ 解決(2026-06-07) | JNcharacter: catdap は ISM 著作・GPL(>=2)(公式確認)→ MIT package に同梱しない won't-do。既存同梱 catdap データ(HealthData/HelloGoodbye)の GPL 整合は #156 で別途 | #47 → H-0020 / #156 |
+| ✅ 解決(2026-06-07) | JNcharacter: catdap は ISM 著作・GPL(>=2)(公式確認)→ MIT package に同梱しない won't-do | #47 → H-0020 |
+| ✅ 解決(2026-06-07) | 既存同梱 catdap データの GPL 整合: HelloGoodbye 削除 + HealthData を非配布 test fixture 化(wheel/sdist 除外・NOTICE)、デモは heart_disease に差替。GPL 化は LizyStudio 非互換のため不可 | #156 → H-0025 |
 | v0.14 開始時 | R 参照 CSV の生成・コミット(R + catdap 1.3.5)/ perf ベンチの runner・dep 選定 | #10, #30, #29 |
 | v1.0 開始時 | Deprecation 期間(v1.0 → v2.0?)+ `load_hellogoodbye` rename の同梱可否 | #33 |
 
