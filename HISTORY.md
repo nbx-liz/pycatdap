@@ -4181,3 +4181,121 @@ bench:
 - OOM 回帰防止: memory `incident_discover_slices_oom`
 - network ハング回避: memory `feedback_make_ci_d4_network_hang`
 - uv-lock 汚染チェック: memory `feedback_optional_dep_caps_core_poisons_uv_lock`
+
+## 2026-06-07: nightly 非ブロッキング ベンチマーク CI（Phase 2 — schedule + 回帰アラート）
+
+- ID: `H-0022`
+- Status: `proposed`
+- Scope: `ci | dev-tooling`(公開 API・配布物変更なし)
+- Related: Issue #161 / #29(H-0021 Phase 1)/ #20、memory `incident_discover_slices_oom` / `finding_optimal_binning_unique_squared`
+
+### Context
+
+H-0021(#29 Phase 1)でローカル実行可能なベンチマーク基盤を整備した。#161 はその CI 化を
+要求する。GitHub hosted runner は共有 CPU で計測ノイズが大きいため、#29 の判断どおり
+**per-PR の 20% 回帰ゲートは採らず、nightly schedule + 非ブロッキング回帰アラート**とする。
+
+重要な既存制約: 本リポジトリの GitHub Pages は **`build_type: workflow`**(`docs.yml` の
+`actions/deploy-pages@v5` で mkdocs サイトを配信)であり、レガシー `gh-pages` ブランチは
+**配信に使っていない**。`github-action-benchmark` は既定で `gh-pages` ブランチへチャートを
+push する。1 リポジトリ 1 Pages のため、benchmark チャートを公開 URL に載せると docs サイトと
+競合する。→ **チャートは `gh-pages` ブランチに保存するが公開 URL には載せない**方針を採用
+(Pages の `build_type` は branch 作成では切り替わらないため docs サイトへの影響なし)。
+
+### Proposal
+
+#### A. 新規ワークフロー `.github/workflows/benchmarks.yml`
+
+- トリガー:
+  - `schedule`(nightly, `cron: "0 3 * * *"` = 03:00 UTC)
+  - `workflow_dispatch`(手動検証用)
+  - `pull_request`(paths: `.github/workflows/benchmarks.yml` / `benchmarks/**` /
+    `Makefile` / `pyproject.toml`)— **検証専用**(下記 D)
+- ジョブ(ubuntu-latest, Python 3.12):
+  1. checkout(`fetch-depth: 0` = hatch-vcs)
+  2. setup-uv → `uv sync --frozen --group bench`(sklearn/extra は入れない =
+     D4 OpenML ハング回避; ベンチは合成データで network 不要)
+  3. `make bench BENCH_ARGS="--benchmark-json=output.json"`(slow 含むフル)
+  4. `benchmark-action/github-action-benchmark@v1`(`tool: pytest`,
+     `output-file-path: output.json`)
+  5. `actions/upload-artifact@v4` で `output.json` を保存
+
+#### B. github-action-benchmark の設定
+
+- `gh-pages-branch: gh-pages`, `benchmark-data-dir-path: dev/bench`,
+  `auto-push: true`(schedule/dispatch 時のみ)→ 履歴とインタラクティブ
+  ダッシュボード(`index.html`)を `gh-pages` ブランチに蓄積。
+- `alert-threshold: "150%"`(hosted-runner ノイズを考慮し +20% 通念より緩め。閾値は
+  後でチューニング可)、`comment-on-alert: true`、**`fail-on-alert: false`(PR/コミットを
+  ブロックしない)**。
+- `github-token: ${{ secrets.GITHUB_TOKEN }}`。permissions: `contents: write`
+  (gh-pages push + commit comment)。
+
+#### C. 権限・並行性
+
+- `permissions: contents: write`(他は read)。
+- `concurrency: group: benchmarks, cancel-in-progress: false`(nightly 重複防止)。
+
+#### D. PR 検証モード(副作用なし)
+
+`pull_request` イベント時は `auto-push: false` / `save-data-file: false` /
+`comment-on-alert: false` とし、**実行と JSON パースの検証のみ**(gh-pages 書込・コメント
+なし)。これにより本ワークフロー導入 PR 自身で end-to-end 検証できる(fork PR でも安全)。
+
+#### E. ドキュメント
+
+`docs/performance.md` に nightly 運用と履歴データの所在(`gh-pages` ブランチ
+`dev/bench/`)を追記。`CHANGELOG [Unreleased]`。
+
+### Impact
+
+| 対象 | 追加/変更 |
+|---|---|
+| `.github/workflows/benchmarks.yml` | 新規 |
+| `gh-pages` ブランチ | 初回 nightly で自動生成(データ保存専用) |
+| `docs/performance.md` / `CHANGELOG.md` | 追記 |
+
+### Compatibility
+
+**完全に additive**。公開 API・data contract・配布 wheel/sdist・`make ci` / `make test` の
+挙動と実行時間に変更なし(別ワークフロー)。Pages の docs サイト配信は不変
+(`build_type: workflow` は branch 作成で切り替わらない)。新規ランタイム/Python 依存なし
+(`github-action-benchmark` は CI Action であり package 依存ではない)。
+
+### Alternatives Considered
+
+- **A1: per-PR 20% 回帰ゲート(fail-on-alert: true)** — hosted-runner ノイズで flaky。
+  #29 で却下済。非ブロッキングを採用。
+- **A2: チャートを docs サイト(公開 Pages)に統合** — mkdocs build とベンチ履歴の連携配線が
+  重い。Phase 2 では `gh-pages` ブランチ保存に留め、公開可視化は将来検討。
+- **A3: self-hosted runner で安定計測** — 運用負荷大。hosted + 非ブロッキングで十分。
+- **A4: チャートなし(artifact のみ)** — 履歴トレンドが追えない。github-action-benchmark の
+  gh-pages 保存は低コストで履歴+アラートを両立するため採用。
+
+### Acceptance Criteria
+
+- [ ] nightly(schedule)で benchmarks.yml が green、`gh-pages` に履歴が蓄積される。
+- [ ] 回帰検出時に**コメント**が出るが PR/コミットを**ブロックしない**(fail-on-alert:false)。
+- [ ] `make ci` の実行時間・挙動が不変(benchmarks は testpaths 外のまま)。
+- [ ] PR 検証モードで gh-pages 書込・コメントが発生しない。
+- [ ] Pages の docs サイト配信が継続(build_type: workflow 不変)。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: Phase 2 のみ。Phase 3(src 変更 PR での PR-delta コメント)は別 PR / issue #161 に
+  残す。閾値 150% は暫定で運用後に調整。**運用注意**: scheduled workflow は default branch
+  (`main`)の定義で発火するため、nightly 自動実行は benchmarks.yml が main に乗る次回
+  リリース以降に有効化される。develop マージ後は `workflow_dispatch`(手動)で gh-pages 生成を
+  検証する。導入 PR 自身は `pull_request` 検証モードで end-to-end チェック済とする。
+
+### Migration
+
+なし(CI 追加のみ)。
+
+### Related References
+
+- 親仕様: Issue #161 / #29(H-0021)/ #20
+- Pages 競合の根拠: `docs.yml`(`deploy-pages@v5`)+ `gh api repos/.../pages`(build_type: workflow)
+- ノイズ対策方針: #29 Decision(非ブロッキング nightly)

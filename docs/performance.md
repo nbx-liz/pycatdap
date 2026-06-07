@@ -4,12 +4,13 @@ pycatdap ships a benchmark suite (`benchmarks/`) that tracks the runtime of the
 hot paths so performance regressions can be caught. This page documents how to
 run it and records a baseline.
 
-!!! note "Scope (Phase 1)"
-    This is the first phase of [issue #29][issue29]: a locally runnable
-    benchmark harness plus a recorded baseline. Continuous benchmarking in CI
-    (nightly non-blocking runs, historical trend charts, and PR-delta comments)
-    is tracked as a follow-up and is intentionally **not** part of `make ci` —
-    benchmarks never run in the standard test gate.
+!!! note "Scope"
+    Phase 1 ([issue #29][issue29]) added the locally runnable harness and the
+    baseline below. Phase 2 ([issue #161][issue161]) adds a **nightly,
+    non-blocking** benchmark workflow (see [below](#continuous-benchmarking-nightly)).
+    Benchmarks are intentionally **never** part of `make ci` — they do not run in
+    the standard test gate, and the nightly job never blocks a PR or commit.
+    PR-delta comments remain a follow-up.
 
 ## Running the benchmarks
 
@@ -122,12 +123,39 @@ target. See the caveats below for why it is bounded and synthetic.
   O(rows) cost. If you bin high-cardinality continuous data in practice, pass an
   explicit `accuracy` to control the bin count.
 - **Hosted-runner noise.** GitHub-hosted runners share CPU and show high timing
-  variance, which is why the planned CI regression check (follow-up) will be a
-  non-blocking nightly alert rather than a per-PR gate.
+  variance, which is why the CI regression check is a non-blocking nightly alert
+  rather than a per-PR gate.
+
+## Continuous benchmarking (nightly)
+
+The `Benchmarks` workflow (`.github/workflows/benchmarks.yml`) runs the suite on
+a GitHub-hosted runner and records the results so trends and regressions are
+visible over time. It is **non-blocking by design** — it never fails a PR or
+commit.
+
+- **Schedule**: nightly (03:00 UTC) plus manual `workflow_dispatch`. Scheduled
+  runs fire from the default branch (`main`), so the nightly cadence activates
+  once this workflow reaches `main` (a release); until then, trigger it manually
+  on `develop`.
+- **History + dashboard**: stored by
+  [`github-action-benchmark`][gha-bench] in the **`gh-pages` branch** under
+  `dev/bench/`. The public docs site is served from the GitHub Actions artifact
+  (not a branch), so the chart is **not** on the public site — view it by
+  checking out the `gh-pages` branch. The raw `output.json` is also uploaded as a
+  workflow artifact each run.
+- **Regression alert**: if a benchmark is ≥ 1.5× slower than the previous
+  recorded run, the action posts a **commit comment** (`alert-threshold: 150%`,
+  intentionally above +20% because hosted-runner timing is noisy). It does **not**
+  fail the run (`fail-on-alert: false`).
+- **On PRs** touching the benchmark plumbing, the workflow runs in validate-only
+  mode (no `gh-pages` write, no comment) to prove the suite and JSON parsing
+  still work.
 
 [issue29]: https://github.com/nbx-liz/pycatdap/issues/29
+[issue161]: https://github.com/nbx-liz/pycatdap/issues/161
 [issue20]: https://github.com/nbx-liz/pycatdap/issues/20
 [pytestbench]: https://pytest-benchmark.readthedocs.io/
+[gha-bench]: https://github.com/benchmark-action/github-action-benchmark
 [catdap1]: reference/catdap1.md
 [catdap2]: reference/catdap2.md
 [discovery]: reference/index.md
