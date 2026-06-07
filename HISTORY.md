@@ -4472,3 +4472,122 @@ calibration モジュールは既に同問題を回避済(H-0013 §B-bis: 確率
 - 親仕様: Issue #164 / #29
 - 既存先例: `error/calibration.py` `_AIC_INIT_BINS`(H-0013 §B-bis)
 - 知見: memory `finding_optimal_binning_unique_squared`
+
+## 2026-06-07: catdap 同梱 GPL データの同梱解除（#156 解決 / MIT 維持）
+
+- ID: `H-0025`
+- Status: `proposed`
+- Scope: `API(breaking) | data | docs | build | ci`
+- Related: Issue #156、#47/H-0020(JNcharacter won't-bundle, 同じ GPL 理由)、#21/LizyStudio#579(下流統合)、#33(deprecation 流儀)
+
+### Context
+
+pycatdap は **MIT** だが、同梱の 2 データセットが R `catdap` 由来で **GPL(>=2)・Copyright ISM**
+(catdap 1.3.5 `DESCRIPTION`/`AUTHORS` で確認):
+
+- `src/pycatdap/data/health_data.csv`(`load_health_data`)
+- `src/pycatdap/data/hello_goodbye.csv.gz`(`load_hello_goodbye`)
+
+**下流の確定制約**: pycatdap は **LizyStudio に統合予定**で、LizyStudio は **GPL 非互換**
+(maintainer 判断)。よって:
+
+- **pycatdap の GPL 化は不可**(LizyStudio 統合を破壊)→ MIT 維持必須。
+- **ISM 許諾は取得不可**(maintainer 判断)。
+- **NOTICE 単独では不十分**: GPL データが wheel に残ると、permissive な LizyStudio が pycatdap
+  をインストール/再配布する際に GPL が伝播する。
+- → **配布成果物(wheel / sdist)から GPL データを除去**するのが唯一合理的な解。
+
+設計原則: **「インストールされる成果物を GPL-free にする」**ことを最優先(LizyStudio は wheel を
+pip install するだけで repo/tests を vendoring しない)。R bit-exact 検証(プロジェクトの中核)は維持。
+破壊は最小限。
+
+### Proposal
+
+#### A. HelloGoodbye(検証外・13954×56・再構成不可)→ 完全削除 + 合成置換
+
+- `data/hello_goodbye.csv.gz` 削除、公開 API `load_hello_goodbye` **撤去**。
+- `tutorials/04-hellogoodbye-multivariate.ipynb` を **合成の大規模不均衡バイナリ**(固定 seed、
+  ~1.3% positive、情報を持つ少数変数)で書換。タイトル/ナビ更新。
+- `tests/test_datasets.py::TestHelloGoodbye` 削除(R 検証外 = 検証価値の損失なし)。
+
+#### B. HealthData(R 検証の土台・52×8)→ test fixture 化(wheel/sdist 除外)
+
+- `src/pycatdap/data/health_data.csv` → `tests/fixtures/health_data.csv` へ移動。
+- **wheel は `packages=["src/pycatdap"]` のため tests/ は自動的に非同梱**。**sdist は
+  `[tool.hatch.build.targets.sdist].exclude` で fixture を除外** → wheel・sdist とも GPL-free。
+- `tests/test_against_r.py` / `tests/test_target_pair.py` を fixture パス読みに変更(`load_health_data`
+  依存を除去)→ **R bit-exact 検証は CI で継続**。
+- 公開 API `load_health_data` **撤去**(データを同梱しない以上インストール環境で動作不能)。
+- `tutorials/01-basic-catdap.ipynb` を **`load_heart_disease`(UCI permissive・医療 mixed type)** に差替。
+
+#### C. NOTICE
+
+`NOTICE` を新規追加 + テスト docstring / CONTRIBUTING に明記: `tests/fixtures/health_data.csv` は
+R catdap 由来(Copyright ISM, GPL >=2)、**テスト専用・配布ライブラリの一部ではない**(wheel/sdist
+非同梱)。
+
+#### D. 公開 API 撤去の扱い
+
+`load_health_data` / `load_hello_goodbye` は GPL データを同梱できない以上、従来動作する
+soft-deprecation は不可能。Development Status: Alpha のため、**撤去 + CHANGELOG「Removed」**で扱う
+(必要なら 1 バージョンだけ「compliance 理由で削除」を示す情報付きエラーの shim を残す)。代替は
+`load_heart_disease` / `load_titanic` / `load_iris` 等。GPL データが必要な利用者は R catdap から取得。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `src/pycatdap/data/` | `health_data.csv`(移動)・`hello_goodbye.csv.gz`(削除) |
+| `src/pycatdap/datasets.py` | `load_health_data` / `load_hello_goodbye` 撤去(+不要 `gzip` import 整理) |
+| `tests/fixtures/health_data.csv` | 新規(GPL fixture) |
+| `tests/test_against_r.py` / `tests/test_target_pair.py` | fixture パス読みに変更 |
+| `tests/test_datasets.py` | TestHelloGoodbye 削除・TestHealthData は fixture 経由 or 削除 |
+| `tutorials/01` / `tutorials/04` | heart_disease / 合成データに書換 |
+| `pyproject.toml` | sdist exclude 追加 |
+| `NOTICE` / `CONTRIBUTING.md` | GPL fixture の帰属明記 |
+| `README.md` / `docs/*` / `BLUEPRINT.md` / `PLAN.md` / `CHANGELOG.md` | 参照更新・Removed 記載 |
+
+### Compatibility
+
+**BREAKING**(公開 API `load_health_data` / `load_hello_goodbye` 撤去)。緩和: 他の同梱
+permissive データセット(heart_disease/titanic/iris/german_credit/penguins)は不変。R bit-exact
+検証は fixture 経由で CI 継続。wheel/sdist は GPL-free 化(LizyStudio クリーン)。本体 AIC コードは
+無改変。
+
+### Alternatives Considered
+
+- **GPL 化**: LizyStudio(GPL 非互換)統合を破壊。却下。
+- **ISM 許諾**: 取得不可(maintainer)。却下。
+- **NOTICE のみ**: GPL が wheel に残り permissive 下流へ伝播。不十分。却下。
+- **HealthData 再構成**: R bit-exact 一致には**ビット同一**が必要 = 同一表現の複製で法的にグレー +
+  手キーで照合崩壊リスク。却下。
+- **fetch 化**: 入手元は GPL R パッケージのみ → GPL 回避にならず、オフライン中核テストに
+  ネットワーク依存を持ち込む。却下。
+- **採用案**: 配布成果物から除去 + HealthData は非配布 fixture として検証維持。
+
+### Acceptance Criteria
+
+- [ ] `uv build` の wheel・sdist に catdap GPL データ(health_data / hello_goodbye)が**含まれない**
+      (`tar tf` / `unzip -l` で確認)。
+- [ ] R bit-exact テスト(`test_against_r.py`)が fixture 経由で **CI(`-m slow`)で実行・pass**。
+- [ ] `make ci` green。tutorials 01/04 が nbmake で実行成功(GPL データ非依存)。
+- [ ] `load_health_data` / `load_hello_goodbye` が公開 API から消える。
+- [ ] `NOTICE` が GPL fixture を帰属明記。
+- [ ] README/docs の HelloGoodbye/HealthData 記述が更新。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: 2 PR に分割(A: HelloGoodbye / B: HealthData)。各々自己完結で green。
+
+### Migration
+
+`load_health_data` / `load_hello_goodbye` は撤去。デモは `load_heart_disease` 等の permissive
+データセットへ。GPL データが必要なら R `catdap` パッケージから取得すること。
+
+### Related References
+
+- 親仕様: Issue #156、#47/H-0020(JNcharacter)
+- 下流制約: #21 / LizyStudio#579(GPL 非互換)
+- 公式ライセンス: catdap 1.3.5 `DESCRIPTION`/`AUTHORS`(Copyright ISM, GPL >=2)
