@@ -1,20 +1,26 @@
 name: Benchmarks
 
-# Nightly NON-BLOCKING performance benchmarks (Issue #161, H-0022; Phase 2 of #29).
+# NON-BLOCKING performance benchmarks (Issue #161; Phase 2 H-0022 + Phase 3 H-0023
+# of #29). GitHub-hosted runners share CPU and are noisy, so this NEVER blocks a
+# PR or commit (fail-on-alert: false). Regressions / deltas surface as comments.
 #
-# Strategy: GitHub-hosted runners share CPU and are noisy, so this NEVER blocks a
-# PR or commit (fail-on-alert: false). Regressions surface as a comment only.
+# Two modes:
+#   - schedule / workflow_dispatch: run the FULL suite, append history to the
+#     gh-pages BRANCH (dev/bench/), and comment on regressions only.
+#   - pull_request (touching src or the benchmark plumbing): run the non-slow
+#     subset, compare against the gh-pages baseline WITHOUT writing history, and
+#     leave a delta commit comment on the PR head commit (same-repo PRs only;
+#     fork PRs get a read-only validate run with no comment).
 #
-# Trend history + interactive dashboard are stored in the `gh-pages` BRANCH
-# (dev/bench/) by github-action-benchmark. The repo's public Pages site is served
-# from the GitHub Actions artifact (mkdocs, see docs.yml: build_type=workflow), so
-# creating/pushing the gh-pages branch does NOT change Pages and does NOT make the
-# chart public — view it by checking out the gh-pages branch.
+# Trend history + dashboard live in the `gh-pages` BRANCH only. The repo's public
+# Pages site is served from the GitHub Actions artifact (mkdocs, docs.yml:
+# build_type=workflow), so gh-pages is data-only and the chart is not web-served.
+# The gh-pages branch is PRE-CREATED (orphan) — github-action-benchmark errors on
+# a missing branch when fetching.
 #
-# NOTE: scheduled workflows fire from the DEFAULT branch (main). Nightly runs
-# therefore activate once this file reaches main (next release). Until then, use
-# the workflow_dispatch trigger on develop to verify gh-pages creation. The
-# pull_request trigger validates the run end-to-end without side effects.
+# NOTE: scheduled workflows fire from the DEFAULT branch (main), so the nightly
+# cadence activates once this file reaches main (next release). Until then, use
+# workflow_dispatch on develop.
 
 on:
   schedule:
@@ -22,16 +28,20 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - "src/pycatdap/**" # measure the perf impact of code changes
       - ".github/workflows/benchmarks.yml"
       - "benchmarks/**"
       - "Makefile"
       - "pyproject.toml"
 
 permissions:
-  contents: write # push to gh-pages + post commit comment on regression
+  contents: write # gh-pages push + commit comment (schedule/dispatch)
+  pull-requests: write # PR-delta comment (the action posts a PR review comment on
+    # pull_request events; fork PRs get a read-only token regardless and are
+    # additionally guarded out of commenting via comment-always's same-repo check).
 
 concurrency:
-  group: benchmarks
+  group: benchmarks-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -57,9 +67,16 @@ jobs:
         run: uv sync --frozen --group bench
 
       - name: Run benchmarks
-        run: make bench BENCH_ARGS="--benchmark-json=output.json"
+        # PRs run the non-slow subset to bound feedback time; scheduled/dispatch
+        # runs measure the full suite (incl. the slow slice-discovery benchmark).
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            make bench BENCH_ARGS="--benchmark-json=output.json -m 'not slow'"
+          else
+            make bench BENCH_ARGS="--benchmark-json=output.json"
+          fi
 
-      - name: Store result + alert on regression (non-blocking)
+      - name: Store result / post delta comment (non-blocking)
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: pycatdap benchmarks
@@ -71,17 +88,16 @@ jobs:
           # +50% slower triggers an alert. Deliberately above the +20% notion
           # because hosted-runner timing is noisy; tune after observing trends.
           alert-threshold: "150%"
-          # On scheduled/dispatch runs: persist history to gh-pages and comment on
-          # regressions. On PRs: validate the run + JSON parse only — no gh-pages
-          # write, no comment (safe for fork PRs).
+          # Non-PR: append history to gh-pages and comment only on regression.
+          # PR: compare against the gh-pages baseline WITHOUT writing history.
           auto-push: ${{ github.event_name != 'pull_request' }}
           save-data-file: ${{ github.event_name != 'pull_request' }}
           comment-on-alert: ${{ github.event_name != 'pull_request' }}
-          # PR validation must NOT fetch gh-pages: it may not exist (and we don't
-          # compare against history on PRs anyway). Scheduled/dispatch runs DO
-          # fetch to append + compare (the gh-pages branch is pre-created).
-          skip-fetch-gh-pages: ${{ github.event_name == 'pull_request' }}
-          fail-on-alert: false # NEVER block — alert only
+          # PR-delta comment: a commit comment on the PR head with the full
+          # comparison table. Restricted to same-repo PRs — fork PRs get a
+          # read-only GITHUB_TOKEN and cannot comment, so they just validate.
+          comment-always: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+          fail-on-alert: false # NEVER block — comment only
 
       - name: Upload raw benchmark JSON
         if: always()

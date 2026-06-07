@@ -20,17 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - `discover_error_slices` ベンチは OOM 回避のため強くバウンド (`max_vars=2`、
     `max_candidates` 上限、5k 行 subsample、`slow` マーク)。Adult Income は実 fetch せず
     形状を模倣した合成データを使用 (network 計測ノイズ回避)。
-  - PR delta コメント (Phase 3) は follow-up (#161)。
 - nightly 非ブロッキング ベンチマーク CI (Phase 2) を追加 (#161, H-0022)。
   `.github/workflows/benchmarks.yml` が schedule (03:00 UTC) / `workflow_dispatch` で
   `make bench` を実行し、`github-action-benchmark` で履歴を `gh-pages` ブランチ
   (`dev/bench/`) に蓄積。回帰時 (≥1.5×) は**コミットコメント**で警告するのみで PR/コミットを
-  ブロックしない (`fail-on-alert: false`)。`output.json` は artifact 保存。`pull_request`
-  時は副作用なしの検証専用モードで実行。`make ci` の挙動・時間は不変。
+  ブロックしない (`fail-on-alert: false`)。`output.json` は artifact 保存。`make ci` の
+  挙動・時間は不変。
   - Pages は docs サイト (Actions デプロイ) が使用中のため、チャートは `gh-pages` ブランチ
     保存のみで公開 URL には載せない (docs サイトと非競合)。
   - scheduled workflow は default branch (`main`) 定義で発火するため、nightly 自動実行は
     本ワークフローが main に乗る次回リリース以降に有効化。それまでは `workflow_dispatch` で検証。
+- ベンチマーク PR-delta コメント (Phase 3) を追加 (#161, H-0023)。`src/pycatdap/**` を変更する
+  PR で非 slow subset を実行し、`gh-pages` の baseline と比較した delta を **PR head commit の
+  commit comment** として投稿 (`comment-always`)。履歴は書き換えず (`auto-push` /
+  `save-data-file: false`)、PR を**ブロックしない** (`fail-on-alert: false`)。same-repo PR
+  限定 (fork PR は read-only token のため検証のみ)。これで #161 (Phase 2+3) 完了。
 
 ## [0.13.0] — 2026-06-07
 

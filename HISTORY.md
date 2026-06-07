@@ -4299,3 +4299,92 @@ push する。1 リポジトリ 1 Pages のため、benchmark チャートを公
 - 親仕様: Issue #161 / #29(H-0021)/ #20
 - Pages 競合の根拠: `docs.yml`(`deploy-pages@v5`)+ `gh api repos/.../pages`(build_type: workflow)
 - ノイズ対策方針: #29 Decision(非ブロッキング nightly)
+
+## 2026-06-07: ベンチマーク PR-delta コメント（Phase 3 — 非ブロッキング）
+
+- ID: `H-0023`
+- Status: `proposed`
+- Scope: `ci | dev-tooling`(公開 API・配布物変更なし)
+- Related: Issue #161 / #29(H-0021 Phase 1 / H-0022 Phase 2)
+
+### Context
+
+H-0022(Phase 2)で nightly 非ブロッキング CI を導入し、`gh-pages` ブランチに履歴 baseline を
+蓄積するようにした。#161 の残タスク Phase 3 は、**src を変更する PR で性能影響を可視化**する
+こと。既存の `benchmarks.yml` の `pull_request` 挙動(Phase 2 では副作用なしの検証専用)を
+拡張する。
+
+`github-action-benchmark` は **commit comment** のみ対応(PR スレッドコメントは upstream の
+Future work)。`save-data-file: false` は「PR と base の比較用」と公式に明記されており、
+履歴に保存せず baseline と比較して delta を出す PR-delta パターンそのもの。
+
+### Proposal
+
+`.github/workflows/benchmarks.yml` を変更:
+
+#### A. トリガー paths に `src/pycatdap/**` 追加
+
+src 変更 PR でベンチが走るようにする(既存 plumbing paths はそのまま)。
+
+#### B. 実行は PR では非 slow subset
+
+`pull_request` 時は `make bench BENCH_ARGS="--benchmark-json=output.json -m 'not slow'"`
+(slow な slice-discovery を除外し PR フィードバック時間をバウンド)。schedule/dispatch は
+フル実行のまま。
+
+#### C. action 入力(PR モード)
+
+- `auto-push: false` / `save-data-file: false`(履歴を書かない)
+- `skip-fetch-gh-pages: false`(baseline を取得して比較。gh-pages は H-0022 で pre-created)
+- `comment-always: true`(**ただし same-repo PR のみ**:
+  `github.event.pull_request.head.repo.full_name == github.repository`)→ PR head commit に
+  delta の commit comment。fork PR は read-only token のためコメントせず検証のみ。
+- `fail-on-alert: false`(ブロックしない)
+- `concurrency` を `benchmarks-${{ github.ref }}`(per-ref)に変更し PR/nightly が相互に
+  ブロックしないようにする。
+
+### Impact
+
+| 対象 | 変更 |
+|---|---|
+| `.github/workflows/benchmarks.yml` | pull_request paths + 条件付き実行 + PR comment-always(same-repo) |
+| `docs/performance.md` / `CHANGELOG.md` | 追記 |
+
+### Compatibility
+
+**additive / CI のみ**。公開 API・配布物・`make ci` 不変。schedule/dispatch の挙動も不変
+(PR モードのみ拡張)。新規依存なし。auto-push は PR では false のため、PR から gh-pages を
+改変するセキュリティ懸念(README 警告)は発生しない。
+
+### Alternatives Considered
+
+- **A1: PR スレッドへの本文コメント** — `github-action-benchmark` 未対応(Future work)。
+  commit comment を採用(PR の head commit に表示され意図を満たす)。
+- **A2: PR でもフル(slow 含む)実行** — +約35s。issue が「slow は opt-in」と明記のため
+  非 slow subset を採用。
+- **A3: fork PR でも comment** — fork は read-only token でコメント不可 → 失敗赤×。
+  same-repo PR に限定し fork は検証のみ。
+
+### Acceptance Criteria
+
+- [ ] src 変更 PR(same-repo)で delta の commit comment が出る。
+- [ ] PR は **ブロックされない**(fail-on-alert: false)。
+- [ ] PR は履歴(gh-pages)を書き換えない(auto-push/save-data-file: false)。
+- [ ] schedule/dispatch のフル実行・履歴追記は不変。
+- [ ] `make ci` 不変。
+
+### Decision
+
+- Date: `(pending)`
+- Result: `proposed`
+- Notes: これで #161(Phase 2+3)は実装完了。閾値・subset 構成は運用後に調整可。
+
+### Migration
+
+なし(CI 拡張のみ)。
+
+### Related References
+
+- 親仕様: Issue #161 / #29(H-0021 / H-0022)
+- comment 仕様: `github-action-benchmark` README(`comment-always` = commit comment、
+  `save-data-file: false` = PR vs base 比較用、PR スレッドコメントは Future work)
