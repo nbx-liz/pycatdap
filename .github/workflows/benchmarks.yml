@@ -1,0 +1,88 @@
+name: Benchmarks
+
+# Nightly NON-BLOCKING performance benchmarks (Issue #161, H-0022; Phase 2 of #29).
+#
+# Strategy: GitHub-hosted runners share CPU and are noisy, so this NEVER blocks a
+# PR or commit (fail-on-alert: false). Regressions surface as a comment only.
+#
+# Trend history + interactive dashboard are stored in the `gh-pages` BRANCH
+# (dev/bench/) by github-action-benchmark. The repo's public Pages site is served
+# from the GitHub Actions artifact (mkdocs, see docs.yml: build_type=workflow), so
+# creating/pushing the gh-pages branch does NOT change Pages and does NOT make the
+# chart public — view it by checking out the gh-pages branch.
+#
+# NOTE: scheduled workflows fire from the DEFAULT branch (main). Nightly runs
+# therefore activate once this file reaches main (next release). Until then, use
+# the workflow_dispatch trigger on develop to verify gh-pages creation. The
+# pull_request trigger validates the run end-to-end without side effects.
+
+on:
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/benchmarks.yml"
+      - "benchmarks/**"
+      - "Makefile"
+      - "pyproject.toml"
+
+permissions:
+  contents: write # push to gh-pages + post commit comment on regression
+
+concurrency:
+  group: benchmarks
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: Run benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # hatch-vcs needs full history for the version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install benchmark dependencies
+        # bench group only (pytest + pytest-benchmark). NO extras: the benchmarks
+        # use synthetic data and never fetch from OpenML, so scikit-learn is not
+        # needed and is intentionally excluded to avoid the D4 fetcher network
+        # hang observed when sklearn is present.
+        run: uv sync --frozen --group bench
+
+      - name: Run benchmarks
+        run: make bench BENCH_ARGS="--benchmark-json=output.json"
+
+      - name: Store result + alert on regression (non-blocking)
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: pycatdap benchmarks
+          tool: pytest
+          output-file-path: output.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          # +50% slower triggers an alert. Deliberately above the +20% notion
+          # because hosted-runner timing is noisy; tune after observing trends.
+          alert-threshold: "150%"
+          # On scheduled/dispatch runs: persist history to gh-pages and comment on
+          # regressions. On PRs: validate the run + JSON parse only — no gh-pages
+          # write, no comment (safe for fork PRs).
+          auto-push: ${{ github.event_name != 'pull_request' }}
+          save-data-file: ${{ github.event_name != 'pull_request' }}
+          comment-on-alert: ${{ github.event_name != 'pull_request' }}
+          fail-on-alert: false # NEVER block — alert only
+
+      - name: Upload raw benchmark JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-output
+          path: output.json
+          if-no-files-found: warn
