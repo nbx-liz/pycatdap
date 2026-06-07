@@ -35,7 +35,10 @@ on:
       - "pyproject.toml"
 
 permissions:
-  contents: write # gh-pages push (non-PR) + commit comment
+  contents: write # gh-pages push + commit comment (schedule/dispatch)
+  pull-requests: write # PR-delta comment (the action posts a PR review comment on
+    # pull_request events; fork PRs get a read-only token regardless and are
+    # additionally guarded out of commenting via comment-always's same-repo check).
 
 concurrency:
   group: benchmarks-${{ github.ref }}
