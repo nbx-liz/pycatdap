@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784613254593,
+  "lastUpdate": 1784699703531,
   "repoUrl": "https://github.com/nbx-liz/pycatdap",
   "entries": {
     "pycatdap benchmarks": [
@@ -5400,6 +5400,126 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0005986590108247306",
             "extra": "mean: 157.92619342855525 msec\nrounds: 7"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "dependabot[bot]",
+            "username": "dependabot[bot]",
+            "email": "49699333+dependabot[bot]@users.noreply.github.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "93dd3a250689f07bb28c41bee47ce4b1dad332b4",
+          "message": "build(deps): bump actions/checkout from 6 to 7 (#172)\n\nBumps [actions/checkout](https://github.com/actions/checkout) from 6 to 7.\n- [Release notes](https://github.com/actions/checkout/releases)\n- [Changelog](https://github.com/actions/checkout/blob/main/CHANGELOG.md)\n- [Commits](https://github.com/actions/checkout/compare/v6...v7)\n\n---\nupdated-dependencies:\n- dependency-name: actions/checkout\n  dependency-version: '7'\n  dependency-type: direct:production\n  update-type: version-update:semver-major\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
+          "timestamp": "2026-06-30T03:14:38Z",
+          "url": "https://github.com/nbx-liz/pycatdap/commit/93dd3a250689f07bb28c41bee47ce4b1dad332b4"
+        },
+        "date": 1784699702905,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "benchmarks/bench_catdap1.py::test_catdap1_categorical[100]",
+            "value": 1.3640921285179715,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011147878754234635",
+            "extra": "mean: 733.0883149999977 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap1.py::test_catdap1_categorical[1000]",
+            "value": 1.2917754980526623,
+            "unit": "iter/sec",
+            "range": "stddev: 0.01092332875637405",
+            "extra": "mean: 774.1283230000022 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap1.py::test_catdap1_categorical[10000]",
+            "value": 0.8838621245759254,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006729533168452316",
+            "extra": "mean: 1.131398181000003 sec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap1.py::test_catdap1_categorical[100000]",
+            "value": 0.1732917821142052,
+            "unit": "iter/sec",
+            "range": "stddev: 0.04331791440836001",
+            "extra": "mean: 5.770614092599994 sec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap2.py::test_catdap2_mixed[100-5]",
+            "value": 5.14594650448974,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000693965232658301",
+            "extra": "mean: 194.3277100000008 msec\nrounds: 6"
+          },
+          {
+            "name": "benchmarks/bench_catdap2.py::test_catdap2_mixed[100-10]",
+            "value": 2.161415572304147,
+            "unit": "iter/sec",
+            "range": "stddev: 0.009997386883889972",
+            "extra": "mean: 462.6597554000057 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap2.py::test_catdap2_mixed[1000-5]",
+            "value": 1.6705152163271948,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004616253790320679",
+            "extra": "mean: 598.6177139999995 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap2.py::test_catdap2_mixed[1000-10]",
+            "value": 0.6702906323837408,
+            "unit": "iter/sec",
+            "range": "stddev: 0.020662487760598165",
+            "extra": "mean: 1.491890161799995 sec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap2.py::test_catdap2_mixed[10000-5]",
+            "value": 0.25992634069700354,
+            "unit": "iter/sec",
+            "range": "stddev: 0.025620613229025032",
+            "extra": "mean: 3.8472437895999976 sec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_catdap2.py::test_catdap2_mixed[10000-10]",
+            "value": 0.10991930259429036,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0893892858185123",
+            "extra": "mean: 9.097583194199995 sec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_discovery.py::test_discover_error_slices_adult_like",
+            "value": 0.06637679968072946,
+            "unit": "iter/sec",
+            "range": "stddev: 0.07016322241512615",
+            "extra": "mean: 15.065504887399992 sec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/bench_pooling.py::test_optimal_binning_bottom_up[1000]",
+            "value": 22.85772399419317,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0005273191136903994",
+            "extra": "mean: 43.7488876956447 msec\nrounds: 23"
+          },
+          {
+            "name": "benchmarks/bench_pooling.py::test_optimal_binning_bottom_up[10000]",
+            "value": 14.811928544132543,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0008438570055720023",
+            "extra": "mean: 67.51315313333257 msec\nrounds: 15"
+          },
+          {
+            "name": "benchmarks/bench_pooling.py::test_optimal_binning_bottom_up[100000]",
+            "value": 5.7625344382502455,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0028538326049890234",
+            "extra": "mean: 173.53475466667115 msec\nrounds: 6"
           }
         ]
       }
