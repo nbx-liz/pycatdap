@@ -6,7 +6,8 @@
 git clone git@github.com:nbx-liz/pycatdap.git
 cd pycatdap
 uv sync --frozen --dev
-pre-commit install
+uv run pre-commit install
+uv run bash .githooks/install.sh --preserve-pre-commit
 ```
 
 ## Git ブランチ戦略
